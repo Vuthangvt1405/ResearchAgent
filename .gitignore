@@ -1,6 +1,34 @@
-.venv/
+# Secrets (copy .env.example to .env)
 .env
+.env.*
+!.env.example
+
+# Python
+.venv/
+venv/
 __pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# Tests and tools
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Chainlit runtime files
 .files/
 .chainlit/translations/
 .chainlit/.langchain.db
+
+# Claude Code: personal settings stay local; shared launch.json is kept
+.claude/settings.local.json
+
+# Editors and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
