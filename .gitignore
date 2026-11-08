@@ -1,0 +1,6 @@
+.venv/
+.env
+__pycache__/
+.files/
+.chainlit/translations/
+.chainlit/.langchain.db

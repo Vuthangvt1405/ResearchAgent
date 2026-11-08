@@ -1,0 +1,14 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "researchchat",
+      "runtimeExecutable": ".venv/Scripts/python.exe",
+      "runtimeArgs": [
+        "-c",
+        "import sys, nest_asyncio; nest_asyncio.apply = lambda *a, **k: None; from chainlit.cli import cli; sys.argv = ['chainlit', 'run', 'app.py', '--headless', '--port', '8001']; cli()"
+      ],
+      "port": 8001
+    }
+  ]
+}

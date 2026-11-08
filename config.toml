@@ -1,0 +1,35 @@
+# ResearchChat settings. Secrets (OPENROUTER_API_KEY) stay in .env.
+
+[openrouter]
+base_url = "https://openrouter.ai/api/v1"
+# OPENROUTER_MODEL in .env overrides this.
+model = "anthropic/claude-sonnet-4.5"
+
+[chat]
+system_prompt = "You are ResearchChat, a helpful and concise research assistant."
+greeting = "Hi! What would you like to research today?"
+
+[web_search]
+# Starting state of the "Web search" switch (only shown if the model supports tools).
+enabled = true
+# Results returned per search.
+max_results = 5
+# Most tool rounds (searches and page reads) the model may run for one message.
+max_rounds = 4
+# Longest page text given to the model; longer pages are cut off.
+read_page_max_chars = 8000
+
+[thinking]
+# Level selected when a chat starts (one of the keys below).
+default = "default"
+
+# Thinking effort levels, in the order shown in the settings panel.
+# Left side: the level sent to OpenRouter. Allowed keys: default, off,
+#   minimal, low, medium, high, xhigh. Remove a line to hide that level.
+# Right side: the label shown to the user. Change it to any word you like.
+[thinking.levels]
+default = "Model default"
+off = "Off"
+low = "Low"
+medium = "Medium"
+high = "High"
