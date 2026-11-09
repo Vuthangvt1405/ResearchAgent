@@ -3,13 +3,20 @@
 Run with: chainlit run app.py
 """
 
+import asyncio
+import os
+
 import chainlit as cl
 
-from researchchat.config import GREETING, SYSTEM_PROMPT, TOOL_MAX_ROUNDS
+from researchchat.config import GREETING, SYSTEM_PROMPT, TOOL_MAX_ROUNDS, check_local_host
 from researchchat.llm import model_params, stream_round
 from researchchat.progress import Progress
 from researchchat.settings import build_widgets, reasoning_body
-from researchchat.tools import TOOLS, run_tool_call
+from researchchat.tools import chosen_tools, run_tool_call
+from researchchat.workspace import actions as notebook
+
+# Notebook cells run code, so never serve beyond this PC (Chainlit sets this from --host)
+check_local_host(os.environ.get("CHAINLIT_HOST", "127.0.0.1"))
 
 LIMIT_NOTE = {
     "role": "system",
@@ -19,16 +26,30 @@ LIMIT_NOTE = {
     ),
 }
 
+_cleaned = False
+
 
 @cl.on_chat_start
 async def on_chat_start():
+    global _cleaned
+    if not _cleaned:
+        # Kernel containers left by an earlier run of the app
+        _cleaned = True
+        asyncio.create_task(notebook.kernels.cleanup_leftovers())
+
     cl.user_session.set(
         "history", [{"role": "system", "content": SYSTEM_PROMPT}]
     )
     widgets = build_widgets(await model_params())
     settings = await cl.ChatSettings(widgets).send() if widgets else {}
     cl.user_session.set("settings", settings)
+    await notebook.open_for_session()
     await cl.Message(content=GREETING).send()
+
+
+@cl.on_chat_end
+async def on_chat_end():
+    notebook.close_for_session()
 
 
 @cl.on_settings_update
@@ -43,7 +64,7 @@ async def on_message(message: cl.Message):
     start = len(history)
 
     settings = cl.user_session.get("settings") or {}
-    tools_on = settings.get("web_search", False)
+    tools = chosen_tools(settings)
     # Create the reply before the progress group so it isn't nested inside it
     reply = cl.Message(content="")
     progress = Progress()
@@ -52,8 +73,8 @@ async def on_message(message: cl.Message):
         for round_no in range(TOOL_MAX_ROUNDS + 1):
             extra = {"extra_body": reasoning_body(settings)}
             messages = history
-            if tools_on:
-                extra["tools"] = TOOLS
+            if tools:
+                extra["tools"] = tools
                 if round_no == TOOL_MAX_ROUNDS:
                     # Limit reached: keep the tools listed (so the model isn't
                     # confused) but forbid calling them, and tell it to answer.

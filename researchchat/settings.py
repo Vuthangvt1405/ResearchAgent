@@ -26,14 +26,20 @@ def build_widgets(model_params: set[str]) -> list[InputWidget]:
             ),
         ]
     if "tools" in model_params:
-        widgets.append(
+        widgets += [
             Switch(
                 id="web_search",
                 label="Web search",
                 initial=SEARCH_ENABLED,
                 description="Let the model search the internet and read pages when it needs to.",
-            )
-        )
+            ),
+            Switch(
+                id="notebook",
+                label="Notebook",
+                initial=True,
+                description="Let the model read your project notebook and run code in it. Risky code asks first.",
+            ),
+        ]
     return widgets
 
 

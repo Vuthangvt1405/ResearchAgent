@@ -61,8 +61,36 @@ researchchat/
     __init__.py             Tool list and run_tool_call (runs a tool in a chat step)
     web_search.py           Search the web (DuckDuckGo via ddgs)
     read_page.py            Read a public web page (local/private addresses blocked)
+    notebook_run.py         Run code in the project notebook (risky code asks first)
+    notebook_read.py        Let the model read the project notebook
+  workspace/                Project notebooks (in progress, see below)
+    store.py                Projects and .ipynb files on disk
+    kernels.py              One Docker kernel container per project
+    risk.py                 Flags risky model code
+    service.py              Edits and runs notebooks under a per-project lock
+    panel.py                The right-side Notebook panel
+    actions.py              Buttons the panel calls
+public/
+  elements/Notebook.jsx     The Notebook panel UI
+  custom.js                 Project picker (pill) inside the message box
+docker/kernel.Dockerfile    The notebook kernel image
 tests/                      pytest tests
 ```
+
+### Notebook workspace (in progress)
+
+Each project gets one notebook, one Python kernel and one `files/` folder,
+stored in `workspaces/<project>/` (git-ignored). The plan is in
+`docs/plans/notebook-workspace-plan.md`; right now only the skeleton exists.
+
+- Code runs in a **Docker container** per project, so Docker Desktop must be
+  running. Build the kernel image once:
+  `docker build -f docker/kernel.Dockerfile -t researchchat-kernel:1 docker`
+- The container can reach the internet but only sees the project's `files/`
+  folder (as `/work`) and none of your environment variables.
+- Never start the app with `--host 0.0.0.0`: anyone who can reach it could run
+  code. The app will refuse a non-local host.
+- Kernel tests are marked `docker`; run the rest with `pytest -m "not docker"`.
 
 ### How a message flows
 

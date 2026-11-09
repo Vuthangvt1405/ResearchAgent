@@ -32,3 +32,6 @@ htmlcov/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Notebook workspaces (your projects, notebooks and files)
+workspaces/
