@@ -33,3 +33,22 @@ off = "Off"
 low = "Low"
 medium = "Medium"
 high = "High"
+
+# Notebook workspace: one notebook, Python kernel (in Docker) and files folder
+# per project. Needs Docker Desktop running and the kernel image built:
+#   docker build -f docker/kernel.Dockerfile -t researchchat-kernel:1 docker
+[notebook]
+workspaces_dir = "workspaces"
+cell_timeout_seconds = 60        # then the cell is interrupted
+max_output_chars = 20000         # per cell, text outputs
+max_image_kb = 1024              # per image output
+kernel_idle_minutes = 30         # stop idle kernels
+model_auto_run = true            # safe model code runs without asking
+risky_code_needs_approval = true # risky model code always asks first
+read_max_chars = 12000           # how much of the notebook the model can read
+
+[notebook.docker]
+image = "researchchat-kernel:1"
+memory = "2g"
+cpus = 2
+pids_limit = 256
