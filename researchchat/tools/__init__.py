@@ -1,7 +1,7 @@
 """Tools the model can call.
 
 To add a tool: create a module here with DEFINITION, step_title(args) and
-async run(args) -> (shown, result), then add it to _MODULES below.
+async run(args) -> (shown, result), then add it to a list below.
 """
 
 import json
@@ -10,12 +10,19 @@ import chainlit as cl
 
 from researchchat.progress import Progress
 
-from researchchat.tools import read_page, web_search
+from researchchat.tools import notebook_read, notebook_run, read_page, web_search
 
-_MODULES = [web_search, read_page]
+_MODULES = [web_search, read_page]  # behind the "Web search" switch
+_NOTEBOOK_MODULES = [notebook_read, notebook_run]  # behind the "Notebook" switch
 
-_BY_NAME = {m.DEFINITION["function"]["name"]: m for m in _MODULES}
+_BY_NAME = {m.DEFINITION["function"]["name"]: m for m in _MODULES + _NOTEBOOK_MODULES}
 TOOLS = [m.DEFINITION for m in _MODULES]
+NOTEBOOK_TOOLS = [m.DEFINITION for m in _NOTEBOOK_MODULES]
+
+
+def chosen_tools(settings: dict) -> list[dict]:
+    """Tools the model gets, from the settings panel switches."""
+    return (TOOLS if settings.get("web_search") else []) + (NOTEBOOK_TOOLS if settings.get("notebook") else [])
 
 
 async def run_tool_call(call: dict, progress: Progress) -> str:

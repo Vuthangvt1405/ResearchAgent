@@ -13,8 +13,18 @@ def test_thinking_settings_need_reasoning_support():
     assert ids(build_widgets({"reasoning"})) == ["thinking_effort", "show_thinking"]
 
 
-def test_web_search_switch_needs_tool_support():
-    assert ids(build_widgets({"tools"})) == ["web_search"]
+def test_tool_switches_need_tool_support():
+    assert ids(build_widgets({"tools"})) == ["web_search", "notebook"]
+
+
+def test_each_switch_adds_its_own_tools():
+    from researchchat.tools import chosen_tools
+
+    names = lambda s: [t["function"]["name"] for t in chosen_tools(s)]
+    assert names({}) == []
+    assert names({"web_search": True}) == ["web_search", "read_page"]
+    assert names({"notebook": True}) == ["notebook_read", "notebook_run"]
+    assert names({"web_search": True, "notebook": True}) == ["web_search", "read_page", "notebook_read", "notebook_run"]
 
 
 def test_no_reasoning_field_without_thinking_settings():
