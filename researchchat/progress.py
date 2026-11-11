@@ -5,6 +5,10 @@ import time
 
 import chainlit as cl
 
+# Chainlit loads a step's icon from /avatars/<step name> and rejects names with
+# ":" or "·" (a blank circle shows instead). This makes steps use the app's icon.
+STEP_AVATAR = {"avatarName": "default"}
+
 
 class Progress:
     def __init__(self) -> None:
@@ -19,7 +23,7 @@ class Progress:
         because Chainlit parents new steps to the step that is open.
         """
         if self.group is None:
-            self.group = cl.Step(name=label, type="run", default_open=False)
+            self.group = cl.Step(name=label, type="run", default_open=False, metadata=dict(STEP_AVATAR))
             await self.group.__aenter__()
         elif self.group.name != label:
             self.group.name = label

@@ -8,7 +8,7 @@ import json
 
 import chainlit as cl
 
-from researchchat.progress import Progress
+from researchchat.progress import STEP_AVATAR, Progress
 
 from researchchat.tools import notebook_read, notebook_run, read_page, web_search
 
@@ -35,7 +35,7 @@ async def run_tool_call(call: dict, progress: Progress) -> str:
     title = module.step_title(args) if module else f"Unknown tool: {call['name']}"
     await progress.step_started(title)
 
-    async with cl.Step(name=title, type="tool", show_input=False) as step:
+    async with cl.Step(name=title, type="tool", show_input=False, metadata=dict(STEP_AVATAR)) as step:
         try:
             if module is None:
                 raise ValueError(f"Bad tool call: {call['name']}({call['arguments']})")
