@@ -19,6 +19,11 @@ max_rounds = 4
 # Longest page text given to the model; longer pages are cut off.
 read_page_max_chars = 8000
 
+[dataset_search]
+# Datasets returned per search, merged from Hugging Face, Zenodo and DataCite.
+# The tool is behind the same "Web search" switch.
+max_results = 8
+
 [thinking]
 # Level selected when a chat starts (one of the keys below).
 default = "default"
