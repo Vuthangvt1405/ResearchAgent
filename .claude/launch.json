@@ -9,6 +9,15 @@
         "import sys, nest_asyncio; nest_asyncio.apply = lambda *a, **k: None; from chainlit.cli import cli; sys.argv = ['chainlit', 'run', 'app.py', '--headless', '--port', '8001']; cli()"
       ],
       "port": 8001
+    },
+    {
+      "name": "researchchat-linux",
+      "runtimeExecutable": ".venv/bin/python",
+      "runtimeArgs": [
+        "-c",
+        "import sys, nest_asyncio; nest_asyncio.apply = lambda *a, **k: None; from chainlit.cli import cli; sys.argv = ['chainlit', 'run', 'app.py', '--headless', '--port', '8001']; cli()"
+      ],
+      "port": 8001
     }
   ]
 }
