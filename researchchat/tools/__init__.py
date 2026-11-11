@@ -10,9 +10,9 @@ import chainlit as cl
 
 from researchchat.progress import STEP_AVATAR, Progress
 
-from researchchat.tools import notebook_read, notebook_run, read_page, web_search
+from researchchat.tools import dataset_search, notebook_read, notebook_run, read_page, web_search
 
-_MODULES = [web_search, read_page]  # behind the "Web search" switch
+_MODULES = [web_search, read_page, dataset_search]  # behind the "Web search" switch
 _NOTEBOOK_MODULES = [notebook_read, notebook_run]  # behind the "Notebook" switch
 
 _BY_NAME = {m.DEFINITION["function"]["name"]: m for m in _MODULES + _NOTEBOOK_MODULES}

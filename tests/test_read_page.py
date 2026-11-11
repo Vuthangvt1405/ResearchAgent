@@ -32,5 +32,5 @@ def test_public_ip_is_allowed():
     check_public_url("http://1.1.1.1/")
 
 
-def test_both_tools_are_registered():
-    assert [t["function"]["name"] for t in TOOLS] == ["web_search", "read_page"]
+def test_search_tools_are_registered():
+    assert [t["function"]["name"] for t in TOOLS] == ["web_search", "read_page", "dataset_search"]

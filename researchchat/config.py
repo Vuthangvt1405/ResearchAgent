@@ -52,6 +52,7 @@ SEARCH_ENABLED: bool = _search.get("enabled", True)
 SEARCH_MAX_RESULTS: int = _search.get("max_results", 5)
 TOOL_MAX_ROUNDS: int = _search.get("max_rounds", 4)
 READ_PAGE_MAX_CHARS: int = _search.get("read_page_max_chars", 8000)
+DATASET_MAX_RESULTS: int = CONFIG.get("dataset_search", {}).get("max_results", 8)
 
 # Notebook workspaces (one notebook, Docker kernel and files folder per project)
 _notebook = CONFIG.get("notebook", {})

@@ -39,7 +39,7 @@ The tests need no API key or network.
 | Where | What |
 |---|---|
 | `.env` | `OPENROUTER_API_KEY` (secret), optional `OPENROUTER_MODEL` override |
-| `config.toml` | Model, system prompt, greeting, web search limits, thinking levels and their labels |
+| `config.toml` | Model, system prompt, greeting, web and dataset search limits, thinking levels and their labels |
 | `.chainlit/config.toml` | Chainlit UI settings (app name, theme, features) |
 | `chainlit.md` | The Readme page shown in the app |
 
@@ -61,6 +61,7 @@ researchchat/
     __init__.py             Tool list and run_tool_call (runs a tool in a chat step)
     web_search.py           Search the web (DuckDuckGo via ddgs)
     read_page.py            Read a public web page (local/private addresses blocked)
+    dataset_search.py       Find datasets (Hugging Face, Zenodo, DataCite), merged and ranked
     notebook_run.py         Run code in the project notebook (risky code asks first)
     notebook_read.py        Let the model read the project notebook
   workspace/                Project notebooks (in progress, see below)
