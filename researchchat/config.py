@@ -4,6 +4,7 @@ Other modules import ready-to-use values from here.
 """
 
 import os
+import sys
 import tomllib
 from pathlib import Path
 
@@ -72,6 +73,36 @@ KERNEL_IDLE_MINUTES: int = _notebook.get("kernel_idle_minutes", 30)
 MODEL_AUTO_RUN: bool = _notebook.get("model_auto_run", True)
 RISKY_CODE_NEEDS_APPROVAL: bool = _notebook.get("risky_code_needs_approval", True)
 NOTEBOOK_READ_MAX_CHARS: int = _notebook.get("read_max_chars", 12000)
+
+# Chainlit breaks on Python 3.14 (its nest_asyncio patch); 3.11 is the oldest
+# with the asyncio features the download queue uses.
+PYTHON_MIN = (3, 11)
+PYTHON_MAX = (3, 13)
+KEY_PLACEHOLDER = "your-key-here"  # the value in .env.example
+
+
+def setup_problems(version: tuple = tuple(sys.version_info[:2]), api_key: str | None = OPENROUTER_API_KEY) -> list[str]:
+    """What stops the app from starting, as steps a new user can follow."""
+    problems = []
+    if not PYTHON_MIN <= tuple(version[:2]) <= PYTHON_MAX:
+        problems.append(
+            f"Python {version[0]}.{version[1]} isn't supported; use 3.11-3.13. "
+            "Run scripts/setup.sh (see README, Setup), then start the app from .venv."
+        )
+    if not api_key or api_key.strip() in ("", KEY_PLACEHOLDER):
+        problems.append(
+            "OPENROUTER_API_KEY isn't set. Copy .env.example to .env and put your "
+            "OpenRouter key in it (get one at https://openrouter.ai/keys)."
+        )
+    return problems
+
+
+def check_setup() -> None:
+    """Stop at startup with clear steps instead of a stack trace deep inside a library."""
+    problems = setup_problems()
+    if problems:
+        raise SystemExit("ResearchChat can't start:\n- " + "\n- ".join(problems))
+
 
 LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1"}
 

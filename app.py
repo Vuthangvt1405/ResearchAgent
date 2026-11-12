@@ -8,8 +8,12 @@ import os
 
 import chainlit as cl
 
-from researchchat.config import GREETING, SYSTEM_PROMPT, TOOL_MAX_ROUNDS, check_local_host
-from researchchat.llm import model_params, stream_round
+from researchchat.config import GREETING, SYSTEM_PROMPT, TOOL_MAX_ROUNDS, check_local_host, check_setup
+
+# Wrong Python or no API key: say how to fix it before anything else fails
+check_setup()
+
+from researchchat.llm import model_params, stream_round  # noqa: E402 (needs the key checked first)
 from researchchat.progress import Progress
 from researchchat.settings import build_widgets, reasoning_body
 from researchchat.tools import chosen_tools, run_tool_call

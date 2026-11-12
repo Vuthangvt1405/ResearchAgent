@@ -4,19 +4,13 @@
     {
       "name": "researchchat",
       "runtimeExecutable": ".venv/Scripts/python.exe",
-      "runtimeArgs": [
-        "-c",
-        "import sys, nest_asyncio; nest_asyncio.apply = lambda *a, **k: None; from chainlit.cli import cli; sys.argv = ['chainlit', 'run', 'app.py', '--headless', '--port', '8001']; cli()"
-      ],
+      "runtimeArgs": ["-m", "chainlit", "run", "app.py", "--headless", "--port", "8001"],
       "port": 8001
     },
     {
       "name": "researchchat-linux",
       "runtimeExecutable": ".venv/bin/python",
-      "runtimeArgs": [
-        "-c",
-        "import sys, nest_asyncio; nest_asyncio.apply = lambda *a, **k: None; from chainlit.cli import cli; sys.argv = ['chainlit', 'run', 'app.py', '--headless', '--port', '8001']; cli()"
-      ],
+      "runtimeArgs": ["-m", "chainlit", "run", "app.py", "--headless", "--port", "8001"],
       "port": 8001
     }
   ]

@@ -6,30 +6,62 @@ web, and read pages, showing each step in the chat.
 
 ## Setup
 
+You need:
+- **Python 3.11, 3.12 or 3.13.** Python 3.14 doesn't work with Chainlit yet.
+  If you don't have one, [uv](https://docs.astral.sh/uv/) can install it
+  without touching your system Python: `uv python install 3.11`.
+- **An OpenRouter API key** from https://openrouter.ai/keys.
+- **Optional: Docker**, only for running notebook code. Chat, search and
+  dataset downloads work without it.
+
+### Linux / macOS
+
 ```bash
-python -m venv .venv
-.venv\Scripts\activate          # Windows (macOS/Linux: source .venv/bin/activate)
+scripts/setup.sh
+```
+
+The script finds a supported Python (including one installed by uv), creates
+`.venv`, installs the packages and creates `.env` from `.env.example`. It's
+safe to run again. Then put your key in `.env`:
+
+```
+OPENROUTER_API_KEY=sk-or-...
+```
+
+### Windows
+
+```powershell
+py -3.11 -m venv .venv
+.venv\Scripts\activate
 pip install -r requirements.txt
 copy .env.example .env          # then put your OpenRouter key in .env
+```
+
+### Notebook code (optional)
+
+Build the kernel image once, with Docker running:
+
+```bash
+docker build -f docker/kernel.Dockerfile -t researchchat-kernel:1 docker
 ```
 
 ## Run
 
 ```bash
-chainlit run app.py
+.venv/bin/chainlit run app.py          # Windows: .venv\Scripts\chainlit run app.py
 ```
 
-Then open http://localhost:8000.
+Then open http://localhost:8000. In the gear menu next to the message box,
+turn on **Web search** and **Notebook** to give the assistant its tools.
 
-> **Python 3.14:** Chainlit's CLI applies `nest_asyncio`, which breaks on 3.14
-> (every page request fails with "Not currently running on any asynchronous
-> event loop"). Use Python 3.11–3.13, or start it with the workaround in
-> `.claude/launch.json`.
+If the Python version is wrong or the API key is missing, the app stops at
+start with a message saying what to fix.
 
 ## Test
 
 ```bash
-python -m pytest
+.venv/bin/python -m pytest -m "not docker"     # everything except the Docker kernel tests
+.venv/bin/python -m pytest                     # all, with Docker running and the image built
 ```
 
 The tests need no API key or network.
