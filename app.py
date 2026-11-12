@@ -7,6 +7,7 @@ import asyncio
 import os
 
 import chainlit as cl
+from chainlit.config import FILES_DIRECTORY
 
 from researchchat.config import GREETING, SYSTEM_PROMPT, TOOL_MAX_ROUNDS, check_local_host, check_setup
 
@@ -33,9 +34,20 @@ LIMIT_NOTE = {
 _cleaned = False
 
 
+def ensure_files_dir() -> None:
+    """Recreate Chainlit's .files/ if it's gone.
+
+    Chainlit makes it once at start and deletes it when a server stops, so a
+    second server run from this folder (a preview, a test run) takes it away
+    from this one, and every new chat then fails with "No such file or directory".
+    """
+    FILES_DIRECTORY.mkdir(parents=True, exist_ok=True)
+
+
 @cl.on_chat_start
 async def on_chat_start():
     global _cleaned
+    ensure_files_dir()
     if not _cleaned:
         # Kernel containers left by an earlier run of the app
         _cleaned = True
@@ -65,6 +77,7 @@ async def on_settings_update(settings: dict):
 
 @cl.on_message
 async def on_message(message: cl.Message):
+    ensure_files_dir()
     history: list = cl.user_session.get("history")
     history.append({"role": "user", "content": message.content})
     start = len(history)
