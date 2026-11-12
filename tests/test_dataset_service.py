@@ -705,8 +705,10 @@ def test_cancel_running_or_queued_job_removes_it(root):
         queued = await svc.request("p1", "s1", "hf:org/other", approve=yes)
         assert queued["status"] == "queued"
         await until(lambda: catalog.file_requests("a.csv"))
-        await svc.cancel("p1", "hf-org--name")
+        # The queued one first: cancelling the running one frees its slot,
+        # and the queued job would start (and maybe finish) right away
         await svc.cancel("p1", "hf-org--other")
+        await svc.cancel("p1", "hf-org--name")
         await svc.wait_idle()
         assert svc._jobs == [] and svc.list_for_model("p1") == []
         assert catalog.file_requests("o.csv") == []
