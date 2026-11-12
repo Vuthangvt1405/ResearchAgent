@@ -46,6 +46,7 @@ Resolve = Callable[..., Awaitable[DatasetPlan]]
 MB = 1_000_000
 READY_WAIT_SECONDS = 60  # longest a request waits for startup cleanup
 VIEW_FILES_MAX = 50
+PANEL_FILES_MAX = 200
 PROGRESS_INTERVAL = 1.0  # seconds between progress pushes (each re-sends the panel props)
 
 
@@ -698,6 +699,8 @@ class DatasetService:
                     "url": record.url if (record.url or "").startswith("https://") else None,
                     "path": ds.kernel_path(record.id),
                     "downloaded_at": record.downloaded_at,
+                    "requested_at": record.requested_at,
+                    "files": [{"path": f.path, "size": f.size} for f in record.files[:PANEL_FILES_MAX]],
                     "error": record.error if status == "failed" else None,
                 }
             )

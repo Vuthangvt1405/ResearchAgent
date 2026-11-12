@@ -838,6 +838,7 @@ def test_props_show_status_and_licence_only_while_not_ready(root, monkeypatch):
         assert slow["status"] == "downloading" and slow["done_bytes"] == 0 and slow["license"] == "mit"
         assert ready["status"] == "ready" and ready["size_bytes"] == 3 and ready["file_count"] == 1
         assert ready["path"] == "/work/datasets/hf-org--name" and ready["url"].startswith("https://")
+        assert ready["files"] == [{"path": "a.csv", "size": 3}] and ready["requested_at"]
         assert props["datasets_rev"] > rev_before
         catalog.gate.set()
         await svc.wait_idle()

@@ -62,8 +62,13 @@ class ErrorProps(TypedDict):
 DatasetPanelStatus = Literal["queued", "downloading", "ready", "failed", "missing"]
 
 
+class DatasetFileProps(TypedDict):
+    path: str  # relative to the dataset folder (the panel adds /work/datasets/<id>/)
+    size: int  # bytes
+
+
 class DatasetProps(TypedDict):
-    """One row of the panel's Datasets section (NB-3 plan §4.3)."""
+    """One card in the panel's Datasets tab (NB-3 plan §4.3)."""
 
     id: str  # sent back in ds_delete / ds_cancel
     name: str  # row title
@@ -77,6 +82,8 @@ class DatasetProps(TypedDict):
     url: str | None  # source link in the details (only if https:)
     path: str  # copy-able /work/datasets/<id> path
     downloaded_at: str | None  # "added 2 h ago"
+    requested_at: str  # sort by newest
+    files: list[DatasetFileProps]  # file list and "Copy load code" (first 200)
     error: str | None  # red line when failed
 
 
