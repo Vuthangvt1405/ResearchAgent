@@ -3,7 +3,7 @@
 // Talks to the server only through callAction (nb_* actions), and to the
 // project bar (public/custom.js) through window events.
 import { useEffect, useRef, useState } from "react";
-import { ArrowDown, ArrowUp, Eraser, FastForward, GripVertical, Play, Plus, RotateCcw, Square, StickyNote, Trash2, Code2, Loader2 } from "lucide-react";
+import { ArrowDown, ArrowUp, Eraser, FastForward, GripVertical, Play, Plus, RotateCcw, Square, StickyNote, Trash2, Code2, Loader2, Database, ChevronRight, ChevronDown, X, Copy, Check, Search } from "lucide-react";
 
 // Events shared with public/custom.js
 const EVENT_SWITCH = "rc:switch-project"; // bar -> panel: { project_id }
@@ -45,9 +45,16 @@ function isNewBlock(projectId, id) {
 }
 
 function newer(a, b) {
-  // Prefer the higher version; on a tie the push (b) has the live outputs
+  // Prefer the higher version; on a tie the push (b) has the live outputs.
+  // Datasets change apart from the notebook, so their list comes from
+  // whichever side has the higher datasets_rev (NB-3, SEC16).
   if (!a || a.project.id !== b.project.id) return b;
-  return a.version > b.version ? a : b;
+  const base = a.version > b.version ? a : b;
+  const other = base === a ? b : a;
+  if ((other.datasets_rev || 0) > (base.datasets_rev || 0)) {
+    return { ...base, datasets: other.datasets, datasets_rev: other.datasets_rev };
+  }
+  return base;
 }
 
 const KERNEL = {
@@ -392,6 +399,294 @@ function NoteCell({ id, source, onChange, onSave }) {
   );
 }
 
+// ---- datasets tab (NB-3) ------------------------------------------------------------
+// A manager for the project's datasets: totals, filter and sort, and one card per
+// dataset. Downloading cards show progress, licence and Cancel; ready cards show
+// size, files, the /work path, "Copy load code" and Delete (confirmed here first).
+// Catalog text is rendered as React text only; links go through safeHref.
+
+const DS_CSS = `
+.rcnb-tabs { display: flex; gap: 2px; margin: 0 0 12px 28px; border-bottom: 1px solid hsl(var(--border)); }
+.rcnb-tab { display: inline-flex; align-items: center; gap: 6px; border: 0; background: none; color: hsl(var(--muted-foreground)); font: inherit; font-size: 13px; padding: 6px 10px; margin-bottom: -1px; border-bottom: 2px solid transparent; cursor: pointer; }
+.rcnb-tab:hover { color: hsl(var(--foreground)); }
+.rcnb-tab.on { color: hsl(var(--foreground)); border-bottom-color: hsl(var(--foreground)); font-weight: 600; }
+.rcnb-count { font-size: 11px; min-width: 18px; padding: 0 5px; border-radius: 9px; background: hsl(var(--accent)); text-align: center; font-weight: 500; }
+.rcnb-count.live { background: rgba(35,131,226,.15); color: #2383e2; }
+.rcds { margin: 0 0 0 28px; }
+.rcds-summary { font-size: 12px; color: hsl(var(--muted-foreground)); margin-bottom: 8px; }
+.rcds-tools { display: flex; gap: 6px; margin-bottom: 10px; }
+.rcds-search { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; padding: 4px 8px; border: 1px solid hsl(var(--border)); border-radius: 6px; color: hsl(var(--muted-foreground)); }
+.rcds-search input { flex: 1; min-width: 0; border: 0; outline: 0; background: none; color: hsl(var(--foreground)); font: inherit; font-size: 13px; }
+.rcds-sort { border: 1px solid hsl(var(--border)); border-radius: 6px; background: hsl(var(--background)); color: hsl(var(--foreground)); font: inherit; font-size: 12px; padding: 0 6px; }
+.rcds-card { border: 1px solid hsl(var(--border)); border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; animation: rcnb-in .25s ease both; }
+.rcds-card.failed, .rcds-card.missing { border-color: rgba(224,62,62,.45); }
+.rcds-top { display: flex; align-items: flex-start; gap: 8px; }
+.rcds-name { flex: 1; min-width: 0; font-weight: 600; font-size: 14px; line-height: 1.35; overflow-wrap: anywhere; }
+.rcds-size { font-size: 12px; color: hsl(var(--muted-foreground)); white-space: nowrap; padding-top: 2px; }
+.rcds-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 4px; font-size: 12px; color: hsl(var(--muted-foreground)); }
+.rcds-chip { padding: 0 6px; border-radius: 3px; background: hsl(var(--accent)); color: hsl(var(--foreground)); }
+.rcds-badge { font-size: 11px; padding: 0 6px; border-radius: 3px; white-space: nowrap; }
+.rcds-badge.downloading { color: #2383e2; background: rgba(35,131,226,.12); }
+.rcds-badge.queued { color: hsl(var(--muted-foreground)); background: hsl(var(--accent)); }
+.rcds-badge.failed, .rcds-badge.missing { color: #e03e3e; background: rgba(224,62,62,.1); }
+.rcds-progress { height: 6px; margin-top: 8px; border-radius: 3px; background: hsl(var(--accent)); overflow: hidden; }
+.rcds-progress div { height: 100%; background: #2383e2; transition: width .4s ease; }
+.rcds-path { display: flex; align-items: center; gap: 4px; margin-top: 8px; padding: 3px 4px 3px 8px; border-radius: 5px; background: hsl(var(--accent) / .6); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+.rcds-path span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rcds-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; }
+.rcds-btn { display: inline-flex; align-items: center; gap: 5px; border: 1px solid hsl(var(--border)); background: none; color: inherit; font: inherit; font-size: 12px; border-radius: 5px; padding: 2px 8px; cursor: pointer; }
+.rcds-btn:hover { background: hsl(var(--accent)); }
+.rcds-btn.danger { color: #e03e3e; }
+.rcds-btn.danger.solid { background: #e03e3e; border-color: #e03e3e; color: #fff; }
+.rcds-btn.ghost { border-color: transparent; color: hsl(var(--muted-foreground)); }
+.rcds-error { margin-top: 6px; font-size: 12px; color: #e03e3e; }
+.rcds-confirm { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; padding: 6px 8px; border-radius: 5px; background: rgba(224,62,62,.08); font-size: 12px; }
+.rcds-files { margin-top: 6px; border-top: 1px solid hsl(var(--border)); padding-top: 6px; font-size: 12px; }
+.rcds-file { display: flex; gap: 8px; padding: 1px 0; }
+.rcds-file span:first-child { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.rcds-file span:last-child { color: hsl(var(--muted-foreground)); white-space: nowrap; }
+.rcds-empty { padding: 24px 12px; text-align: center; color: hsl(var(--muted-foreground)); font-size: 13px; border: 1px dashed hsl(var(--border)); border-radius: 8px; }
+.rcds a { color: inherit; }
+`;
+
+const DS_BADGE = { queued: "Queued", downloading: "Downloading", failed: "Failed", missing: "Files missing" };
+const DS_SORTS = { newest: "Newest", name: "Name", size: "Size" };
+
+function fmtBytes(n) {
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let i = 0;
+  let v = n || 0;
+  while (v >= 1000 && i < units.length - 1) {
+    v /= 1000;
+    i += 1;
+  }
+  return i === 0 ? `${v} B` : `${v.toFixed(1)} ${units[i]}`;
+}
+
+function ordinal(n) {
+  const s = ["th", "st", "nd", "rd"];
+  const v = n % 100;
+  return n + (s[(v - 20) % 10] || s[v] || s[0]);
+}
+
+const isActive = (d) => d.status === "downloading" || d.status === "queued";
+
+// Python that loads the dataset's data files, for "Copy load code"
+const READERS = [
+  [/\.csv(\.gz)?$/i, (p) => `pd.read_csv(${p})`],
+  [/\.tsv(\.gz)?$/i, (p) => `pd.read_csv(${p}, sep="\\t")`],
+  [/\.parquet$/i, (p) => `pd.read_parquet(${p})`],
+  [/\.jsonl$/i, (p) => `pd.read_json(${p}, lines=True)`],
+  [/\.json$/i, (p) => `pd.read_json(${p})`],
+  [/\.xlsx?$/i, (p) => `pd.read_excel(${p})`],
+  [/\.feather$/i, (p) => `pd.read_feather(${p})`],
+];
+
+function loadCode(d) {
+  const tables = [];
+  for (const f of d.files || []) {
+    const reader = READERS.find(([re]) => re.test(f.path));
+    if (reader) tables.push([f.path, reader[1]]);
+  }
+  if (!tables.length) {
+    return `import os\n\nfolder = "${d.path}"\nprint(sorted(os.listdir(folder)))\n`;
+  }
+  const lines = ["import pandas as pd", ""];
+  tables.slice(0, 5).forEach(([path, read], i) => {
+    lines.push(`${i === 0 ? "df" : `df${i + 1}`} = ${read(JSON.stringify(`${d.path}/${path}`))}`);
+  });
+  if (tables.length > 5) lines.push(`# ${tables.length - 5} more data files in ${d.path}/`);
+  lines.push("df.head()");
+  return lines.join("\n") + "\n";
+}
+
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch (e) {
+    // Fallback for browsers that block the clipboard API
+    const area = document.createElement("textarea");
+    area.value = text;
+    area.style.position = "fixed";
+    area.style.opacity = "0";
+    document.body.appendChild(area);
+    area.select();
+    const ok = document.execCommand("copy");
+    area.remove();
+    return ok;
+  }
+}
+
+function DatasetCard({ d, act, rerender }) {
+  const open = !!S.dsOpen[d.id];
+  const confirming = S.dsConfirm === d.id;
+  const active = isActive(d);
+  const pct = d.size_bytes ? Math.min(100, Math.round((100 * (d.done_bytes || 0)) / d.size_bytes)) : 0;
+  const href = d.url ? safeHref(d.url) : null;
+  const set = (fn) => {
+    fn();
+    rerender();
+  };
+  const copy = async (key, text) => {
+    if (await copyText(text)) {
+      set(() => (S.dsCopied = key));
+      setTimeout(() => S.dsCopied === key && set(() => (S.dsCopied = null)), 1500);
+    }
+  };
+  const copied = (key) => S.dsCopied === key;
+  const files = d.files || [];
+  return (
+    <div className={`rcds-card ${d.status}`}>
+      <div className="rcds-top">
+        <div className="rcds-name">{d.name}</div>
+        {d.status !== "ready" && <span className={`rcds-badge ${d.status}`}>{d.status === "downloading" ? `${pct}%` : DS_BADGE[d.status] || d.status}</span>}
+        {active ? (
+          <button className="rcnb-act" title="Cancel download" onClick={() => act("ds_cancel", d.id)}><X size={14} /></button>
+        ) : (
+          <span className="rcds-size">{fmtBytes(d.size_bytes)}</span>
+        )}
+      </div>
+
+      <div className="rcds-meta">
+        <span>{d.source === "huggingface" ? "Hugging Face" : d.source === "zenodo" ? "Zenodo" : d.source}</span>
+        <span>·</span>
+        <span>{d.file_count} file{d.file_count === 1 ? "" : "s"}</span>
+        {d.license && <span className="rcds-chip" title="Licence">{d.license}</span>}
+        {d.status === "queued" && <span>· {ordinal(d.position_in_queue || 1)} in queue</span>}
+      </div>
+
+      {active && (
+        <>
+          <div className="rcds-progress"><div style={{ width: `${d.status === "queued" ? 0 : pct}%` }} /></div>
+          <div className="rcds-meta">{fmtBytes(d.done_bytes)} of {fmtBytes(d.size_bytes)}</div>
+        </>
+      )}
+
+      {d.status === "failed" && d.error && <div className="rcds-error">{d.error}</div>}
+      {d.status === "missing" && <div className="rcds-error">Some files were deleted. Ask the assistant to download it again; only the missing files are fetched.</div>}
+
+      {!active && (
+        <div className="rcds-path" title="Path in notebook code">
+          <span>{d.path}/</span>
+          <button className="rcnb-act" title="Copy path" onClick={() => copy(`path:${d.id}`, `${d.path}/`)}>
+            {copied(`path:${d.id}`) ? <Check size={13} /> : <Copy size={13} />}
+          </button>
+        </div>
+      )}
+
+      {!active && !confirming && (
+        <div className="rcds-actions">
+          {d.status === "ready" && (
+            <button className="rcds-btn" title="Copy Python that loads this dataset with pandas" onClick={() => copy(`code:${d.id}`, loadCode(d))}>
+              {copied(`code:${d.id}`) ? <Check size={13} /> : <Code2 size={13} />}{copied(`code:${d.id}`) ? "Copied" : "Copy load code"}
+            </button>
+          )}
+          <button className="rcds-btn ghost" onClick={() => set(() => (S.dsOpen[d.id] = !open))}>
+            {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}Files
+          </button>
+          <span style={{ flex: 1 }} />
+          <button className="rcds-btn danger" title="Delete this dataset" onClick={() => set(() => (S.dsConfirm = d.id))}><Trash2 size={13} />Delete</button>
+        </div>
+      )}
+
+      {confirming && (
+        <div className="rcds-confirm">
+          <span style={{ flex: 1 }}>Delete {d.name} and free {fmtBytes(d.size_bytes)}?</span>
+          <button className="rcds-btn danger solid" onClick={() => { S.dsConfirm = null; act("ds_delete", d.id); }}>Delete</button>
+          <button className="rcds-btn" onClick={() => set(() => (S.dsConfirm = null))}>Keep</button>
+        </div>
+      )}
+
+      {open && !active && (
+        <div className="rcds-files">
+          {files.map((f) => (
+            <div className="rcds-file" key={f.path}><span title={f.path}>{f.path}</span><span>{fmtBytes(f.size)}</span></div>
+          ))}
+          {d.file_count > files.length && <div className="rcds-meta">and {d.file_count - files.length} more</div>}
+          <div className="rcds-meta" style={{ marginTop: 6 }}>
+            {href && <a href={href} target="_blank" rel="noopener noreferrer">Source page</a>}
+            {d.downloaded_at && <span>{href ? "· " : ""}added {new Date(d.downloaded_at).toLocaleString()}</span>}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DatasetsTab({ datasets, apply }) {
+  S.dsOpen = S.dsOpen || {};
+  S.dsSort = S.dsSort || "newest";
+  const rerender = () => S.rerender && S.rerender();
+  const act = async (name, id) => apply(await call(name, { dataset_id: id }));
+  const search = useRef(null);
+
+  useEffect(() => {
+    // Pushes remount the panel; keep typing in the filter box
+    if (S.dsFilterFocus && search.current) {
+      const el = search.current;
+      el.focus();
+      el.setSelectionRange(el.value.length, el.value.length);
+    }
+  });
+
+  if (!datasets.length) {
+    return (
+      <div className="rcds">
+        <div className="rcds-empty">
+          <Database size={20} style={{ opacity: 0.6 }} />
+          <div style={{ marginTop: 6 }}>No datasets in this project yet.</div>
+          <div>Ask the assistant, e.g. “find and download an iris dataset”.</div>
+        </div>
+      </div>
+    );
+  }
+
+  const total = datasets.reduce((n, d) => n + (d.size_bytes || 0), 0);
+  const live = datasets.filter(isActive).length;
+  const failed = datasets.filter((d) => d.status === "failed" || d.status === "missing").length;
+  const q = (S.dsFilter || "").trim().toLowerCase();
+  const shown = datasets
+    .filter((d) => !q || d.name.toLowerCase().includes(q) || d.id.includes(q) || (d.license || "").toLowerCase().includes(q))
+    .sort((a, b) => {
+      // Active downloads always first, then the chosen order
+      if (isActive(a) !== isActive(b)) return isActive(a) ? -1 : 1;
+      if (S.dsSort === "name") return a.name.localeCompare(b.name);
+      if (S.dsSort === "size") return (b.size_bytes || 0) - (a.size_bytes || 0);
+      return (b.requested_at || "").localeCompare(a.requested_at || "");
+    });
+
+  return (
+    <div className="rcds">
+      <div className="rcds-summary">
+        {datasets.length} dataset{datasets.length === 1 ? "" : "s"} · {fmtBytes(total)}
+        {live > 0 && ` · ${live} downloading`}
+        {failed > 0 && ` · ${failed} need attention`}
+      </div>
+      {datasets.length > 1 && (
+        <div className="rcds-tools">
+          <label className="rcds-search">
+            <Search size={13} />
+            <input
+              ref={search}
+              placeholder="Filter by name or licence"
+              value={S.dsFilter || ""}
+              onChange={(e) => { S.dsFilter = e.target.value; rerender(); }}
+              onFocus={() => (S.dsFilterFocus = true)}
+              onBlur={() => (S.dsFilterFocus = false)}
+            />
+          </label>
+          <select className="rcds-sort" title="Sort" value={S.dsSort} onChange={(e) => { S.dsSort = e.target.value; rerender(); }}>
+            {Object.entries(DS_SORTS).map(([k, label]) => <option key={k} value={k}>{label}</option>)}
+          </select>
+        </div>
+      )}
+      {shown.map((d) => <DatasetCard key={d.id} d={d} act={act} rerender={rerender} />)}
+      {!shown.length && <div className="rcds-empty">No dataset matches “{S.dsFilter}”.</div>}
+    </div>
+  );
+}
+
 // ---- the panel -----------------------------------------------------------------
 
 export default function Notebook() {
@@ -538,6 +833,12 @@ export default function Notebook() {
   // The page fades in once per project; after that only new blocks animate
   if (!S.seen || S.seen.project !== nb.project.id) S.firstUntil = Date.now() + 400;
   const firstShow = Date.now() < (S.firstUntil || 0);
+  const datasets = nb.datasets || [];
+  const tab = S.tab === "datasets" ? "datasets" : "notebook";
+  const setTab = (t) => {
+    S.tab = t;
+    rerender();
+  };
   useEffect(() => {
     if (S.seen) S.seen.first = false;
   });
@@ -555,6 +856,24 @@ export default function Notebook() {
       <style>{CSS}</style>
       <div className={`rcnb-page${firstShow ? " rcnb-first" : ""}`}>
         <h1 className="rcnb-title">{nb.project.name}</h1>
+        <style>{DS_CSS}</style>
+        <div className="rcnb-tabs" role="tablist">
+          <button role="tab" aria-selected={tab === "notebook"} className={`rcnb-tab${tab === "notebook" ? " on" : ""}`} onClick={() => setTab("notebook")}>
+            <Code2 size={13} />Notebook
+          </button>
+          <button role="tab" aria-selected={tab === "datasets"} className={`rcnb-tab${tab === "datasets" ? " on" : ""}`} onClick={() => setTab("datasets")}>
+            <Database size={13} />Datasets
+            {datasets.length > 0 && <span className={`rcnb-count${datasets.some(isActive) ? " live" : ""}`}>{datasets.length}</span>}
+          </button>
+        </div>
+
+        {tab === "datasets" ? (
+          <>
+            {nb.error && <div className="rcnb-callout"><span>⚠️</span><span>{nb.error.message}</span></div>}
+            <DatasetsTab datasets={datasets} apply={apply} />
+          </>
+        ) : (
+        <>
         <div className="rcnb-meta">
           <span style={{ display: "inline-flex", alignItems: "center", marginRight: 6 }}>
             <span className={`rcnb-dot${busy || kernel === "starting" ? " pulse" : ""}`} style={{ background: colour, color: colour }} />
@@ -584,6 +903,8 @@ export default function Notebook() {
           <button className="rcnb-act" onClick={() => add(null, "code")}><Plus size={14} />Code</button>
           <button className="rcnb-act" onClick={() => add(null, "markdown")}><Plus size={14} />Note</button>
         </div>
+        </>
+        )}
       </div>
 
       {S.fallbackBar === true && projects.length > 0 && (

@@ -46,6 +46,7 @@ def test_huggingface_item_reads_tags():
     )
     assert got == {
         "source": "Hugging Face",
+        "ref": "hf:org/air-quality",
         "name": "org/air-quality",
         "url": "https://huggingface.co/datasets/org/air-quality",
         "description": "Hourly readings.",

@@ -17,12 +17,26 @@ class ErrorCode:
     KERNEL_DEAD = "KERNEL_DEAD"  # the kernel container crashed
     KERNEL_UNAVAILABLE = "KERNEL_UNAVAILABLE"  # Docker isn't running
     TIMEOUT = "TIMEOUT"  # cell ran past the time limit
+    # NB-3 dataset downloads (docs/plans/NB-3-dataset-download-plan.md §4.3)
+    BAD_REF = "BAD_REF"  # empty or malformed dataset ref, or a URL on another host
+    UNSUPPORTED_SOURCE = "UNSUPPORTED_SOURCE"  # a catalog without a file API (Kaggle, DataCite)
+    NOT_PUBLIC = "NOT_PUBLIC"  # gated / private Hugging Face, restricted Zenodo
+    NO_FILES = "NO_FILES"  # the file filter matched nothing, or the record has no files
+    TOO_MANY_FILES = "TOO_MANY_FILES"  # more than max_files in one request
+    NO_SPACE = "NO_SPACE"  # not enough free disk; details carry the sizes
+    BUSY = "BUSY"  # delete while the dataset is downloading
+    DECLINED = "DECLINED"  # the user pressed Skip / Keep or didn't answer
+    DOWNLOAD_FAILED = "DOWNLOAD_FAILED"  # checksum, network, stall or disk full
 
 
 class WorkspaceError(Exception):
-    """A rejected workspace action, with a code the panel can show."""
+    """A rejected workspace action, with a code the panel can show.
 
-    def __init__(self, code: str, message: str):
+    `details` carries structured data for the model, e.g. NO_SPACE sizes.
+    """
+
+    def __init__(self, code: str, message: str, details: dict | None = None):
         super().__init__(message)
         self.code = code
         self.message = message
+        self.details = details

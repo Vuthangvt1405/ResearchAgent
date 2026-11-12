@@ -7,9 +7,14 @@ import asyncio
 import os
 
 import chainlit as cl
+from chainlit.config import FILES_DIRECTORY
 
-from researchchat.config import GREETING, SYSTEM_PROMPT, TOOL_MAX_ROUNDS, check_local_host
-from researchchat.llm import model_params, stream_round
+from researchchat.config import GREETING, SYSTEM_PROMPT, TOOL_MAX_ROUNDS, check_local_host, check_setup
+
+# Wrong Python or no API key: say how to fix it before anything else fails
+check_setup()
+
+from researchchat.llm import model_params, stream_round  # noqa: E402 (needs the key checked first)
 from researchchat.progress import Progress
 from researchchat.settings import build_widgets, reasoning_body
 from researchchat.tools import chosen_tools, run_tool_call
@@ -29,13 +34,26 @@ LIMIT_NOTE = {
 _cleaned = False
 
 
+def ensure_files_dir() -> None:
+    """Recreate Chainlit's .files/ if it's gone.
+
+    Chainlit makes it once at start and deletes it when a server stops, so a
+    second server run from this folder (a preview, a test run) takes it away
+    from this one, and every new chat then fails with "No such file or directory".
+    """
+    FILES_DIRECTORY.mkdir(parents=True, exist_ok=True)
+
+
 @cl.on_chat_start
 async def on_chat_start():
     global _cleaned
+    ensure_files_dir()
     if not _cleaned:
         # Kernel containers left by an earlier run of the app
         _cleaned = True
         asyncio.create_task(notebook.kernels.cleanup_leftovers())
+        # Downloads cut off by an earlier run; dataset_download waits for this (NB-3)
+        asyncio.create_task(notebook.datasets.startup_cleanup())
 
     cl.user_session.set(
         "history", [{"role": "system", "content": SYSTEM_PROMPT}]
@@ -59,12 +77,17 @@ async def on_settings_update(settings: dict):
 
 @cl.on_message
 async def on_message(message: cl.Message):
+    ensure_files_dir()
     history: list = cl.user_session.get("history")
     history.append({"role": "user", "content": message.content})
     start = len(history)
 
     settings = cl.user_session.get("settings") or {}
     tools = chosen_tools(settings)
+    # Background downloads that finished since the last turn: told to the model
+    # once, for this turn only, never kept in history (NB-3)
+    note = notebook.datasets.take_notes(cl.context.session.id)
+    turn_notes = [{"role": "system", "content": note}] if note else []
     # Create the reply before the progress group so it isn't nested inside it
     reply = cl.Message(content="")
     progress = Progress()
@@ -72,14 +95,14 @@ async def on_message(message: cl.Message):
         # Each round: the model answers or calls tools; tool results go back in
         for round_no in range(TOOL_MAX_ROUNDS + 1):
             extra = {"extra_body": reasoning_body(settings)}
-            messages = history
+            messages = history + turn_notes
             if tools:
                 extra["tools"] = tools
                 if round_no == TOOL_MAX_ROUNDS:
                     # Limit reached: keep the tools listed (so the model isn't
                     # confused) but forbid calling them, and tell it to answer.
                     extra["tool_choice"] = "none"
-                    messages = history + [LIMIT_NOTE]
+                    messages = history + turn_notes + [LIMIT_NOTE]
             text, calls = await stream_round(messages, reply, extra, progress)
             if not calls or round_no == TOOL_MAX_ROUNDS:
                 break

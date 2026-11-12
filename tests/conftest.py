@@ -77,3 +77,75 @@ def service_factory(fake_kernels):
         return NotebookService(fake_kernels, root=root)
 
     return make
+
+
+# ---- NB-3 dataset download helpers (plan §7 test infrastructure) -----------------
+
+
+async def fake_lookup(host: str) -> list[str]:
+    """Stands in for dataset_sources.lookup_host: IP literals as is, names -> a public address."""
+    import ipaddress
+
+    try:
+        return [str(ipaddress.ip_address(host))]
+    except ValueError:
+        return ["93.184.216.34"]
+
+
+def catalog_client(handler):
+    """An httpx client whose requests go to `handler` (no network)."""
+    import httpx
+
+    return httpx.AsyncClient(transport=httpx.MockTransport(handler))
+
+
+class FakeFreeDisk:
+    """Free disk as a mutable callable; tests lower `free` between chunks."""
+
+    def __init__(self, free: int):
+        self.free = free
+
+    def __call__(self, path) -> int:
+        return self.free
+
+
+class FakeChats:
+    """Captures chat messages a background job sends: (session_id, text)."""
+
+    def __init__(self, open_sessions=("s1",)):
+        self.open = set(open_sessions)
+        self.sent: list[tuple[str, str]] = []
+
+    async def send(self, session_id: str, text: str) -> bool:
+        if session_id not in self.open:
+            return False
+        self.sent.append((session_id, text))
+        return True
+
+
+class FakeDatasetService:
+    """Stands in for DatasetService in tool tests: records calls, returns canned DTOs."""
+
+    def __init__(self):
+        self.calls: list[tuple] = []
+        self.started = None  # DownloadStarted to return from request()
+        self.records: list = []  # DatasetRecordView list for list_for_model()
+        self.error = None  # WorkspaceError to raise from request()
+
+    async def request(self, project_id, session_id, ref, files=None, update=False, *, approve):
+        self.calls.append(("request", project_id, session_id, ref, files, update))
+        if self.error:
+            raise self.error
+        return self.started
+
+    def list_for_model(self, project_id):
+        self.calls.append(("list", project_id))
+        return self.records
+
+    def describe(self, project_id, dataset_id):
+        self.calls.append(("describe", project_id, dataset_id))
+        return next(r for r in self.records if r["dataset_id"] == dataset_id)
+
+    async def delete(self, project_id, dataset_id):
+        self.calls.append(("delete", project_id, dataset_id))
+        return {"deleted": dataset_id, "freed_bytes": 0}
