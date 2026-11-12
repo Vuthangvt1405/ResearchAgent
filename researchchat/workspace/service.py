@@ -113,7 +113,8 @@ def output_props(out: NotebookNode) -> OutputProps:
     """One nbformat output -> what the panel draws. HTML is never rendered."""
     kind = out.get("output_type")
     if kind == "stream":
-        text = _text(out.get("text")).replace("\r\n", "\n")  # shell commands print CRLF
+        # Shell commands print CRLF and ANSI colour codes; the panel shows plain text.
+        text = ANSI_RE.sub("", _text(out.get("text"))).replace("\r\n", "\n")
         return {"kind": "stderr" if out.get("name") == "stderr" else "stdout", "text": text, "image": ""}
     if kind == "error":
         trace = "\n".join(out.get("traceback") or []) or f"{out.get('ename')}: {out.get('evalue')}"
@@ -259,6 +260,18 @@ class NotebookService:
 
     async def move_cell(self, project_id: str, version: int, cell_id: str, direction: Direction) -> NotebookProps:
         return await self._change(project_id, version, lambda nb: store.move_cell(nb, cell_id, direction))
+
+    async def reorder_cell(
+        self, project_id: str, version: int, cell_id: str, before_id: str | None
+    ) -> NotebookProps:
+        """Drag-and-drop: put `cell_id` just before `before_id` (None = at the end)."""
+        return await self._change(project_id, version, lambda nb: store.reorder_cell(nb, cell_id, before_id))
+
+    async def duplicate_cell(self, project_id: str, version: int, cell_id: str) -> NotebookProps:
+        return await self._change(project_id, version, lambda nb: store.duplicate_cell(nb, cell_id))
+
+    async def clear_cell_outputs(self, project_id: str, version: int, cell_id: str) -> NotebookProps:
+        return await self._change(project_id, version, lambda nb: store.clear_cell_outputs(nb, cell_id))
 
     async def clear_outputs(self, project_id: str, version: int) -> NotebookProps:
         return await self._change(project_id, version, store.clear_outputs)
