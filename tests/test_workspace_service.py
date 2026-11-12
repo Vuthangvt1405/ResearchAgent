@@ -10,6 +10,7 @@ import pytest
 
 from researchchat.workspace import ErrorCode, WorkspaceError
 from researchchat.workspace import actions, store
+from researchchat.workspace.service import output_props
 
 from tests.test_workspace_store import FakeSession
 
@@ -95,6 +96,39 @@ def test_move_first_cell_up_is_noop(nb_ab):
     svc, pid, a, b = nb_ab
     props = run(svc.move_cell(pid, 3, a, "up"))
     assert ids(props) == [a, b]
+
+
+def test_reorder_cell_before_another_and_at_end(nb_ab):
+    # Drag and drop: arbitrary positions, not just one step
+    svc, pid, a, b = nb_ab
+    third = run(svc.add_cell(pid, 3, b, "code"))["cells"][2]["id"]
+    props = run(svc.reorder_cell(pid, 4, third, a))
+    assert ids(props) == [third, a, b]
+    props = run(svc.reorder_cell(pid, 5, third, None))
+    assert ids(props) == [a, b, third]
+
+
+def test_duplicate_cell_copies_source_without_outputs(nb_ab, root):
+    svc, pid, a, b = nb_ab
+    props = run(svc.duplicate_cell(pid, 3, b))
+    assert ids(props)[:2] == [a, b] and len(ids(props)) == 3
+    copy = props["cells"][2]
+    assert copy["source"] == "b = 2"
+    assert copy["outputs"] == [] and copy["execution_count"] is None
+    assert store.find_cell(on_disk(root, pid), copy["id"]).source == "b = 2"
+
+
+def test_clear_one_cell_outputs_keeps_the_other_cell(nb_ab):
+    svc, pid, a, b = nb_ab
+    props = run(svc.clear_cell_outputs(pid, 3, b))
+    assert props["cells"][0]["id"] == a and props["cells"][1]["outputs"] == []
+    assert props["cells"][1]["execution_count"] is None
+
+
+def test_clear_outputs_on_a_note_is_rejected(nb_ab, root):
+    svc, pid, _, b = nb_ab
+    note = run(svc.add_cell(pid, 3, b, "markdown"))["cells"][2]["id"]
+    assert_rejected(ErrorCode.NOT_CODE, svc.clear_cell_outputs(pid, 4, note), root, pid)
 
 
 def test_delete_cell(nb_ab):
@@ -254,3 +288,15 @@ def test_concurrent_edits_one_wins_one_stale(nb_ab, root):
     errors = [r for r in results if isinstance(r, WorkspaceError)]
     assert len(errors) == 1 and errors[0].code == ErrorCode.STALE
     assert store.get_version(on_disk(root, pid)) == 4
+
+
+def test_stream_output_strips_ansi_colours():
+    # Shell output (pip, ls --color) carries terminal colour codes; the panel shows plain text.
+    out = output_props(
+        nbformat.v4.new_output(
+            "stream",
+            name="stdout",
+            text="\x1b[1m\x1b[34mnotice\x1b[0m installed\r\nnext\x1b[0m\n",
+        )
+    )
+    assert out == {"kind": "stdout", "text": "notice installed\nnext\n", "image": ""}

@@ -1,5 +1,4 @@
-"""ResearchChat entry point: Chainlit calls the @cl.on_... hooks below.
-
+"""ResearchChat entry point: Chainlit calls the @cl.on_... hooks below
 Run with: chainlit run app.py
 """
 

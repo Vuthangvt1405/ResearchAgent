@@ -87,6 +87,9 @@ FIELDS: dict[str, dict[str, type | tuple[type, ...]]] = {
     "nb_update_cell": {"version": int, "cell_id": str, "source": str},
     "nb_delete_cell": {"version": int, "cell_id": str},
     "nb_move_cell": {"version": int, "cell_id": str, "direction": str},
+    "nb_reorder_cell": {"version": int, "cell_id": str, "before_id": (str, type(None))},
+    "nb_duplicate_cell": {"version": int, "cell_id": str},
+    "nb_clear_cell_outputs": {"version": int, "cell_id": str},
     "nb_run_cell": {"version": int, "cell_id": str, "source": str},
     "nb_run_all": {"version": int},
     "nb_interrupt": {"version": int},
@@ -98,7 +101,7 @@ FIELDS: dict[str, dict[str, type | tuple[type, ...]]] = {
     "ds_delete": {"dataset_id": str},  # NB-3: confirmed in the panel first (A7)
     "ds_cancel": {"dataset_id": str},  # NB-3: stop a running or queued download
 }
-OPTIONAL = {("nb_add_cell", "after_id"), ("nb_add_cell", "type")}
+OPTIONAL = {("nb_add_cell", "after_id"), ("nb_add_cell", "type"), ("nb_reorder_cell", "before_id")}
 
 
 def session_project(session) -> str:
@@ -161,6 +164,12 @@ async def dispatch(svc: NotebookService, session, name: str, payload) -> dict | 
         return await svc.delete_cell(pid, p["version"], p["cell_id"])
     if name == "nb_move_cell":
         return await svc.move_cell(pid, p["version"], p["cell_id"], p["direction"])
+    if name == "nb_reorder_cell":
+        return await svc.reorder_cell(pid, p["version"], p["cell_id"], p.get("before_id"))
+    if name == "nb_duplicate_cell":
+        return await svc.duplicate_cell(pid, p["version"], p["cell_id"])
+    if name == "nb_clear_cell_outputs":
+        return await svc.clear_cell_outputs(pid, p["version"], p["cell_id"])
     if name == "nb_run_cell":
         return await svc.run_cell(pid, p["version"], p["cell_id"], p["source"])
     if name == "nb_run_all":
@@ -195,7 +204,16 @@ async def handle(svc: NotebookService, session, name: str, payload) -> dict | li
         return await svc.props(session_project(session), err)
 
 
-EDIT_ACTIONS = {"nb_add_cell", "nb_update_cell", "nb_delete_cell", "nb_move_cell", "nb_clear_outputs"}
+EDIT_ACTIONS = {
+    "nb_add_cell",
+    "nb_update_cell",
+    "nb_delete_cell",
+    "nb_move_cell",
+    "nb_reorder_cell",
+    "nb_duplicate_cell",
+    "nb_clear_cell_outputs",
+    "nb_clear_outputs",
+}
 
 
 async def _callback(action: cl.Action):

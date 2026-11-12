@@ -218,6 +218,39 @@ def move_cell(nb: NotebookNode, cell_id: str, direction: Direction) -> None:
         nb.cells[i], nb.cells[j] = nb.cells[j], nb.cells[i]
 
 
+def reorder_cell(nb: NotebookNode, cell_id: str, before_id: str | None = None) -> None:
+    """Move a cell to just before `before_id`, or to the end when it is None."""
+    i = _index(nb, cell_id)
+    if before_id == cell_id:
+        return
+    j = len(nb.cells) if before_id is None else _index(nb, before_id)
+    cell = nb.cells.pop(i)
+    if j > i:
+        j -= 1
+    nb.cells.insert(j, cell)
+
+
+def duplicate_cell(nb: NotebookNode, cell_id: str) -> NotebookNode:
+    """Copy a cell's type and source right below it; outputs start empty."""
+    cell = find_cell(nb, cell_id)
+    if cell.cell_type == "code":
+        new = nbformat.v4.new_code_cell(cell.source)
+    else:
+        new = nbformat.v4.new_markdown_cell(cell.source)
+    nb.cells.insert(_index(nb, cell_id) + 1, new)
+    return new
+
+
+def clear_cell_outputs(nb: NotebookNode, cell_id: str) -> None:
+    """Clear one code cell's outputs and run number; keep its source."""
+    cell = find_cell(nb, cell_id)
+    if cell.cell_type != "code":
+        raise WorkspaceError(ErrorCode.NOT_CODE, "Notes don't have outputs.")
+    cell.outputs = []
+    cell.execution_count = None
+    cell.metadata.pop("researchchat", None)
+
+
 def clear_outputs(nb: NotebookNode) -> None:
     """Clear outputs and run numbers of all code cells; keep sources."""
     for cell in nb.cells:
