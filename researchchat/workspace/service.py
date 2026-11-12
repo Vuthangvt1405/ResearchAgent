@@ -59,6 +59,27 @@ class ErrorProps(TypedDict):
     message: str  # one-line banner text
 
 
+DatasetPanelStatus = Literal["queued", "downloading", "ready", "failed", "missing"]
+
+
+class DatasetProps(TypedDict):
+    """One row of the panel's Datasets section (NB-3 plan §4.3)."""
+
+    id: str  # sent back in ds_delete / ds_cancel
+    name: str  # row title
+    source: str  # source badge (huggingface / zenodo)
+    status: DatasetPanelStatus  # badge while not ready; a ready row has no badge (AC21)
+    done_bytes: int | None  # progress bar while downloading
+    position_in_queue: int | None  # "2nd in queue" while queued
+    license: str | None  # chip while downloading, and in the details
+    size_bytes: int  # "143.8 MB"
+    file_count: int  # "· 1 file" when ready
+    url: str | None  # source link in the details (only if https:)
+    path: str  # copy-able /work/datasets/<id> path
+    downloaded_at: str | None  # "added 2 h ago"
+    error: str | None  # red line when failed
+
+
 class NotebookProps(TypedDict):
     project: ProjectRef
     version: int  # sent back with edits so stale ones are rejected
@@ -66,9 +87,12 @@ class NotebookProps(TypedDict):
     running_cell_id: str | None  # which cell shows the spinner
     cells: list[CellProps]
     error: ErrorProps | None  # set when the action was rejected
+    datasets: list[DatasetProps]  # NB-3: the project's datasets
+    datasets_rev: int  # NB-3: bumps on every dataset change, so the panel keeps the newest list (SEC16)
 
 
 Notify = Callable[[str, NotebookProps], Awaitable[None]]
+DatasetState = Callable[[str], tuple[list[DatasetProps], int]]  # project_id -> (datasets, datasets_rev)
 
 
 # ---- output conversion ----------------------------------------------------------
@@ -135,10 +159,17 @@ def trim(text: str, limit: int) -> str:
 class NotebookService:
     """The only place that changes notebooks or runs code."""
 
-    def __init__(self, kernels: KernelRegistry, root: Path = WORKSPACES_DIR, notify: Notify | None = None):
+    def __init__(
+        self,
+        kernels: KernelRegistry,
+        root: Path = WORKSPACES_DIR,
+        notify: Notify | None = None,
+        datasets: DatasetState | None = None,
+    ):
         self.kernels = kernels
         self.root = root
         self.notify = notify
+        self.datasets = datasets  # set by actions.py after DatasetService is built (plan §2.1)
         self._edit_locks: dict[str, asyncio.Lock] = {}
         self._run_locks: dict[str, asyncio.Lock] = {}
         self._running: dict[str, str] = {}  # project_id -> running cell id
@@ -155,6 +186,7 @@ class NotebookService:
 
     def _props(self, pid: str, nb: NotebookNode, error: WorkspaceError | None = None) -> NotebookProps:
         project = store.get_project(pid, self.root)
+        datasets, datasets_rev = self.datasets(pid) if self.datasets else ([], 0)
         running = self._running.get(pid)
         queued = self._queued.get(pid, [])
         cells: list[CellProps] = []
@@ -179,6 +211,8 @@ class NotebookService:
             "running_cell_id": running,
             "cells": cells,
             "error": {"code": error.code, "message": error.message} if error else None,
+            "datasets": datasets,
+            "datasets_rev": datasets_rev,
         }
 
     async def _push(self, pid: str, props: NotebookProps) -> None:

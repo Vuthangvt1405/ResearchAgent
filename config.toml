@@ -39,6 +39,15 @@ low = "Low"
 medium = "Medium"
 high = "High"
 
+[datasets]
+# Background dataset downloads (dataset_download tool), stored in the
+# project's files/datasets/ folder. There is no maximum dataset size.
+min_free_disk_mb = 0           # extra disk to always leave free (0 = only what the download needs)
+ask_above_mb = 200             # bigger downloads ask Download / Skip first
+max_files = 500                # files per download request (count, not size)
+parallel_downloads = 2         # downloads running at once, for the whole app
+stall_timeout_seconds = 120    # fail when no data arrives for this long
+
 # Notebook workspace: one notebook, Python kernel (in Docker) and files folder
 # per project. Needs Docker Desktop running and the kernel image built:
 #   docker build -f docker/kernel.Dockerfile -t researchchat-kernel:1 docker

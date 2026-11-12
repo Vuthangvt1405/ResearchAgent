@@ -10,10 +10,20 @@ import chainlit as cl
 
 from researchchat.progress import STEP_AVATAR, Progress
 
-from researchchat.tools import dataset_search, notebook_read, notebook_run, read_page, web_search
+from researchchat.tools import (
+    dataset_delete,
+    dataset_download,
+    dataset_list,
+    dataset_search,
+    notebook_read,
+    notebook_run,
+    read_page,
+    web_search,
+)
 
 _MODULES = [web_search, read_page, dataset_search]  # behind the "Web search" switch
-_NOTEBOOK_MODULES = [notebook_read, notebook_run]  # behind the "Notebook" switch
+# behind the "Notebook" switch; datasets land in the project's files, so they share it (NB-3)
+_NOTEBOOK_MODULES = [notebook_read, notebook_run, dataset_download, dataset_list, dataset_delete]
 
 _BY_NAME = {m.DEFINITION["function"]["name"]: m for m in _MODULES + _NOTEBOOK_MODULES}
 TOOLS = [m.DEFINITION for m in _MODULES]

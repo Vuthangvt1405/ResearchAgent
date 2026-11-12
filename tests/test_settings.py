@@ -23,8 +23,9 @@ def test_each_switch_adds_its_own_tools():
     names = lambda s: [t["function"]["name"] for t in chosen_tools(s)]
     assert names({}) == []
     assert names({"web_search": True}) == ["web_search", "read_page", "dataset_search"]
-    assert names({"notebook": True}) == ["notebook_read", "notebook_run"]
-    assert names({"web_search": True, "notebook": True}) == ["web_search", "read_page", "dataset_search", "notebook_read", "notebook_run"]
+    notebook = ["notebook_read", "notebook_run", "dataset_download", "dataset_list", "dataset_delete"]
+    assert names({"notebook": True}) == notebook
+    assert names({"web_search": True, "notebook": True}) == ["web_search", "read_page", "dataset_search"] + notebook
 
 
 def test_no_reasoning_field_without_thinking_settings():

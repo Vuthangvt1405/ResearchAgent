@@ -36,6 +36,8 @@ async def on_chat_start():
         # Kernel containers left by an earlier run of the app
         _cleaned = True
         asyncio.create_task(notebook.kernels.cleanup_leftovers())
+        # Downloads cut off by an earlier run; dataset_download waits for this (NB-3)
+        asyncio.create_task(notebook.datasets.startup_cleanup())
 
     cl.user_session.set(
         "history", [{"role": "system", "content": SYSTEM_PROMPT}]
@@ -65,6 +67,10 @@ async def on_message(message: cl.Message):
 
     settings = cl.user_session.get("settings") or {}
     tools = chosen_tools(settings)
+    # Background downloads that finished since the last turn: told to the model
+    # once, for this turn only, never kept in history (NB-3)
+    note = notebook.datasets.take_notes(cl.context.session.id)
+    turn_notes = [{"role": "system", "content": note}] if note else []
     # Create the reply before the progress group so it isn't nested inside it
     reply = cl.Message(content="")
     progress = Progress()
@@ -72,14 +78,14 @@ async def on_message(message: cl.Message):
         # Each round: the model answers or calls tools; tool results go back in
         for round_no in range(TOOL_MAX_ROUNDS + 1):
             extra = {"extra_body": reasoning_body(settings)}
-            messages = history
+            messages = history + turn_notes
             if tools:
                 extra["tools"] = tools
                 if round_no == TOOL_MAX_ROUNDS:
                     # Limit reached: keep the tools listed (so the model isn't
                     # confused) but forbid calling them, and tell it to answer.
                     extra["tool_choice"] = "none"
-                    messages = history + [LIMIT_NOTE]
+                    messages = history + turn_notes + [LIMIT_NOTE]
             text, calls = await stream_round(messages, reply, extra, progress)
             if not calls or round_no == TOOL_MAX_ROUNDS:
                 break

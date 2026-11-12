@@ -3,7 +3,7 @@
 // Talks to the server only through callAction (nb_* actions), and to the
 // project bar (public/custom.js) through window events.
 import { useEffect, useRef, useState } from "react";
-import { ArrowDown, ArrowUp, Eraser, FastForward, GripVertical, Play, Plus, RotateCcw, Square, StickyNote, Trash2, Code2, Loader2 } from "lucide-react";
+import { ArrowDown, ArrowUp, Eraser, FastForward, GripVertical, Play, Plus, RotateCcw, Square, StickyNote, Trash2, Code2, Loader2, Database, ChevronRight, ChevronDown, X, Copy } from "lucide-react";
 
 // Events shared with public/custom.js
 const EVENT_SWITCH = "rc:switch-project"; // bar -> panel: { project_id }
@@ -45,9 +45,16 @@ function isNewBlock(projectId, id) {
 }
 
 function newer(a, b) {
-  // Prefer the higher version; on a tie the push (b) has the live outputs
+  // Prefer the higher version; on a tie the push (b) has the live outputs.
+  // Datasets change apart from the notebook, so their list comes from
+  // whichever side has the higher datasets_rev (NB-3, SEC16).
   if (!a || a.project.id !== b.project.id) return b;
-  return a.version > b.version ? a : b;
+  const base = a.version > b.version ? a : b;
+  const other = base === a ? b : a;
+  if ((other.datasets_rev || 0) > (base.datasets_rev || 0)) {
+    return { ...base, datasets: other.datasets, datasets_rev: other.datasets_rev };
+  }
+  return base;
 }
 
 const KERNEL = {
@@ -392,6 +399,135 @@ function NoteCell({ id, source, onChange, onSave }) {
   );
 }
 
+// ---- datasets (NB-3) -------------------------------------------------------------
+// One row per dataset: while downloading it shows status, progress and licence
+// with Cancel; once ready it shows name, size and file count, with details on
+// click and Delete (confirmed here first). Catalog text is rendered as text only.
+
+const DS_CSS = `
+.rcds { margin: 18px 0 0 28px; padding-top: 10px; border-top: 1px solid hsl(var(--border)); }
+.rcds-head { display: flex; align-items: center; gap: 6px; font-weight: 600; font-size: 13px; color: hsl(var(--muted-foreground)); margin-bottom: 4px; }
+.rcds-row { padding: 4px 0; border-radius: 4px; animation: rcnb-in .25s ease both; }
+.rcds-line { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.rcds-name { display: inline-flex; align-items: center; gap: 2px; flex: 1; min-width: 0; border: 0; background: none; color: inherit; font: inherit; padding: 0; cursor: pointer; text-align: left; }
+.rcds-name span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rcds-size { color: hsl(var(--muted-foreground)); font-size: 12px; white-space: nowrap; }
+.rcds-badge { font-size: 11px; padding: 0 6px; border-radius: 3px; white-space: nowrap; background: hsl(var(--accent)); }
+.rcds-badge.downloading { color: #2383e2; background: rgba(35,131,226,.12); }
+.rcds-badge.queued { color: #9b9a97; }
+.rcds-badge.failed, .rcds-badge.missing { color: #e03e3e; background: rgba(224,62,62,.1); }
+.rcds-progress { height: 4px; margin: 4px 0 2px 18px; border-radius: 2px; background: hsl(var(--accent)); overflow: hidden; }
+.rcds-progress div { height: 100%; background: #2383e2; transition: width .3s ease; }
+.rcds-progress div.queued { background: transparent; }
+.rcds-sub, .rcds-details, .rcds-confirm { margin-left: 18px; font-size: 12px; color: hsl(var(--muted-foreground)); display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.rcds-details { flex-direction: column; align-items: flex-start; gap: 2px; padding: 4px 0; }
+.rcds-chip { padding: 0 6px; border-radius: 3px; background: hsl(var(--accent)); }
+.rcds-error { margin-left: 18px; font-size: 12px; color: #e03e3e; }
+.rcds-confirm { color: hsl(var(--foreground)); }
+.rcds-confirm button { border: 1px solid hsl(var(--border)); background: none; color: inherit; font: inherit; border-radius: 4px; padding: 0 8px; cursor: pointer; }
+.rcds-confirm button.danger { color: #e03e3e; border-color: rgba(224,62,62,.5); }
+.rcds-path { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-all; }
+.rcds a { color: inherit; text-decoration: underline; }
+`;
+
+const DS_BADGE = { queued: "Queued", downloading: "Downloading", failed: "Failed", missing: "Files missing" };
+
+function fmtBytes(n) {
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let i = 0;
+  let v = n || 0;
+  while (v >= 1000 && i < units.length - 1) {
+    v /= 1000;
+    i += 1;
+  }
+  return i === 0 ? `${v} B` : `${v.toFixed(1)} ${units[i]}`;
+}
+
+function ordinal(n) {
+  const s = ["th", "st", "nd", "rd"];
+  const v = n % 100;
+  return n + (s[(v - 20) % 10] || s[v] || s[0]);
+}
+
+function DatasetRow({ d, act, rerender }) {
+  S.dsOpen = S.dsOpen || {};
+  const open = !!S.dsOpen[d.id];
+  const confirming = S.dsConfirm === d.id;
+  const active = d.status === "downloading" || d.status === "queued";
+  const pct = d.size_bytes ? Math.min(100, Math.round((100 * (d.done_bytes || 0)) / d.size_bytes)) : 0;
+  const set = (fn) => {
+    fn();
+    rerender();
+  };
+  const href = d.url ? safeHref(d.url) : null;
+  const size = fmtBytes(d.size_bytes);
+  return (
+    <div className="rcds-row">
+      <div className="rcds-line">
+        <button className="rcds-name" title="Details" onClick={() => set(() => (S.dsOpen[d.id] = !open))}>
+          {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+          <span>{d.name}</span>
+        </button>
+        {d.status !== "ready" && <span className={`rcds-badge ${d.status}`}>{DS_BADGE[d.status] || d.status}</span>}
+        <span className="rcds-size">
+          {size}
+          {d.status === "ready" ? ` · ${d.file_count} file${d.file_count === 1 ? "" : "s"}` : ""}
+        </span>
+        {active ? (
+          <button className="rcnb-act" title="Cancel download" onClick={() => act("ds_cancel", d.id)}><X size={13} /></button>
+        ) : (
+          <button className="rcnb-act" title="Delete dataset" onClick={() => set(() => (S.dsConfirm = d.id))}><Trash2 size={13} /></button>
+        )}
+      </div>
+      {active && (
+        <div className="rcds-progress"><div className={d.status} style={{ width: `${d.status === "queued" ? 0 : pct}%` }} /></div>
+      )}
+      {active && (
+        <div className="rcds-sub">
+          <span>
+            {d.status === "queued"
+              ? `${ordinal(d.position_in_queue || 1)} in queue`
+              : `${fmtBytes(d.done_bytes)} of ${size} · ${pct}%`}
+          </span>
+          {d.license && <span className="rcds-chip">{d.license}</span>}
+        </div>
+      )}
+      {d.status === "failed" && d.error && <div className="rcds-error">{d.error}</div>}
+      {confirming && (
+        <div className="rcds-confirm">
+          <span>Delete {d.name} ({size})?</span>
+          <button className="danger" onClick={() => { S.dsConfirm = null; act("ds_delete", d.id); }}>Delete</button>
+          <button onClick={() => set(() => (S.dsConfirm = null))}>Keep</button>
+        </div>
+      )}
+      {open && (
+        <div className="rcds-details">
+          <span>Licence: {d.license || "not stated"}</span>
+          {href && <a href={href} target="_blank" rel="noopener noreferrer">Source page</a>}
+          <span>
+            In notebook code: <span className="rcds-path">{d.path}/</span>{" "}
+            <button className="rcnb-act" title="Copy path" onClick={() => navigator.clipboard && navigator.clipboard.writeText(`${d.path}/`)}><Copy size={12} /></button>
+          </span>
+          {d.downloaded_at && <span>Added {new Date(d.downloaded_at).toLocaleString()}</span>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DatasetsSection({ datasets, apply }) {
+  if (!datasets || datasets.length === 0) return null;
+  const rerender = () => S.rerender && S.rerender();
+  const act = async (name, id) => apply(await call(name, { dataset_id: id }));
+  return (
+    <div className="rcds">
+      <style>{DS_CSS}</style>
+      <div className="rcds-head"><Database size={13} />Datasets</div>
+      {datasets.map((d) => <DatasetRow key={d.id} d={d} act={act} rerender={rerender} />)}
+    </div>
+  );
+}
+
 // ---- the panel -----------------------------------------------------------------
 
 export default function Notebook() {
@@ -584,6 +720,8 @@ export default function Notebook() {
           <button className="rcnb-act" onClick={() => add(null, "code")}><Plus size={14} />Code</button>
           <button className="rcnb-act" onClick={() => add(null, "markdown")}><Plus size={14} />Note</button>
         </div>
+
+        <DatasetsSection datasets={nb.datasets} apply={apply} />
       </div>
 
       {S.fallbackBar === true && projects.length > 0 && (

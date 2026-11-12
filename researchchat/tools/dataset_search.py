@@ -26,7 +26,9 @@ DEFINITION = {
             "Returns name, URL, description, licence, size, format, downloads "
             "and last update. Use 2-4 plain keywords, not a sentence: "
             "catalogs match on dataset names. If results are poor, try "
-            "again with synonyms or fewer words."
+            "again with synonyms or fewer words. Hugging Face and Zenodo results "
+            "have a `ref` you can pass to dataset_download (only when the user "
+            "wants the data in their project)."
         ),
         "parameters": {
             "type": "object",
@@ -84,6 +86,7 @@ def huggingface_item(d: dict) -> dict:
     tags = d.get("tags") or []
     return {
         "source": "Hugging Face",
+        "ref": f"hf:{d['id']}",  # what dataset_download takes (NB-3)
         "name": d["id"],
         "url": f"https://huggingface.co/datasets/{d['id']}",
         "description": clean(d.get("description")),
@@ -102,6 +105,7 @@ def zenodo_item(d: dict) -> dict:
     size_mb = sum(f.get("size", 0) for f in files) / 1e6
     return {
         "source": "Zenodo",
+        "ref": f"zenodo:{d['id']}" if d.get("id") else None,  # DataCite items get no ref (A18)
         "name": meta.get("title") or d.get("title"),
         "url": (d.get("links") or {}).get("self_html") or d.get("doi_url"),
         "description": clean(meta.get("description")),

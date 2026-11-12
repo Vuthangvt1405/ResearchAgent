@@ -39,7 +39,7 @@ The tests need no API key or network.
 | Where | What |
 |---|---|
 | `.env` | `OPENROUTER_API_KEY` (secret), optional `OPENROUTER_MODEL` override |
-| `config.toml` | Model, system prompt, greeting, web and dataset search limits, thinking levels and their labels |
+| `config.toml` | Model, system prompt, greeting, web and dataset search limits, dataset download limits (`[datasets]`), thinking levels and their labels |
 | `.chainlit/config.toml` | Chainlit UI settings (app name, theme, features) |
 | `chainlit.md` | The Readme page shown in the app |
 
@@ -64,11 +64,17 @@ researchchat/
     dataset_search.py       Find datasets (Hugging Face, Zenodo, DataCite), merged and ranked
     notebook_run.py         Run code in the project notebook (risky code asks first)
     notebook_read.py        Let the model read the project notebook
+    dataset_download.py     Download a dataset into the project in the background
+    dataset_list.py         The project's datasets, with status and paths
+    dataset_delete.py       Delete a dataset (always asks you first)
   workspace/                Project notebooks (in progress, see below)
     store.py                Projects and .ipynb files on disk
     kernels.py              One Docker kernel container per project
     risk.py                 Flags risky model code
     service.py              Edits and runs notebooks under a per-project lock
+    datasets_store.py       datasets.json, dataset ids and safe paths on disk
+    dataset_sources.py      Hugging Face / Zenodo file lists and safe HTTPS downloads
+    dataset_service.py      Download queue, checks, delete/cancel, chat notes
     panel.py                The right-side Notebook panel
     actions.py              Buttons the panel calls
 public/
@@ -92,6 +98,26 @@ stored in `workspaces/<project>/` (git-ignored). The plan is in
 - Never start the app with `--host 0.0.0.0`: anyone who can reach it could run
   code. The app will refuse a non-local host.
 - Kernel tests are marked `docker`; run the rest with `pytest -m "not docker"`.
+
+### Dataset downloads
+
+With the Notebook switch on, the assistant can download a Hugging Face or
+Zenodo dataset it found with `dataset_search` into the current project
+(`dataset_download`). The plan is in `docs/plans/NB-3-dataset-download-plan.md`.
+
+- Downloads run **in the background**: you keep chatting, the panel's
+  Datasets section shows progress, and the chat gets a message when it's ready.
+  Notebook code reads the files from `/work/datasets/<id>/`.
+- Before starting, the app checks the disk has room (counting downloads already
+  queued). Downloads over `ask_above_mb` (default 200 MB) ask Download / Skip.
+- Files are verified (size and md5/sha256) before they're moved in; failed or
+  cancelled downloads leave no partial files. Only public HTTPS hosts are
+  contacted, and no tokens are sent, so gated or private datasets are refused.
+- An existing dataset keeps its version unless you ask the assistant to update
+  it. Asking again downloads only files the project doesn't have yet.
+- `[datasets]` in `config.toml` sets the limits: `min_free_disk_mb`,
+  `ask_above_mb`, `max_files`, `parallel_downloads` (app-wide) and
+  `stall_timeout_seconds`.
 
 ### How a message flows
 

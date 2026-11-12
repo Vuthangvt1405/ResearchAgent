@@ -4,12 +4,22 @@ The project always comes from the chat session, never from the payload (SEC2).
 Each callback returns NotebookProps, with `error` set when rejected.
 """
 
+import asyncio
 import logging
 
 import chainlit as cl
+from chainlit.context import init_ws_context
 
+from researchchat.config import (
+    DATASETS_ASK_ABOVE_MB,
+    DATASETS_MAX_FILES,
+    DATASETS_MIN_FREE_DISK_MB,
+    DATASETS_PARALLEL_DOWNLOADS,
+    DATASETS_STALL_TIMEOUT_SECONDS,
+)
 from researchchat.workspace import ErrorCode, WorkspaceError
 from researchchat.workspace import store
+from researchchat.workspace.dataset_service import DatasetService, DatasetsSettings
 from researchchat.workspace.kernels import KernelRegistry
 from researchchat.workspace.panel import PanelRegistry, skip_session
 from researchchat.workspace.service import NotebookService
@@ -19,6 +29,55 @@ log = logging.getLogger(__name__)
 kernels = KernelRegistry()
 panels = PanelRegistry()
 service = NotebookService(kernels, notify=panels.push)
+
+
+class ChatRegistry:
+    """Live Chainlit sessions by chat id, so a background job can message the chat that started it (NB-3)."""
+
+    def __init__(self):
+        self._sessions: dict[str, object] = {}  # session_id -> chainlit WebsocketSession
+
+    def register(self, session) -> None:
+        self._sessions[session.id] = session
+
+    def unregister(self, session_id: str) -> None:
+        self._sessions.pop(session_id, None)
+
+    async def send(self, session_id: str, text: str) -> bool:
+        """Post a message in that chat's context; False when it's closed. Errors are swallowed."""
+        session = self._sessions.get(session_id)
+        if session is None:
+            return False
+
+        async def one() -> None:
+            init_ws_context(session)  # only affects this task's context
+            msg = cl.Message(content=text)
+            msg.parent_id = None
+            await msg.send()
+
+        try:
+            await asyncio.create_task(one())
+            return True
+        except Exception:
+            log.warning("Couldn't message chat %s", session_id, exc_info=True)
+            return False
+
+
+chats = ChatRegistry()
+datasets = DatasetService(
+    settings=DatasetsSettings(
+        min_free_disk_mb=DATASETS_MIN_FREE_DISK_MB,
+        ask_above_mb=DATASETS_ASK_ABOVE_MB,
+        max_files=DATASETS_MAX_FILES,
+        parallel_downloads=DATASETS_PARALLEL_DOWNLOADS,
+        stall_timeout_seconds=DATASETS_STALL_TIMEOUT_SECONDS,
+    ),
+    root=service.root,
+    props=service.props,
+    notify=panels.push,
+    send=chats.send,
+)
+service.datasets = datasets.panel_state  # panel props include the datasets (plan §2.1)
 
 SESSION_KEY = "project_id"
 
@@ -36,6 +95,8 @@ FIELDS: dict[str, dict[str, type | tuple[type, ...]]] = {
     "nb_list_projects": {},
     "nb_switch_project": {"project_id": str},
     "nb_create_project": {"name": str},
+    "ds_delete": {"dataset_id": str},  # NB-3: confirmed in the panel first (A7)
+    "ds_cancel": {"dataset_id": str},  # NB-3: stop a running or queued download
 }
 OPTIONAL = {("nb_add_cell", "after_id"), ("nb_add_cell", "type")}
 
@@ -110,6 +171,12 @@ async def dispatch(svc: NotebookService, session, name: str, payload) -> dict | 
         return await svc.restart(pid)
     if name == "nb_clear_outputs":
         return await svc.clear_outputs(pid, p["version"])
+    if name == "ds_delete":
+        await datasets.delete(pid, p["dataset_id"])
+        return await svc.props(pid)
+    if name == "ds_cancel":
+        await datasets.cancel(pid, p["dataset_id"])
+        return await svc.props(pid)
     raise WorkspaceError(ErrorCode.BAD_PAYLOAD, "Unknown action.")
 
 
@@ -149,7 +216,11 @@ async def open_for_session() -> None:
     """Open this chat's panel on its project (called at chat start)."""
     pid = session_project(cl.user_session)
     await panels.open(pid, await service.props(pid))
+    chats.register(cl.context.session)
 
 
 def close_for_session() -> None:
-    panels.unregister(cl.context.session.id)
+    session_id = cl.context.session.id
+    panels.unregister(session_id)
+    chats.unregister(session_id)
+    datasets.drop_notes(session_id)
