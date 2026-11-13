@@ -1,5 +1,5 @@
 # Feature Plan: Shared Dataset Pool (NB-4)
-Status: Implemented — reviewed 2026-11-13 · Source: [epic overview](dataset-download-plan.md), ticket NB-4 (2 of 3) · Depends on: [NB-3](done/NB-3-dataset-download-plan.md) · Date: 2026-11-11
+Status: Implemented — reviewed 2026-11-13 · Source: [epic overview](../dataset-download-plan.md), ticket NB-4 (2 of 3) · Depends on: [NB-3](NB-3-dataset-download-plan.md) · Date: 2026-11-11
 
 Downloaded data moves into one **pool** shared by all projects. When a project asks for data that's already in the pool, nothing is downloaded: the files appear in its `/work/datasets/<id>/` within a second. Kernels see pooled data **read-only**, so one project's code can't change another project's data. Deleting removes a dataset from one project; the bytes leave the pool when no project uses them. Datasets downloaded under NB-3 are moved into the pool once, on the first start after this ticket ships.
 
@@ -29,7 +29,7 @@ AC and test numbers are the epic's (shared by NB-3, NB-4 and NB-5).
 
 ## 2. Codebase Patterns
 
-Same as [NB-3 §2](done/NB-3-dataset-download-plan.md#2-codebase-patterns), plus:
+Same as [NB-3 §2](NB-3-dataset-download-plan.md#2-codebase-patterns), plus:
 
 | Area | Finding | Evidence |
 |---|---|---|
@@ -45,7 +45,7 @@ Same as [NB-3 §2](done/NB-3-dataset-download-plan.md#2-codebase-patterns), plus
 | Entity | Key fields | From | Evidence |
 |---|---|---|---|
 | Project | `id`, `project.json` | NB-1 | `store.py` |
-| `datasets.json` format 1 | full dataset record (name, source, revision, licence, `files[]` with checksums) | NB-3 | [NB-3 §3.3](done/NB-3-dataset-download-plan.md#33-proposed-schema-changes-described-not-applied) |
+| `datasets.json` format 1 | full dataset record (name, source, revision, licence, `files[]` with checksums) | NB-3 | [NB-3 §3.3](NB-3-dataset-download-plan.md#33-proposed-schema-changes-described-not-applied) |
 | `files/datasets/<id>/` | the downloaded files themselves | NB-3 | same |
 
 ### 3.2 Relationships (+ ER diagram)
@@ -334,7 +334,7 @@ Baseline: Given projects with NB-3 `datasets.json` format 1 and real files in `f
 
 ## Decision log
 
-Decisions D1–D6 are recorded in the [epic overview](dataset-download-plan.md#decision-log).
+Decisions D1–D6 are recorded in the [epic overview](../dataset-download-plan.md#decision-log).
 
 | # | Question | Answer | What changed in the plan |
 |---|---|---|---|

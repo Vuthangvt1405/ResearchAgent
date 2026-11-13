@@ -18,7 +18,7 @@ NB-3's per-project storage. It never downloads and holds no lock of its own:
 DatasetService calls it only while holding `lock` (one app-wide lock, so
 cleanup and linking can't race, SEC9).
 
-Plan: docs/plans/NB-4-dataset-pool-plan.md
+Plan: docs/plans/done/NB-4-dataset-pool-plan.md
 """
 
 import asyncio

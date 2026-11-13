@@ -1,5 +1,5 @@
 // NB-4 AC25 — a dataset other projects use says so, and deleting it here frees nothing
-// Plan: docs/plans/NB-4-dataset-pool-plan.md (AC25)
+// Plan: docs/plans/done/NB-4-dataset-pool-plan.md (AC25)
 // Baseline: Given a ready dataset · When its details and the delete confirm are opened
 import { describe, it, expect } from "vitest";
 import { act, fireEvent } from "@testing-library/react";
