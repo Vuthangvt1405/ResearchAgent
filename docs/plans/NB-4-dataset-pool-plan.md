@@ -1,5 +1,5 @@
 # Feature Plan: Shared Dataset Pool (NB-4)
-Status: Draft — awaiting answers · Source: [epic overview](dataset-download-plan.md), ticket NB-4 (2 of 3) · Depends on: [NB-3](NB-3-dataset-download-plan.md) · Date: 2026-11-11
+Status: Implemented — reviewed 2026-11-13 · Source: [epic overview](dataset-download-plan.md), ticket NB-4 (2 of 3) · Depends on: [NB-3](done/NB-3-dataset-download-plan.md) · Date: 2026-11-11
 
 Downloaded data moves into one **pool** shared by all projects. When a project asks for data that's already in the pool, nothing is downloaded: the files appear in its `/work/datasets/<id>/` within a second. Kernels see pooled data **read-only**, so one project's code can't change another project's data. Deleting removes a dataset from one project; the bytes leave the pool when no project uses them. Datasets downloaded under NB-3 are moved into the pool once, on the first start after this ticket ships.
 
@@ -29,7 +29,7 @@ AC and test numbers are the epic's (shared by NB-3, NB-4 and NB-5).
 
 ## 2. Codebase Patterns
 
-Same as [NB-3 §2](NB-3-dataset-download-plan.md#2-codebase-patterns), plus:
+Same as [NB-3 §2](done/NB-3-dataset-download-plan.md#2-codebase-patterns), plus:
 
 | Area | Finding | Evidence |
 |---|---|---|
@@ -45,7 +45,7 @@ Same as [NB-3 §2](NB-3-dataset-download-plan.md#2-codebase-patterns), plus:
 | Entity | Key fields | From | Evidence |
 |---|---|---|---|
 | Project | `id`, `project.json` | NB-1 | `store.py` |
-| `datasets.json` format 1 | full dataset record (name, source, revision, licence, `files[]` with checksums) | NB-3 | [NB-3 §3.3](NB-3-dataset-download-plan.md#33-proposed-schema-changes-described-not-applied) |
+| `datasets.json` format 1 | full dataset record (name, source, revision, licence, `files[]` with checksums) | NB-3 | [NB-3 §3.3](done/NB-3-dataset-download-plan.md#33-proposed-schema-changes-described-not-applied) |
 | `files/datasets/<id>/` | the downloaded files themselves | NB-3 | same |
 
 ### 3.2 Relationships (+ ER diagram)
@@ -63,10 +63,28 @@ erDiagram
     PROJECT ||--o{ PROJECT_DATASET : "datasets.json"
     PROJECT_DATASET }o--|| POOL_ENTRY : "pool_entry"
     POOL_ENTRY ||--|{ POOL_FILE : "files[]"
-    PROJECT { string id PK  string name }
-    PROJECT_DATASET { string id PK  string pool_entry FK  string status  list files }
-    POOL_ENTRY { string id PK  string source  string source_id  string revision }
-    POOL_FILE { string path  int size  string checksum  bool ready }
+    PROJECT {
+        string id PK
+        string name
+    }
+    PROJECT_DATASET {
+        string id PK
+        string pool_entry FK
+        string status
+        list files
+    }
+    POOL_ENTRY {
+        string id PK
+        string source
+        string source_id
+        string revision
+    }
+    POOL_FILE {
+        string path
+        int size
+        string checksum
+        bool ready
+    }
 ```
 
 Risks: a writable pool would let one project corrupt every project's data, so it's mounted **read-only** (AC18). Cleanup racing with a new link could delete data a project just linked, so both happen under one pool lock. The pool index can be rebuilt from the projects' `datasets.json` files and the folders in `.dataset-pool/` (A6).
@@ -76,13 +94,13 @@ Risks: a writable pool would let one project corrupt every project's data, so it
 **Layout**
 ```
 workspaces/
-  .dataset-pool/                 shared data; mounted read-only at /pool in every kernel
+  .dataset-pool/                 shared data; mounted read-only at /.dataset-pool in every kernel (R1)
     hf-david-egea--creditcard-fraud-detection@90cdcb8/creditcard.csv
   .dataset-pool.json             pool index (not visible to kernels)
   .dataset-partial/              downloads in progress, now app-wide (replaces each project's .dataset-partial/)
   <project>/
     datasets.json                format 2 (below)
-    files/datasets/<id>/...      symlinks → /pool/<entry>/<path>
+    files/datasets/<id>/...      relative links → ../../../../.dataset-pool/<entry>/<path> (R1)
 ```
 
 **Pool index `workspaces/.dataset-pool.json`**
@@ -129,7 +147,7 @@ workspaces/
 | `name`, `source`, `source_id`, `revision`, `url`, `license` | removed (read from the pool entry) | stored once |
 | `downloaded_at` → `linked_at` | renamed | when this project got the files (may be long after the pool did) |
 
-**Kernel change:** every kernel gets `--mount type=bind,source=<workspaces>/.dataset-pool,target=/pool,readonly`. New pool entries appear in running kernels at once.
+**Kernel change:** every kernel gets `--mount type=bind,source=<workspaces>/.dataset-pool,target=/.dataset-pool,readonly`. New pool entries appear in running kernels at once.
 
 **Request flow** (replaces NB-3 §3.3 steps 1–3):
 1. Under the **pool lock**, find the project's record and the pool entries for this dataset.
@@ -143,7 +161,7 @@ workspaces/
 1. For each project's `datasets.json` format 1, for each dataset: key = (source, source_id, revision).
 2. If the pool has no entry for the key → **move** (`os.rename`, same disk, instant) the `ready` files whose size still matches into `.dataset-pool/<entry>/`; verify checksums of moved files in the background and mark bad ones not ready.
 3. If the pool already has it (another project's copy) → delete this project's copies of files the pool already holds, move the rest.
-4. Replace `files/datasets/<id>/` with symlinks to `/pool/<entry>/…`; files that were already gone become `missing`.
+4. Replace `files/datasets/<id>/` with relative links into `.dataset-pool/<entry>/…` (R1); files that were already gone become `missing`.
 5. Write `datasets.json` format 2; keep `datasets.json.v1` as a backup.
 Each project is migrated under its own step so a crash mid-way resumes: a format 2 file means "done", and a pool entry already holding the file means "already moved".
 
@@ -151,14 +169,14 @@ Each project is migrated under its own step so a crash mid-way resumes: a format
 
 ### 4.1 Approach & Files Affected
 
-`dataset_pool.py` owns the pool index and pool lock, linking files into projects as symlinks, "used by" counts, cleanup, rebuild and migration. `DatasetService` switches from per-project storage to "pool entry + links": `request()` checks the pool first, jobs are keyed by (entry, files) and carry a set of waiting projects, cancel removes one project from a job's waiting set (the job stops only when none are left). `kernels.py` adds the read-only `/pool` mount. `datasets_store.py` reads format 1 and 2 and writes format 2. The panel adds the "also used by" line to details and the delete confirm. No new dependencies.
+`dataset_pool.py` owns the pool index and pool lock, linking files into projects as symlinks, "used by" counts, cleanup, rebuild and migration. `DatasetService` switches from per-project storage to "pool entry + links": `request()` checks the pool first, jobs are keyed by (entry, files) and carry a set of waiting projects, cancel removes one project from a job's waiting set (the job stops only when none are left). `kernels.py` adds the read-only pool mount at `/.dataset-pool`. `datasets_store.py` reads format 1 and 2 and writes format 2. The panel adds the "also used by" line to details and the delete confirm. No new dependencies.
 
 | | File | Change |
 |---|---|---|
 | 🆕 | `researchchat/workspace/dataset_pool.py` | pool index, lock, link/unlink, `still_used_by`, cleanup, rebuild, migration from format 1 |
 | ✏️ | `researchchat/workspace/dataset_service.py` | pool-first `request`; shared jobs with waiting projects; per-project cancel; app-wide `.dataset-partial/` |
 | ✏️ | `researchchat/workspace/datasets_store.py` | format 2 (`pool_entry`, file paths only); read format 1 for migration |
-| ✏️ | `researchchat/workspace/kernels.py` | read-only `/pool` mount |
+| ✏️ | `researchchat/workspace/kernels.py` | read-only pool mount at `/.dataset-pool` |
 | ✏️ | `researchchat/tools/dataset_download.py`, `dataset_list.py`, `dataset_delete.py` | `from_pool`, `shared_with`, `still_used_by` in results |
 | ✏️ | `researchchat/workspace/service.py` | `DatasetProps.shared_with` |
 | ✏️ | `public/elements/Notebook.jsx` | "Also used by N other projects" in details and the delete confirm |
@@ -196,9 +214,9 @@ Pool entry ids, revisions and host paths are not exposed; the model and the pane
 | 9 | Races: two projects request the same files; cleanup of the last user while another project links | service, pool | one pool lock for the index, linking and cleanup; jobs keyed by (entry, files) so a second request joins; cleanup re-checks users under the lock | G11✅3, G7✅4, G11❌5 |
 | 12 | **Shared data corrupted by one project** | pool | pool mounted **read-only** in kernels; projects see pooled files only through symlinks into that mount | G11✅4, G11❌3 (docker) |
 | 16 | Pooled file changed on disk (outside the app) reused as if correct | linking | size and `mtime_ns` compared before linking; a change triggers a checksum re-check, a bad file is downloaded again | G11❌1 |
-| 23 | Links pointing at host files | link creation | link targets built only as `/pool/<entry id>/<checked path>`; entry ids are generated slugs; the app never follows project symlinks on the host (it reads pool paths directly; delete uses `unlink`, and `rmtree` doesn't follow links) | G11❌2, S❌5 |
+| 23 | Links pointing at host files | link creation | link targets built only as `../…/.dataset-pool/<entry id>/<checked path>` (R1); the app compares link text before trusting a link; entry ids are generated slugs; the app never follows project symlinks on the host (it reads pool paths directly; delete uses `unlink`, and `rmtree` doesn't follow links) | G11❌2, S❌5 |
 | 24 | Migration loses or mixes up data | migration | `os.rename` within one disk (no copy); size check before moving, checksum check after; `datasets.json.v1` backup; resumable per project | G14 |
-| 21 | Every kernel can read every pooled dataset | `/pool` mount | **accepted** (A12): one local user, public data; `/work/datasets/` still shows only the project's own datasets | — |
+| 21 | Every kernel can read every pooled dataset | pool mount | **accepted** (A12): one local user, public data; `/work/datasets/` still shows only the project's own datasets | — |
 
 ## 6. Workflow Diagram
 
@@ -213,10 +231,10 @@ sequenceDiagram
     participant K as B's kernel
 
     M->>S: dataset_download(ref, files)
-    S->>PL: lock; B's record? pool entries for this dataset?
+    S->>PL: lock, then find B's record and this dataset's pool entries
     alt every requested file is in the pool
         PL->>PL: size + mtime same? (else re-verify checksum)
-        PL->>K: symlinks in /work/datasets/<id>/ → /pool/<entry>/…
+        PL->>K: symlinks in /work/datasets/<id>/ → ../…/.dataset-pool/<entry>/…
         S-->>M: ready, from_pool: true (no download, no prompt)
     else a job already fetches the missing files
         S->>J: add B to its waiting projects
@@ -249,10 +267,10 @@ Baseline: Given project `p1` has dataset X `ready` in the pool · When project `
 
 | # | Type | Test name | Changed condition | Expected result | Demonstrates |
 |---|---|---|---|---|---|
-| ✅1 | baseline | `test_second_project_links_pool_files_without_download` | — | `p2` gets symlinks to `/pool/<entry>/…` + record `ready`, `from_pool: true`; no HTTP request | the pool saves the download |
+| ✅1 | baseline | `test_second_project_links_pool_files_without_download` | — | `p2` gets relative links into `.dataset-pool/<entry>/…` (R1) + record `ready`, `from_pool: true`; no HTTP request | the pool saves the download |
 | ✅2 | edge | `test_second_project_downloads_only_files_pool_lacks` | `p2` asks `["*.csv", "*.json"]`, pool has only csv | job fetches only json; `p2` sees both; `p1` still sees only csv | each project sees what it asked for |
 | ✅3 | edge | `test_two_projects_requesting_same_files_share_one_job` | `p1` and `p2` request X (not pooled) at once | one job; each file fetched once; both `ready` | no duplicate downloads |
-| ✅4 | edge | `test_kernel_mounts_pool_read_only` | build the `docker run` arguments | contains `target=/pool,readonly`; still only `files/` at `/work` | the pool can't be changed from a kernel |
+| ✅4 | edge | `test_kernel_mounts_pool_read_only` | build the `docker run` arguments | contains `target=/.dataset-pool,readonly`; still only `files/` at `/work` | the pool can't be changed from a kernel |
 | ✅5 | edge | `test_older_pooled_revision_is_reused_without_update` | pool has r1, catalog at r2, `p2` asks without `update` | `p2` linked to r1; no catalog call; with `update: true` a new entry r2 is made and only `p2` switches | no silent version changes across projects (AC30) |
 | ❌1 | negative | `test_changed_pool_file_is_rechecked_before_linking` | pooled file's size or `mtime_ns` differs | checksum re-checked; bad file downloaded again before `p2` is linked | changed data is never reused blindly |
 | ❌2 | negative | `test_links_never_point_outside_pool` | crafted entry id / path | refused; no symlink created | links can't expose host files |
@@ -305,17 +323,44 @@ Baseline: Given projects with NB-3 `datasets.json` format 1 and real files in `f
 
 ## 8. Questions & Confirmations
 
-**Questions**
-1. **Pool cleanup:** when the last project deletes a dataset, remove it from the pool right away (default), or keep it as a cache until you clear it (would need a "clear unused data" button)?
-2. **Migration:** move NB-3 datasets into the pool automatically on the first start (default), or leave old datasets where they are and only pool new downloads?
+**Questions** (answered 2026-11-13, see Decision log)
+1. ~~Pool cleanup~~ → removed from the pool right away when the last project deletes it (D7).
+2. ~~Migration~~ → NB-3 datasets are moved into the pool automatically on the first start (D8).
 
-**Assumptions to confirm**
+**Assumptions to confirm** (all confirmed 2026-11-13: D9–D11)
 - A11. Pooled data is read-only in the kernel; to change a file, code copies it into `/work` first.
-- A12. Every kernel can read the whole pool at `/pool`, but a project's `/work/datasets/` shows only its own datasets.
+- A12. Every kernel can read the whole pool at `/.dataset-pool`, but a project's `/work/datasets/` shows only its own datasets.
 - A14. Workspaces live on one disk, so moving files into the pool is a rename (no copy, no extra space). If `os.rename` fails across disks, the migration copies, verifies, then deletes.
 
 ## Decision log
 
 Decisions D1–D6 are recorded in the [epic overview](dataset-download-plan.md#decision-log).
 
+| # | Question | Answer | What changed in the plan |
+|---|---|---|---|
+| D7 | Q1 Pool cleanup | remove right away | nothing: the plan already used this default (§3.3 Cleanup, G7✅5); no "clear unused data" button |
+| D8 | Q2 Migration | migrate automatically | nothing: the plan already used this default (§3.3 Migration, AC29, G14) |
+| D9 | A11 read-only pool | confirmed | nothing |
+| D10 | A12 visibility | confirmed: a project sees only datasets it asked for; ones still downloading show as `downloading` | nothing |
+| D11 | A14 move by rename | confirmed: dataset names, ids and `/work/datasets/<id>/` paths never change; only the bytes move on disk | nothing |
+
+### Plan revisions during implementation (2026-11-13)
+
+| # | Was in the plan | Now | Why |
+|---|---|---|---|
+| R1 | links point at `/pool/<entry>/<path>`; pool mounted at `/pool` | **relative** links `../../../../.dataset-pool/<entry>/<path>`; pool mounted read-only at `/.dataset-pool` | the same link reaches the bytes on the host and in the kernel, so the app (and NB-5 preview) can read data through the project path. The app still never trusts a link it finds: it compares the link text and reads sizes from the pool folder (SEC23). G11✅4 asserts `target=/.dataset-pool,readonly`  Accepted by the user on 2026-11-13. |
+| R2 | panel change in `public/elements/Notebook.jsx` | `public/panel/src/components/DatasetCard.tsx` + `types.ts`; new `DatasetShared.test.tsx` (2 tests); bundle rebuilt | Notebook.jsx is a shim that draws nothing |
+| R3 | job carries a set of waiting projects | per project: dataset id, chat, files wanted, and whether it switches version; one job per pool entry runs at a time; partial files in `.dataset-partial/job-<n>/` | projects can name the same dataset differently (`-2`), and each chat gets its own "ready" message |
+| R4 | one lock "for the index, linking and cleanup" | that pool lock is the service's **only** lock (the per-project locks are gone) | an `asyncio.Lock` isn't re-entrant; one lock leaves nothing to order |
+| R5 | G11❌3: write **and delete** of `/work/datasets/<id>/a.csv` fail | writing through the link fails, and deleting the pooled file through `/.dataset-pool` fails; removing the link itself is allowed | `/work` is read-write, and AC18 already says removing it only makes the dataset `missing` |
+| R6 | G6✅8 replaced by G6✅9 | G6✅8 kept, but it deletes the **pooled bytes** (re-download of that file only); G6✅9 covers a deleted link | both cases exist |
+| R7 | migration checks checksums in the background | checked during the move, before the file counts as ready | simpler, and nothing unverified reaches the pool |
+| R8 | rebuilt index keeps everything | files and links survive, but the catalog name/source are lost with the index, so a rebuilt entry isn't matched by new requests (they download a new copy) | the folders alone don't hold that metadata |
+| R9 | `dataset_delete` asks with (name, size) | asks with (name, bytes freed here, other projects using it) | the confirm text needs both |
+| R10 | `manifest_format` | `read_manifest_format`; NB-3 helpers made unused (`missing_files`, `remove_partial`, `swap_in_update`, `find_record`, `DatasetRecord.size_bytes`) removed; `make_id` takes the taken ids | format 1 is only read by the migration now |
+
 No files or data were changed while planning, other than the plan files.
+
+## 9–10. Scaffold report & verification
+
+See [NB-4-scaffold-report.md](NB-4-scaffold-report.md) (also holds the implementation report, §11).
