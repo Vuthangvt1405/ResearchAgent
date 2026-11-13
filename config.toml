@@ -15,7 +15,7 @@ enabled = true
 # Results returned per search.
 max_results = 5
 # Most tool rounds (searches and page reads) the model may run for one message.
-max_rounds = 4
+max_rounds = 25
 # Longest page text given to the model; longer pages are cut off.
 read_page_max_chars = 8000
 
