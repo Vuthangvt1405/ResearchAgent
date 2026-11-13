@@ -134,7 +134,7 @@ html.rc-nb-animating [data-resize-handle] { transition:opacity .2s ease; }
     renderToggle();
   }
 
-  // ---- notebook panel bundle (plan: docs/plans/panel-react-build-plan.md) ----
+  // ---- notebook panel bundle (plan: docs/plans/done/panel-react-build-plan.md) ----
   // The panel is a bundled React app (public/panel → public/build). Load it once per
   // page, same-origin only (SEC3). public/elements/Notebook.jsx waits on this promise.
   const PANEL_JS = "/public/build/notebook-panel.js";

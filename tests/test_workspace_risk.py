@@ -1,6 +1,6 @@
 """The risky-code check.
 
-Plan: docs/plans/notebook-workspace-plan.md section 7.
+Plan: docs/plans/done/notebook-workspace-plan.md section 7.
 """
 
 import pytest

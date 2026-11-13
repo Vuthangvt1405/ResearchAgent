@@ -1,6 +1,6 @@
 """Editing, versions and security rules in the notebook service.
 
-Plan: docs/plans/notebook-workspace-plan.md section 7.
+Plan: docs/plans/done/notebook-workspace-plan.md section 7.
 """
 
 import asyncio

@@ -1,5 +1,5 @@
 // Group 6 — Bundle load fallback (AC7 · shim unit)
-// Plan: docs/plans/panel-react-build-plan.md §7
+// Plan: docs/plans/done/panel-react-build-plan.md §7
 // Baseline: Given the shim mounts · When __rcPanelReady never resolves
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { connectShim, FALLBACK_TEXT, READY_TIMEOUT_MS } from "@/shim";

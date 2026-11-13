@@ -285,9 +285,9 @@ sequenceDiagram
     participant Sv as Chainlit server
 
     U->>P: clicks a block's ⋮ handle
-    P->>S: S.menu = cell.id; rerender()
+    P->>S: S.menu = cell.id, then rerender()
     P->>C: render <DropdownMenu open={S.menu===id} modal={false}>
-    Note over P,C: Radix portal → document.body;<br/>open state comes from S, not React
+    Note over P,C: Radix portal → document.body.<br/>open state comes from S, not React
     C-->>U: popover: bg-popover, border, shadow-md,<br/>fade+zoom 150 ms
 
     U->>P: ArrowDown / Enter on "Duplicate"
@@ -298,7 +298,7 @@ sequenceDiagram
         Sv-->>C: set_sidebar_elements (new key)
         C->>P: new props → recompile → REMOUNT
         P->>S: S.overlay still holds menu:cell.id
-        Note over P,S: the menu re-renders open, marked data-rc-reopen:<br/>no replayed animation; the highlighted item is refocused (D4)
+        Note over P,S: the menu re-renders open, marked data-rc-reopen,<br/>no replayed animation, the highlighted item is refocused (D4)
     and
         Sv-->>P: action result
     end

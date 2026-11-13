@@ -1,5 +1,5 @@
 // Group 5 — Actions (AC4, AC8 · component with a mocked callAction)
-// Plan: docs/plans/panel-react-build-plan.md §7
+// Plan: docs/plans/done/panel-react-build-plan.md §7
 // Baseline: Given the app has a callAction mock · When a button is clicked
 import { describe, it, expect, vi } from "vitest";
 import { act, fireEvent, renderHook, screen } from "@testing-library/react";

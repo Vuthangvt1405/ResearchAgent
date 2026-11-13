@@ -1,5 +1,5 @@
 // Group S1 — Rendering stays safe (SEC1 · component + source scan)
-// Plan: docs/plans/panel-react-build-plan.md §7
+// Plan: docs/plans/done/panel-react-build-plan.md §7
 // Baseline: none (negatives only)
 import { describe, it, expect } from "vitest";
 import { render } from "@testing-library/react";

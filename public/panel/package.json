@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "description": "Notebook/datasets panel for the Chainlit sidebar, bundled into public/build (plan: docs/plans/panel-react-build-plan.md)",
+  "description": "Notebook/datasets panel for the Chainlit sidebar, bundled into public/build (plan: docs/plans/done/panel-react-build-plan.md)",
   "scripts": {
     "build": "vite build",
     "typecheck": "tsc --noEmit",

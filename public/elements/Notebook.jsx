@@ -1,4 +1,4 @@
-// Notebook panel shim for the right sidebar (plan: docs/plans/panel-react-build-plan.md).
+// Notebook panel shim for the right sidebar (plan: docs/plans/done/panel-react-build-plan.md).
 // props = NotebookProps from researchchat/workspace/service.py.
 //
 // Chainlit recompiles and remounts this element on every props push (about once a

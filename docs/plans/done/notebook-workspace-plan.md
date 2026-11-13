@@ -83,9 +83,21 @@ erDiagram
     PROJECT ||--|| FILES_DIR : "mounted as /work"
     NOTEBOOK ||--o{ CELL : "ordered cells"
     CHAT_SESSION }o--|| PROJECT : "works in"
-    PROJECT { string id "slug, folder name" string name string created_at }
-    NOTEBOOK { int version "bumped on every change" }
-    CELL { string id "nbformat cell id" string cell_type "code or markdown" string source int execution_count "code only" list outputs "code only" }
+    PROJECT {
+        string id "slug, folder name"
+        string name
+        string created_at
+    }
+    NOTEBOOK {
+        int version "bumped on every change"
+    }
+    CELL {
+        string id "nbformat cell id"
+        string cell_type "code or markdown"
+        string source
+        int execution_count "code only"
+        list outputs "code only"
+    }
 ```
 
 **Risks:** two chats on one project editing at once (lost updates), handled by a per-project lock and a `version` number; a kernel left running after all chats close, handled by idle shutdown; the `.ipynb` getting big from image outputs, handled by an output limit.

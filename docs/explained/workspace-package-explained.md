@@ -12,7 +12,7 @@ Who uses it:
 - **The model**, through five tools (`notebook_read`, `notebook_run`, `dataset_download`, `dataset_list`, `dataset_delete`).
 - **The app itself**, at chat start, chat end and on every message.
 
-Why it exists: ✅ to give each project one notebook, one Docker kernel and one files folder ([\_\_init\_\_.py:1](../../researchchat/workspace/__init__.py#L1), [notebook-workspace-plan.md](../plans/notebook-workspace-plan.md)).
+Why it exists: ✅ to give each project one notebook, one Docker kernel and one files folder ([\_\_init\_\_.py:1](../../researchchat/workspace/__init__.py#L1), [notebook-workspace-plan.md](../plans/done/notebook-workspace-plan.md)).
 
 | | |
 |---|---|
@@ -331,5 +331,5 @@ Nothing from a note: the chat message couldn't be sent, so no note was stored. I
 **Where to go next**
 - [project-workspace-explained.md](project-workspace-explained.md): the `workspaces/` folder and the cell-run flow into Docker. One line there is now out of date: it says `datasets` and `datasets_rev` "aren't sent yet", but `_props` sends them ([service.py:222](../../researchchat/workspace/service.py#L222)).
 - [chat-message-explained.md](chat-message-explained.md): how a chat message reaches the model and its tools.
-- [NB-3 plan](../plans/NB-3-dataset-download-plan.md): the rules behind dataset downloads.
+- [NB-3 plan](../plans/done/NB-3-dataset-download-plan.md): the rules behind dataset downloads.
 - `public/custom.js`: the project bar that talks to the panel through `rc:*` window events (not covered here).

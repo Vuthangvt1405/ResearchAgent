@@ -6,8 +6,8 @@ public/panel; these tests read the sources as text and check rules that must hol
 theme colours only, Chainlit's fonts, Tailwind classes that exist in Chainlit's
 pre-built CSS, imports the shim can resolve, pinned dependencies, and the security rules.
 
-Plans: docs/plans/analyst-panel-shadcn-refresh-plan.md (§7, rules A-E) and
-docs/plans/panel-react-build-plan.md (§7 Group S2; D1 moved A-E onto the new code).
+Plans: docs/plans/done/analyst-panel-shadcn-refresh-plan.md (§7, rules A-E) and
+docs/plans/done/panel-react-build-plan.md (§7 Group S2; D1 moved A-E onto the new code).
 """
 
 import re
@@ -361,7 +361,7 @@ def test_the_rc_event_bridge_is_gone():
 
 
 # ---- Group S2: bundled panel dependencies and scripts (panel React build, SEC2, SEC3, AC9) --
-# Plan: docs/plans/panel-react-build-plan.md §7 (D1: these checks move to public/panel/src/).
+# Plan: docs/plans/done/panel-react-build-plan.md §7 (D1: these checks move to public/panel/src/).
 # Baseline: none (negatives only)
 PANEL_PKG = PANEL_DIR / "package.json"
 EXACT = re.compile(r"^\d+\.\d+\.\d+$")
