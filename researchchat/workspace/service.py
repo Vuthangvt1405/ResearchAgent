@@ -85,6 +85,7 @@ class DatasetProps(TypedDict):
     requested_at: str  # sort by newest
     files: list[DatasetFileProps]  # file list and "Copy load code" (first 200)
     error: str | None  # red line when failed
+    shared_with: int  # other projects using the same pool entry; "Also used by N other projects" (NB-4)
 
 
 class NotebookProps(TypedDict):

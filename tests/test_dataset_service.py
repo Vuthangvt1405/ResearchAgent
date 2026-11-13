@@ -9,6 +9,7 @@ awaited with wait_idle().
 import asyncio
 import hashlib
 import json
+from types import SimpleNamespace
 
 import httpx
 import pytest
@@ -18,6 +19,7 @@ from researchchat.workspace import actions
 from researchchat.workspace import dataset_sources as src
 from researchchat.workspace import datasets_store as ds
 from researchchat.workspace import store
+from researchchat.workspace.dataset_pool import DatasetPool
 from researchchat.workspace.dataset_service import DatasetService, DatasetsSettings
 from researchchat.workspace.dataset_sources import DatasetPlan, PlannedFile
 from researchchat.workspace.service import NotebookService
@@ -171,8 +173,28 @@ class Env:
     def folder(self, pid, dataset_id="hf-org--name"):
         return ds.dataset_dir(pid, dataset_id, self.root)
 
-    def partial(self, pid):
-        return ds.partial_root(pid, self.root)
+    def pool_file(self, path, entry_id=f"hf-org--name@{R1[:7]}"):
+        return DatasetPool(self.root).pool_file_path(entry_id, path)
+
+    def partial(self, pid=None):
+        return DatasetPool(self.root).partial_dir()
+
+
+def records(root, pid):
+    """A project's datasets joined with their pool entries: what NB-3 tests read from datasets.json."""
+    entries = {e.id: e for e in DatasetPool(root).load_index()}
+    joined = []
+    for d in ds.load_project_datasets(pid, root):
+        entry = entries.get(d.pool_entry)
+        files = [
+            SimpleNamespace(path=p, size=f.size if f else 0, checksum=f.checksum if f else None, ready=bool(f and f.ready))
+            for p, f in ((p, entry.file(p) if entry else None) for p in d.files)
+        ]
+        joined.append(SimpleNamespace(
+            id=d.id, status=d.status, error=d.error, selection=d.selection, pool_entry=d.pool_entry,
+            revision=entry.revision if entry else None, files=files, downloaded_at=d.linked_at,
+        ))
+    return joined
 
 
 async def until(cond, timeout=2.0):
@@ -349,7 +371,7 @@ def test_job_writes_files_and_marks_ready(root):
         assert started["path"] == "/work/datasets/hf-org--name"
         assert (env.folder("p1") / "a.csv").read_bytes() == b"a,b\n1,2\n"
         assert (env.folder("p1") / "b.csv").read_bytes() == b"x\n" * 50
-        [record] = ds.load_records("p1", root)
+        [record] = records(root, "p1")
         assert record.status == "ready" and all(f.ready for f in record.files) and record.downloaded_at
         assert not env.partial("p1").exists() or not any(env.partial("p1").iterdir())
 
@@ -379,7 +401,7 @@ def test_redirect_to_public_https_cdn_is_followed(root):
         env.catalog.behaviours["a.csv"] = "redirect"
         await env.start()
         await download(env)
-        assert ds.load_records("p1", root)[0].status == "ready"
+        assert records(root, "p1")[0].status == "ready"
         assert any(r.url.host == "cas-bridge.xethub.hf.co" for r in env.catalog.requested)
 
     run(scenario())
@@ -392,7 +414,7 @@ def test_checksum_mismatch_fails_and_cleans_up(root):
         env.catalog.behaviours["a.csv"] = "wrong"
         await env.start()
         await download(env)
-        [record] = ds.load_records("p1", root)
+        [record] = records(root, "p1")
         assert record.status == "failed" and "checksum mismatch on a.csv" in record.error
         assert not (env.folder("p1") / "a.csv").exists()
         assert not env.partial("p1").exists()
@@ -408,7 +430,7 @@ def test_network_error_midway_cleans_up(root):
         env.catalog.behaviours["b.csv"] = "error"
         await env.start()
         await download(env)
-        [record] = ds.load_records("p1", root)
+        [record] = records(root, "p1")
         assert record.status == "failed" and "network error" in record.error
         assert not (env.folder("p1") / "b.csv").exists()
         assert not env.partial("p1").exists()
@@ -426,7 +448,7 @@ def test_redirect_to_private_address_is_blocked(root):
             env.catalog.private_target = target
             await env.start()
             await download(env)
-            record = ds.load_records("p1", root)[0]
+            record = records(root, "p1")[0]
             assert record.status == "failed" and "blocked" in record.error
             assert not any(r.url.host in ("127.0.0.1", "10.0.0.1") for r in env.catalog.requested)
             await env.svc.delete("p1", record.id)
@@ -441,7 +463,7 @@ def test_more_bytes_than_declared_aborts(root):
         env.catalog.behaviours["b.csv"] = "extra"
         await env.start()
         await download(env)
-        record = ds.load_records("p1", root)[0]
+        record = records(root, "p1")[0]
         assert record.status == "failed" and "bigger than the catalog said" in record.error
         assert not (env.folder("p1") / "b.csv").exists()
 
@@ -455,7 +477,7 @@ def test_stalled_download_fails(root):
         env.catalog.behaviours["a.csv"] = "stall"
         await env.start()
         await download(env)
-        record = ds.load_records("p1", root)[0]
+        record = records(root, "p1")[0]
         assert record.status == "failed" and "stalled" in record.error
 
     run(scenario())
@@ -468,7 +490,7 @@ def test_too_many_redirects(root):
         env.catalog.behaviours["a.csv"] = "loop"
         await env.start()
         await download(env)
-        record = ds.load_records("p1", root)[0]
+        record = records(root, "p1")[0]
         assert record.status == "failed" and "too many redirects" in record.error
         assert len(env.catalog.file_requests("a.csv")) == src.MAX_REDIRECTS + 1
 
@@ -510,7 +532,7 @@ def test_newer_revision_is_not_used_without_update(root):
         before = len(env.catalog.requested)
         again = await download(env, ["*.csv"])
         assert again["already_downloaded"] is True
-        assert ds.load_records("p1", root)[0].revision == R1
+        assert records(root, "p1")[0].revision == R1
         assert (env.folder("p1") / "a.csv").read_bytes() == b"1,2\n"
         assert len(env.catalog.requested) == before
 
@@ -533,7 +555,7 @@ def test_update_true_downloads_current_revision(root):
         assert (env.folder("p1") / "a.csv").read_bytes() == b"1,2\n"  # old version still in place mid-update
         env.catalog.gate.set()
         await env.svc.wait_idle()
-        record = ds.load_records("p1", root)[0]
+        record = records(root, "p1")[0]
         assert record.revision == R2 and record.status == "ready"
         assert (env.folder("p1") / "a.csv").read_bytes() == b"new-a"
         assert (env.folder("p1") / "b.csv").read_bytes() == b"new-b"
@@ -567,7 +589,7 @@ def test_new_selection_adds_only_new_files(root):
         started = await download(env, ["*.parquet"])
         assert started["dataset_id"] == "hf-org--name"
         assert [r.url.path.rsplit("/", 1)[1] for r in env.catalog.file_requests()[before:]] == ["c.parquet"]
-        record = ds.load_records("p1", root)[0]
+        record = records(root, "p1")[0]
         assert record.selection == ["*.csv", "*.parquet"]
         assert sorted(p.name for p in env.folder("p1").iterdir()) == ["a.csv", "b.csv", "c.parquet"]
 
@@ -589,7 +611,7 @@ def test_new_selection_while_downloading_queues_after_it(root):
         env.catalog.gate.set()
         await svc.wait_idle()
         assert sorted(p.name for p in env.folder("p1").iterdir()) == ["a.csv", "b.csv", "c.parquet"]
-        assert ds.load_records("p1", root)[0].status == "ready"
+        assert records(root, "p1")[0].status == "ready"
 
     run(scenario())
 
@@ -601,24 +623,25 @@ def test_failed_dataset_can_be_downloaded_again(root):
         env.catalog.fail_once.add("b.csv")
         await env.start()
         await download(env)
-        assert ds.load_records("p1", root)[0].status == "failed"
+        assert records(root, "p1")[0].status == "failed"
         before = len(env.catalog.file_requests())
         retry = await download(env)
         assert retry["download_bytes"] == len(b"x\n" * 50)
         assert [r.url.path.rsplit("/", 1)[1] for r in env.catalog.file_requests()[before:]] == ["b.csv"]
-        assert ds.load_records("p1", root)[0].status == "ready"
+        assert records(root, "p1")[0].status == "ready"
 
     run(scenario())
 
 
 def test_missing_files_are_downloaded_again_only(root):
-    # G6✅8 · Changed: 1 of 3 files deleted, same request · Then: job fetches only that file
+    # G6✅8 (NB-4: the pooled bytes are gone, not just the link) · Changed: 1 of 3 files deleted from the pool,
+    # same request · Then: job fetches only that file
     # Demonstrates: re-downloading after cleanup is cheap
     async def scenario():
         env = Env(root, catalog=csv_parquet_catalog())
         await env.start()
         await download(env)
-        (env.folder("p1") / "b.csv").unlink()
+        env.pool_file("b.csv").unlink()
         before = len(env.catalog.file_requests())
         await download(env)
         assert [r.url.path.rsplit("/", 1)[1] for r in env.catalog.file_requests()[before:]] == ["b.csv"]
@@ -684,9 +707,9 @@ def test_delete_removes_folder_and_record(root):
         await download(env)
         pushes = len(env.pushes)
         result = await env.svc.delete("p1", "hf-org--name")
-        assert result == {"deleted": "hf-org--name", "freed_bytes": len(b"a,b\n1,2\n") + len(b"x\n" * 50)}
+        assert result == {"deleted": "hf-org--name", "freed_bytes": len(b"a,b\n1,2\n") + len(b"x\n" * 50), "still_used_by": 0}
         assert not env.folder("p1").exists()
-        assert ds.load_records("p1", root) == []
+        assert records(root, "p1") == []
         assert len(env.pushes) > pushes and env.pushes[-1][1]["datasets"] == []
 
     run(scenario())
@@ -727,7 +750,7 @@ def test_delete_unknown_id_is_not_found(root):
         with pytest.raises(WorkspaceError) as e:
             await env.svc.delete("p1", "zenodo-404")
         assert e.value.code == ErrorCode.NOT_FOUND
-        assert len(ds.load_records("p1", root)) == 1 and env.folder("p1").is_dir()
+        assert len(records(root, "p1")) == 1 and env.folder("p1").is_dir()
 
     run(scenario())
 
@@ -744,7 +767,7 @@ def test_delete_while_downloading_is_busy(root):
         assert e.value.code == ErrorCode.BUSY
         env.catalog.gate.set()
         await svc.wait_idle()
-        assert ds.load_records("p1", root)[0].status == "ready"
+        assert records(root, "p1")[0].status == "ready"
 
     run(scenario())
 
@@ -759,14 +782,14 @@ def test_model_delete_declined_keeps_dataset(root):
         await download(env)
         asked = []
 
-        async def keep(name, size):
-            asked.append((name, size))
+        async def keep(name, size, shared_with):
+            asked.append((name, size, shared_with))
             return False
 
         shown, result = await dataset_delete.run({"dataset_id": "hf-org--name"}, svc=env.svc, project_id="p1", approve=keep)
         assert json.loads(result)["error"] == ErrorCode.DECLINED
-        assert asked == [("Secret Pretty Name", len(b"a,b\n1,2\n") + len(b"x\n" * 50))]
-        assert len(ds.load_records("p1", root)) == 1 and (env.folder("p1") / "a.csv").is_file()
+        assert asked == [("Secret Pretty Name", len(b"a,b\n1,2\n") + len(b"x\n" * 50), 0)]
+        assert len(records(root, "p1")) == 1 and (env.folder("p1") / "a.csv").is_file()
 
     run(scenario())
 
@@ -780,7 +803,7 @@ def test_cancel_when_not_downloading(root):
         with pytest.raises(WorkspaceError) as e:
             await env.svc.cancel("p1", "hf-org--name")
         assert e.value.code == ErrorCode.NOT_FOUND
-        assert (env.folder("p1") / "a.csv").is_file() and len(ds.load_records("p1", root)) == 1
+        assert (env.folder("p1") / "a.csv").is_file() and len(records(root, "p1")) == 1
 
     run(scenario())
 
@@ -860,7 +883,7 @@ def test_ds_actions_bad_payload(root, monkeypatch):
                 assert e.value.code == ErrorCode.BAD_PAYLOAD
         props = await actions.dispatch(nb, session, "ds_delete", {"dataset_id": "hf-org--name", "project_id": "p2"})
         assert props["project"]["id"] == "p1" and props["datasets"] == []
-        assert len(ds.load_records("p2", root)) == 1 and env.folder("p2").is_dir()
+        assert len(records(root, "p2")) == 1 and env.folder("p2").is_dir()
 
     run(scenario())
 
@@ -873,7 +896,7 @@ def test_ds_delete_other_projects_dataset_is_not_found(root, monkeypatch):
         with pytest.raises(WorkspaceError) as e:
             await actions.dispatch(nb, session, "ds_delete", {"dataset_id": "hf-org--name"})
         assert e.value.code == ErrorCode.NOT_FOUND
-        assert len(ds.load_records("p2", root)) == 1 and (env.folder("p2") / "a.csv").is_file()
+        assert len(records(root, "p2")) == 1 and (env.folder("p2") / "a.csv").is_file()
 
     run(scenario())
 
@@ -964,7 +987,7 @@ def test_job_continues_after_chat_closes(root):
         pushes = len(env.pushes)
         env.catalog.gate.set()
         await svc.wait_idle()
-        assert ds.load_records("p1", root)[0].status == "ready"
+        assert records(root, "p1")[0].status == "ready"
         assert env.chats.sent == [] and svc.take_notes("s1") is None
         assert len(env.pushes) > pushes and env.pushes[-1][1]["datasets"][0]["status"] == "ready"
 
@@ -997,7 +1020,7 @@ def test_job_keeps_project_after_chat_switches(root):
         env.catalog.gate.set()
         await svc.wait_idle()
         assert (env.folder("p1") / "b.csv").is_file()
-        assert not env.folder("p2").exists() and ds.load_records("p2", root) == []
+        assert not env.folder("p2").exists() and records(root, "p2") == []
 
     run(scenario())
 
@@ -1067,7 +1090,7 @@ def test_linked_dataset_folders_are_never_followed(root, tmp_path):
         env = Env(root)
         await env.start()
         await download(env)
-        [record] = ds.load_records("p1", root)
+        [record] = records(root, "p1")
         assert record.status == "failed" and "link" in record.error
         await env.svc.delete("p1", record.id)
 
@@ -1085,6 +1108,27 @@ def test_linked_dataset_folders_are_never_followed(root, tmp_path):
     assert (outside / "hf-org--name" / "keep.txt").read_text() == "mine"
 
 
+def test_update_while_downloading_is_busy(root):
+    # G6 (added in NB-4) · Changed: update: true while the first download still runs
+    # Then: BUSY; the running download finishes and the project keeps one version
+    # Demonstrates: two versions are never fetched for one project at once
+    async def scenario():
+        env = Env(root)
+        env.catalog.behaviours["a.csv"] = "block"
+        svc = await env.start()
+        await svc.request("p1", "s1", "hf:org/name", approve=yes)
+        env.catalog.new_revision("org/name", R2, {"a.csv": b"new-a", "b.csv": b"new-b"})
+        with pytest.raises(WorkspaceError) as err:
+            await svc.request("p1", "s1", "hf:org/name", update=True, approve=yes)
+        assert err.value.code == ErrorCode.BUSY
+        env.catalog.gate.set()
+        await svc.wait_idle()
+        assert records(root, "p1")[0].revision == R1
+        assert [e.revision for e in DatasetPool(root).load_index()] == [R1]
+
+    run(scenario())
+
+
 def test_failed_update_keeps_old_version_ready(root):
     # G6 (added) · Changed: update: true fails (checksum), then the same request without update
     # Then: old files untouched; the dataset shows ready again, with no error
@@ -1096,12 +1140,114 @@ def test_failed_update_keeps_old_version_ready(root):
         env.catalog.new_revision("org/name", R2, {"a.csv": b"new-a", "b.csv": b"new-b"})
         env.catalog.behaviours["b.csv"] = "wrong"
         await download(env, update=True)
-        record = ds.load_records("p1", root)[0]
+        record = records(root, "p1")[0]
         assert record.status == "failed" and record.revision == R1
         assert (env.folder("p1") / "a.csv").read_bytes() == b"a,b\n1,2\n"
         again = await download(env)
         assert again["already_downloaded"] is True
         [view] = env.svc.list_for_model("p1")
         assert (view["status"], view["error"]) == ("ready", None)
+
+    run(scenario())
+
+
+# ---- NB-4: tests moved from the epic into NB-4 (they need the pool) · unit
+# Baseline: as the NB-3 groups above, plus a shared dataset pool (NB-4 plan §7)
+
+
+def test_pooled_files_need_no_space_and_no_prompt(root):
+    # G4✅4 · Changed: all files already in the pool, 0 bytes free
+    # Then: linked, ready, from_pool: true; approve and free-disk not called
+    # Demonstrates: reuse is instant and free (AC15)
+    async def scenario():
+        env = Env(root)
+        await env.start()
+        await download(env)
+        env.disk.free = 0  # any disk check would now refuse
+        approver = Approver(True)
+        before = len(env.catalog.requested)
+        started = await env.svc.request("p2", "s2", "hf:org/name", approve=approver)
+        assert (started["status"], started["from_pool"], started["download_bytes"]) == ("ready", True, 0)
+        assert approver.calls == []
+        assert env.catalog.requested[before:] == []
+        assert (env.folder("p2") / "a.csv").read_bytes() == b"a,b\n1,2\n"
+
+    run(scenario())
+
+
+def test_missing_files_are_relinked_from_pool(root):
+    # G6✅9 · Changed: 1 of 3 links deleted, same request
+    # Then: re-linked; no download
+    # Demonstrates: cleanup in the notebook is cheap to undo (AC28)
+    async def scenario():
+        env = Env(root, catalog=csv_parquet_catalog())
+        await env.start()
+        await download(env)
+        (env.folder("p1") / "b.csv").unlink()
+        assert env.svc.list_for_model("p1")[0]["status"] == "missing"
+        before = len(env.catalog.requested)
+        again = await download(env)
+        assert again["from_pool"] is True and again["download_bytes"] == 0
+        assert env.catalog.requested[before:] == []
+        assert (env.folder("p1") / "b.csv").read_bytes() == b"3,4\n"
+        assert env.svc.list_for_model("p1")[0]["status"] == "ready"
+
+    run(scenario())
+
+
+def test_delete_keeps_pool_data_used_by_other_project(root):
+    # G7✅2 · Changed: p2 uses the same entry
+    # Then: p1 links and record gone; entry kept; freed_bytes: 0, still_used_by: 1; p2 unchanged
+    # Demonstrates: deleting in one project never breaks another (AC25)
+    async def scenario():
+        env = Env(root)
+        await env.start()
+        await download(env)
+        await download(env, pid="p2", session="s2")
+        assert env.svc.describe("p1", "hf-org--name")["shared_with"] == 1
+        result = await env.svc.delete("p1", "hf-org--name")
+        assert result == {"deleted": "hf-org--name", "freed_bytes": 0, "still_used_by": 1}
+        assert not env.folder("p1").exists() and records(root, "p1") == []
+        assert env.pool_file("a.csv").is_file()
+        assert (env.folder("p2") / "a.csv").read_bytes() == b"a,b\n1,2\n"
+        assert env.svc.list_for_model("p2")[0]["status"] == "ready"
+
+    run(scenario())
+
+
+def test_cancel_shared_job_keeps_it_for_other_project(root):
+    # G7✅4 · Changed: p2 waits for the same job
+    # Then: p1 record removed; job continues; p2 gets ready
+    # Demonstrates: cancel is per project (AC27)
+    async def scenario():
+        env = Env(root)
+        env.catalog.behaviours["a.csv"] = "block"
+        svc = await env.start()
+        await svc.request("p1", "s1", "hf:org/name", approve=yes)
+        joined = await svc.request("p2", "s2", "hf:org/name", approve=yes)
+        assert joined["status"] in ("downloading", "queued") and joined["from_pool"] is False
+        await svc.cancel("p1", "hf-org--name")
+        assert records(root, "p1") == []
+        env.catalog.gate.set()
+        await svc.wait_idle()
+        assert len(env.catalog.file_requests("a.csv")) == 1
+        assert svc.list_for_model("p2")[0]["status"] == "ready"
+        assert not env.folder("p1").exists()
+
+    run(scenario())
+
+
+def test_delete_last_user_removes_pool_data(root):
+    # G7✅5 · Changed: only p1 uses the entry
+    # Then: links, record and pool entry gone; freed_bytes = size
+    # Demonstrates: the pool cleans itself up (AC25)
+    async def scenario():
+        env = Env(root)
+        await env.start()
+        await download(env)
+        result = await env.svc.delete("p1", "hf-org--name")
+        assert result["freed_bytes"] == len(b"a,b\n1,2\n") + len(b"x\n" * 50) and result["still_used_by"] == 0
+        assert not env.pool_file("a.csv").parent.exists()
+        assert DatasetPool(root).load_index() == []
 
     run(scenario())

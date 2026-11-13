@@ -24,7 +24,9 @@ DEFINITION = {
             "and the /work/datasets/<id>/ paths the files will have; you'll be told "
             "when it's ready, so don't read the files before then. Use `files` "
             "(names or globs like \"*.csv\") for big datasets. Set `update` only "
-            "when the user asks to update to the newest version."
+            "when the user asks to update to the newest version. Data other "
+            "projects already have is ready at once. Dataset files are read-only: "
+            "copy a file elsewhere in /work before changing it."
         ),
         "parameters": {
             "type": "object",
@@ -138,7 +140,9 @@ async def run(
         if e.code == ErrorCode.DECLINED:
             return "Skipped: the user chose not to download it.", error_json(e)
         raise ValueError(error_json(e)) from e
-    if started["already_downloaded"]:
+    if started["from_pool"] and started["already_downloaded"]:
+        shown = f"Ready from the shared pool, nothing downloaded: `{started['path']}/`"
+    elif started["already_downloaded"]:
         shown = f"Already downloaded: `{started['path']}/`"
     elif started["status"] == "queued":
         shown = f"Queued ({human_size(started['download_bytes'])}), {started['position_in_queue']} ahead → `{started['path']}/`"

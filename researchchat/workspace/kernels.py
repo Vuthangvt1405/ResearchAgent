@@ -39,6 +39,7 @@ from researchchat.config import (
     WORKSPACES_DIR,
 )
 from researchchat.workspace import ErrorCode, WorkspaceError
+from researchchat.workspace.dataset_pool import KERNEL_POOL_ROOT, POOL_DIR
 
 CONTAINER_PREFIX = "rc-kernel-"
 SCOPE_LABEL = "researchchat.scope"  # which workspaces folder a container belongs to
@@ -74,6 +75,15 @@ class DockerSettings:
     memory: str = DOCKER_MEMORY
     cpus: float = DOCKER_CPUS
     pids_limit: int = DOCKER_PIDS_LIMIT
+
+
+@dataclass
+class ContainerMounts:
+    """Host folders bound into a kernel container."""
+
+    files_dir: Path  # → /work, read-write
+    conn_dir: Path  # → /conn, read-only
+    pool_dir: Path  # → /.dataset-pool, read-only (NB-4)
 
 
 @dataclass
@@ -222,23 +232,10 @@ class KernelRegistry:
         (conn_dir / "kernel.json").write_text(json.dumps({**info, "ip": "0.0.0.0"}), encoding="utf-8")
 
         files_dir.mkdir(parents=True, exist_ok=True)
-        ports = [arg for p in (shell, iopub, stdin, control, hb) for arg in ("-p", f"127.0.0.1:{p}:{p}")]
-        result = await docker(
-            "run", "-d", "--rm", "--init", "--name", name,
-            "--label", f"{SCOPE_LABEL}={self.scope}", "--label", f"{PROJECT_LABEL}={project_id}",
-            "--user", "1000",
-            "--read-only", "--tmpfs", "/tmp",
-            "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
-            "--memory", str(self.docker.memory), "--memory-swap", str(self.docker.memory),
-            "--cpus", str(self.docker.cpus), "--pids-limit", str(self.docker.pids_limit),
-            "--mount", f"type=bind,source={files_dir.resolve()},target={WORK_DIR}",
-            "--mount", f"type=bind,source={conn_dir.resolve()},target=/conn,readonly",
-            "-w", WORK_DIR,
-            *ports,
-            self.docker.image,
-            "python", "-m", "ipykernel_launcher", "-f", "/conn/kernel.json",
-            timeout=120,
-        )
+        pool_dir = self.root / POOL_DIR
+        pool_dir.mkdir(parents=True, exist_ok=True)  # docker refuses to bind a missing folder
+        mounts = ContainerMounts(files_dir.resolve(), conn_dir.resolve(), pool_dir.resolve())
+        result = await docker(*self.run_arguments(name, project_id, mounts, (shell, iopub, stdin, control, hb)), timeout=120)
         if result.returncode != 0:
             shutil.rmtree(conn_dir, ignore_errors=True)
             detail = (result.stderr or result.stdout).strip().splitlines()[-1:] or ["unknown error"]
@@ -255,6 +252,27 @@ class KernelRegistry:
             await self.stop(project_id)
             raise WorkspaceError(ErrorCode.KERNEL_DEAD, "The kernel didn't start in time.") from e
         kernel.state = "idle"
+
+    def run_arguments(self, name: str, project_id: str, mounts: ContainerMounts, ports: tuple[int, ...]) -> list[str]:
+        """The `docker run` arguments for one kernel: /work read-write, /conn and the dataset pool read-only (AC18)."""
+        published = [arg for p in ports for arg in ("-p", f"127.0.0.1:{p}:{p}")]
+        return [
+            "run", "-d", "--rm", "--init", "--name", name,
+            "--label", f"{SCOPE_LABEL}={self.scope}", "--label", f"{PROJECT_LABEL}={project_id}",
+            "--user", "1000",
+            "--read-only", "--tmpfs", "/tmp",
+            "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
+            "--memory", str(self.docker.memory), "--memory-swap", str(self.docker.memory),
+            "--cpus", str(self.docker.cpus), "--pids-limit", str(self.docker.pids_limit),
+            "--mount", f"type=bind,source={mounts.files_dir},target={WORK_DIR}",
+            "--mount", f"type=bind,source={mounts.conn_dir},target=/conn,readonly",
+            # Project links into the pool are relative and land here (dataset_pool.py)
+            "--mount", f"type=bind,source={mounts.pool_dir},target={KERNEL_POOL_ROOT},readonly",
+            "-w", WORK_DIR,
+            *published,
+            self.docker.image,
+            "python", "-m", "ipykernel_launcher", "-f", "/conn/kernel.json",
+        ]
 
     async def _running(self, kernel: _Kernel) -> bool:
         result = await docker("inspect", "-f", "{{.State.Running}}", kernel.container, timeout=15)
