@@ -80,9 +80,6 @@ class Catalog:
     def file_requests(self, path=None):
         return [r for r in self.requested if "/resolve/" in r.url.path and (path is None or r.url.path.endswith("/" + path))]
 
-    def api_requests(self):
-        return [r for r in self.requested if r.url.path.startswith("/api/")]
-
     async def __call__(self, request: httpx.Request) -> httpx.Response:
         self.requested.append(request)
         host, path = request.url.host, request.url.path

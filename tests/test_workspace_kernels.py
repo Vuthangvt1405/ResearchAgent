@@ -9,7 +9,6 @@ import json
 import os
 import time
 
-import nbformat
 import pytest
 
 from researchchat.workspace import ErrorCode, WorkspaceError, store

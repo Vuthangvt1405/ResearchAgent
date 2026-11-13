@@ -24,7 +24,6 @@ from researchchat.workspace.datasets_store import NAME_MAX, Source, safe_relpath
 
 CATALOG_HOSTS = {"huggingface": "huggingface.co", "zenodo": "zenodo.org"}
 MAX_REDIRECTS = 5
-HF_PAGE_SIZE = 1000
 USER_AGENT = "ResearchChat"  # generic; no tokens are ever sent (A1, SEC14)
 HEADERS = {"User-Agent": USER_AGENT}
 AVAILABLE_FILES_MAX = 100

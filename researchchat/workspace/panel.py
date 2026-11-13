@@ -61,9 +61,6 @@ class PanelRegistry:
         for panels in self._panels.values():
             panels.pop(session_id, None)
 
-    def sessions(self, project_id: str) -> list[str]:
-        return list(self._panels.get(project_id, {}))
-
     async def push(self, project_id: str, props: NotebookProps) -> None:
         """Send new props to every open panel of the project."""
 
