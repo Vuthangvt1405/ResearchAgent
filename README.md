@@ -156,7 +156,7 @@ Zenodo dataset it found with `dataset_search` into the current project
 ### Shared dataset pool
 
 Downloaded data is stored once and shared by every project. The plan is in
-`docs/plans/NB-4-dataset-pool-plan.md`.
+`docs/plans/done/NB-4-dataset-pool-plan.md`.
 
 - The bytes live in `workspaces/.dataset-pool/<dataset>@<revision>/`, listed in
   `workspaces/.dataset-pool.json`. A project's `files/datasets/<id>/` holds

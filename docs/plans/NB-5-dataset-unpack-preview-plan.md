@@ -1,5 +1,5 @@
 # Feature Plan: Unpack Archives & Browse Dataset Contents (NB-5)
-Status: Draft — awaiting answers · Source: [epic overview](dataset-download-plan.md), ticket NB-5 (3 of 3) · Depends on: [NB-3](done/NB-3-dataset-download-plan.md), [NB-4](NB-4-dataset-pool-plan.md) · Date: 2026-11-11
+Status: Draft — awaiting answers · Source: [epic overview](dataset-download-plan.md), ticket NB-5 (3 of 3) · Depends on: [NB-3](done/NB-3-dataset-download-plan.md), [NB-4](done/NB-4-dataset-pool-plan.md) · Date: 2026-11-11
 
 Archives in a downloaded dataset are **unpacked automatically**, safely, inside the pool. In the panel you can **look at the data inside** a ready dataset: its file tree with sizes, the first rows of a CSV/TSV/JSONL file, the first lines of a text file, and **Open in notebook**, which adds a cell that loads the file.
 
@@ -26,7 +26,7 @@ AC and test numbers are the epic's (shared by NB-3, NB-4 and NB-5).
 
 ## 2. Codebase Patterns
 
-Same as [NB-3 §2](done/NB-3-dataset-download-plan.md#2-codebase-patterns) and [NB-4 §2](NB-4-dataset-pool-plan.md#2-codebase-patterns), plus:
+Same as [NB-3 §2](done/NB-3-dataset-download-plan.md#2-codebase-patterns) and [NB-4 §2](done/NB-4-dataset-pool-plan.md#2-codebase-patterns), plus:
 
 | Area | Finding | Evidence |
 |---|---|---|
@@ -40,7 +40,7 @@ Same as [NB-3 §2](done/NB-3-dataset-download-plan.md#2-codebase-patterns) and [
 
 ### 3.1 Existing Tables
 
-The pool index and project `datasets.json` format 2 from [NB-4 §3.3](NB-4-dataset-pool-plan.md#33-proposed-schema-changes-described-not-applied).
+The pool index and project `datasets.json` format 2 from [NB-4 §3.3](done/NB-4-dataset-pool-plan.md#33-proposed-schema-changes-described-not-applied).
 
 ### 3.2 Relationships (+ ER diagram)
 
