@@ -1,5 +1,5 @@
 // Group 2 — Props merge (AC3, SEC4 · unit)
-// Plan: docs/plans/panel-react-build-plan.md §7
+// Plan: docs/plans/done/panel-react-build-plan.md §7
 // Baseline: Given the stored props have version 5 and datasets_rev 3 · When setProps is called
 import { describe, it, expect } from "vitest";
 import { newer } from "@/lib/newer";

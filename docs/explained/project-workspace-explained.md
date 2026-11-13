@@ -6,7 +6,7 @@ Date: 2026-11-12 · Commit: 5197cea (plus uncommitted NB-3 scaffold) · Scope: t
 `workspaces/` is where ResearchChat keeps your work on disk. Each **project** gets its own folder with a notebook (`notebook.ipynb`), a name (`project.json`) and a working-files folder (`files/`). When notebook code runs, `files/` is mounted into an isolated Docker container at `/work`. That gives you and the model a shared place to put data, and it's the only part of your computer the code can see.
 
 Why it exists:
-- ✅ **To keep work across restarts.** The chat lives in memory, the notebook is saved to disk ([store.py:1-7](../../researchchat/workspace/store.py#L1), [notebook-workspace-plan.md](../plans/notebook-workspace-plan.md)).
+- ✅ **To keep work across restarts.** The chat lives in memory, the notebook is saved to disk ([store.py:1-7](../../researchchat/workspace/store.py#L1), [notebook-workspace-plan.md](../plans/done/notebook-workspace-plan.md)).
 - ✅ **To keep code in a sandbox.** Only the project's `files/` folder is mounted into the container ([kernels.py:207-238](../../researchchat/workspace/kernels.py#L207)).
 - ✅ **To keep projects separate.** Each one has its own notebook, files and kernel. The project always comes from the chat session ([actions.py:1-4](../../researchchat/workspace/actions.py#L1)).
 
@@ -228,5 +228,5 @@ So a page or the model can't pick another project. The server always uses the ch
 
 **Where to go next**
 - [chat-message-explained.md](chat-message-explained.md): how a chat message reaches the model and its tools.
-- [NB-3 plan](../plans/NB-3-dataset-download-plan.md): how datasets will be downloaded into `files/datasets/`.
+- [NB-3 plan](../plans/done/NB-3-dataset-download-plan.md): how datasets will be downloaded into `files/datasets/`.
 - [kernels.py](../../researchchat/workspace/kernels.py): container lifecycle, idle reaping and output caps.

@@ -1,5 +1,5 @@
 # Feature Plan: Background Dataset Download & Management (NB-3)
-Status: Implemented — awaiting review · Source: [epic overview](dataset-download-plan.md), ticket NB-3 (1 of 3) · Date: 2026-11-11
+Status: Implemented — awaiting review · Source: [epic overview](../dataset-download-plan.md), ticket NB-3 (1 of 3) · Date: 2026-11-11
 
 The assistant downloads a dataset found with `dataset_search` into the current project **in the background**, so you keep chatting while it downloads. The panel shows status, progress and licence while it runs, and name, size and file count once it's done; you (or the model, with your OK) can delete it. Data is stored in the project's own `files/datasets/` folder in this ticket; **NB-4** moves it into the shared pool, and **NB-5** adds unpacking and the file browser.
 
@@ -133,9 +133,24 @@ No database: projects are folders. NB-3 adds one JSON file per project.
 erDiagram
     PROJECT ||--o{ DATASET_RECORD : "datasets.json"
     DATASET_RECORD ||--|{ DATASET_FILE : "files[]"
-    PROJECT { string id PK  string name }
-    DATASET_RECORD { string id PK  string source  string source_id  string revision  string status  int size_bytes }
-    DATASET_FILE { string path  int size  string checksum  bool ready }
+    PROJECT {
+        string id PK
+        string name
+    }
+    DATASET_RECORD {
+        string id PK
+        string source
+        string source_id
+        string revision
+        string status
+        int size_bytes
+    }
+    DATASET_FILE {
+        string path
+        int size
+        string checksum
+        bool ready
+    }
 ```
 
 Risks: notebook code can change `files/` freely, so the record and the disk can disagree (the `missing` status, AC28). `datasets.json` lives **next to** `files/`, not in it, so kernel code can't edit it.
@@ -402,11 +417,11 @@ sequenceDiagram
 
     M->>T: dataset_download(ref, files?, update?)
     T->>S: request(project from session, session id, ...)
-    S->>S: wait for startup cleanup; parse_ref
+    S->>S: wait for startup cleanup, then parse_ref
     alt bad / unsupported ref
         S-->>T: BAD_REF / UNSUPPORTED_SOURCE
     end
-    S->>S: lock; existing record? keep its revision unless update=true
+    S->>S: lock, find any existing record, keep its revision unless update=true
     opt need the catalog
         S->>C: metadata + file pages (https, public check, next links checked)
         alt gated / not found / no files / too many files
@@ -433,7 +448,7 @@ sequenceDiagram
         S-->>T: DownloadStarted
     end
     T-->>M: result at once
-    M-->>U: answers; the chat goes on
+    M-->>U: answers, the chat goes on
 
     Note over J: later (parallel_downloads at a time)
     loop each file
@@ -702,7 +717,7 @@ Negatives only; Baseline: Given a project and MockTransport.
 
 ## Decision log
 
-Decisions D1–D6 are recorded in the [epic overview](dataset-download-plan.md#decision-log). NB-3-specific decisions:
+Decisions D1–D6 are recorded in the [epic overview](../dataset-download-plan.md#decision-log). NB-3-specific decisions:
 
 | ID | Question | Answer | What changed in the plan |
 |---|---|---|---|

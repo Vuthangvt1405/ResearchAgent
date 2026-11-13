@@ -1,5 +1,5 @@
 // Group 1 — The root survives Chainlit remounts (AC1, AC6, AC10 · integration)
-// Plan: docs/plans/panel-react-build-plan.md §7
+// Plan: docs/plans/done/panel-react-build-plan.md §7
 // Baseline: Given the app is attached with props v1 and a DatasetCard is open · When the shim is unmounted and a new shim mounts with props v2
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { act, fireEvent, screen } from "@testing-library/react";

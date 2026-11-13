@@ -7,7 +7,7 @@ This file is the overview. Each ticket has its own full plan (requirements, sche
 
 | Ticket | Plan | What it delivers | ACs | Tests | Depends on |
 |---|---|---|---|---|---|
-| **NB-3** | [NB-3-dataset-download-plan.md](NB-3-dataset-download-plan.md) | background download into the project's `files/datasets/`, disk check, Download/Skip, queue, finish messages, `dataset_list`, delete, cancel, Datasets panel (download and ready rows) | AC1–AC14, AC21, AC24–AC28 | 80 | — |
+| **NB-3** | [done/NB-3-dataset-download-plan.md](done/NB-3-dataset-download-plan.md) | background download into the project's `files/datasets/`, disk check, Download/Skip, queue, finish messages, `dataset_list`, delete, cancel, Datasets panel (download and ready rows) | AC1–AC14, AC21, AC24–AC28 | 80 | — |
 | **NB-4** | [NB-4-dataset-pool-plan.md](NB-4-dataset-pool-plan.md) | shared pool with read-only `/pool` mount and symlinks, reuse across projects, shared jobs, per-project delete and cancel, migration of NB-3 data | AC15–AC18, AC29–AC30, pool parts of AC25/27/28 | 21 | NB-3 |
 | **NB-5** | [NB-5-dataset-unpack-preview-plan.md](NB-5-dataset-unpack-preview-plan.md) | safe automatic unpacking; file tree, previews and Open in notebook in the panel; `pyarrow` in the kernel | AC19–AC20, AC22–AC23 | 20 | NB-3, NB-4 |
 

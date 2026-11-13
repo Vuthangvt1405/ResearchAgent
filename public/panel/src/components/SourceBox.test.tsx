@@ -1,5 +1,5 @@
 // Group 4 — Typing survives a push (AC5, AC10 · integration)
-// Plan: docs/plans/panel-react-build-plan.md §7
+// Plan: docs/plans/done/panel-react-build-plan.md §7
 // Baseline: Given focus is in cell A's textarea with the cursor at 7 and an unsaved draft · When a remount happens
 import { describe, it, expect } from "vitest";
 import { act, fireEvent, screen } from "@testing-library/react";
