@@ -60,6 +60,7 @@ start with a message saying what to fix.
 ## Test
 
 ```bash
+.venv/bin/python -m pip install -r requirements-dev.txt   # once: adds ruff (lint) and vulture (dead-code scan: just run `vulture`)
 .venv/bin/python -m pytest -m "not docker"     # everything except the Docker kernel tests
 .venv/bin/python -m pytest                     # all, with Docker running and the image built
 ```
