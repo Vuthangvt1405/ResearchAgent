@@ -1,6 +1,6 @@
 """Project workspaces: one notebook, one Docker kernel and one files folder per project.
 
-Plan: docs/plans/notebook-workspace-plan.md
+Plan: docs/plans/done/notebook-workspace-plan.md
 """
 
 
@@ -17,7 +17,7 @@ class ErrorCode:
     KERNEL_DEAD = "KERNEL_DEAD"  # the kernel container crashed
     KERNEL_UNAVAILABLE = "KERNEL_UNAVAILABLE"  # Docker isn't running
     TIMEOUT = "TIMEOUT"  # cell ran past the time limit
-    # NB-3 dataset downloads (docs/plans/NB-3-dataset-download-plan.md §4.3)
+    # NB-3 dataset downloads (docs/plans/done/NB-3-dataset-download-plan.md §4.3)
     BAD_REF = "BAD_REF"  # empty or malformed dataset ref, or a URL on another host
     UNSUPPORTED_SOURCE = "UNSUPPORTED_SOURCE"  # a catalog without a file API (Kaggle, DataCite)
     NOT_PUBLIC = "NOT_PUBLIC"  # gated / private Hugging Face, restricted Zenodo

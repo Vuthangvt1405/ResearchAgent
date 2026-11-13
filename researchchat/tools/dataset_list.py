@@ -28,7 +28,8 @@ def _line(v: dict) -> str:
     status = v["status"]
     if status == "downloading" and v["size_bytes"]:
         status += f" {100 * (v['done_bytes'] or 0) // v['size_bytes']}%"
-    return f"- {v['name']} · {status} · {human_size(v['size_bytes'])} · `{v['path']}/`"
+    shared = f" · also in {v['shared_with']} other project(s)" if v["shared_with"] else ""
+    return f"- {v['name']} · {status} · {human_size(v['size_bytes'])} · `{v['path']}/`{shared}"
 
 
 async def run(args: dict, *, svc=None, project_id: str | None = None) -> tuple[str, str]:

@@ -1,17 +1,18 @@
-"""Datasets of a project on disk (NB-3 plan §3.3).
+"""Datasets of a project on disk (NB-3 plan §3.3, NB-4 plan §3.3).
 
 workspaces/<project_id>/
-    datasets.json              {"format": 1, "datasets": [DatasetRecord, ...]}
-    files/datasets/<id>/       downloaded, verified files (seen by the kernel at /work/datasets/<id>/)
-    .dataset-partial/<id>/     files still downloading (invisible to the kernel)
-    .dataset-partial/<id>.new/ a new revision being staged (update: true)
-    .dataset-partial/<id>.old/ the old folder during the update swap
+    datasets.json              {"format": 2, "datasets": [ProjectDataset, ...]}
+    files/datasets/<id>/       links into the shared pool (seen by the kernel at /work/datasets/<id>/)
+
+Format 1 (NB-3: full DatasetRecord, real files in files/datasets/<id>/, and
+.dataset-partial/<id>[.new|.old]/ in the project) is only read by the
+one-time migration in dataset_pool.py.
 
 datasets.json sits next to files/, not in it, so kernel code can't edit it.
 This module only reads and writes disk: no locks, no network. The rules
 (who may delete, when to download) live in dataset_service.py.
 
-Plan: docs/plans/NB-3-dataset-download-plan.md
+Plan: docs/plans/done/NB-3-dataset-download-plan.md
 """
 
 import json
@@ -24,8 +25,7 @@ from pathlib import Path, PurePosixPath
 from typing import Literal
 
 from researchchat.config import WORKSPACES_DIR
-from researchchat.workspace import ErrorCode, WorkspaceError
-from researchchat.workspace import store
+from researchchat.workspace import ErrorCode, WorkspaceError, store
 
 MANIFEST_FILE = "datasets.json"
 MANIFEST_FORMAT = 1
@@ -68,11 +68,6 @@ class DatasetRecord:
     downloaded_at: str | None = None  # ISO 8601 UTC
     error: str | None = None  # one-line reason when failed
 
-    @property
-    def size_bytes(self) -> int:
-        """Derived from files[] (plan §3.3)."""
-        return sum(f.size for f in self.files)
-
 
 # ---- manifest -----------------------------------------------------------------
 
@@ -110,7 +105,7 @@ def _record_from_dict(d: dict) -> DatasetRecord:
 
 
 def load_records(project_id: str, root: Path = WORKSPACES_DIR) -> list[DatasetRecord]:
-    """Read datasets.json; missing = []. A corrupt file is renamed .bad and read as [] (A6)."""
+    """Read a format 1 datasets.json (migration only); missing = []. A corrupt file is renamed .bad and read as [] (A6)."""
     path = manifest_path(project_id, root)
     if not path.is_file():
         return []
@@ -125,10 +120,13 @@ def load_records(project_id: str, root: Path = WORKSPACES_DIR) -> list[DatasetRe
 
 
 def save_records(project_id: str, records: list[DatasetRecord], root: Path = WORKSPACES_DIR) -> None:
-    """Write datasets.json atomically (temp file + os.replace, like store.save_notebook)."""
-    path = manifest_path(project_id, root)
-    data = {"format": MANIFEST_FORMAT, "datasets": [asdict(r) for r in records]}
-    tmp = path.with_name(MANIFEST_FILE + ".tmp")
+    """Write a format 1 datasets.json (tests that set up NB-3 data for the migration)."""
+    _write_manifest(manifest_path(project_id, root), {"format": MANIFEST_FORMAT, "datasets": [asdict(r) for r in records]})
+
+
+def _write_manifest(path: Path, data: dict) -> None:
+    """Write atomically (temp file + os.replace, like store.save_notebook)."""
+    tmp = path.with_name(path.name + ".tmp")
     try:
         tmp.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
         os.replace(tmp, path)
@@ -136,30 +134,23 @@ def save_records(project_id: str, records: list[DatasetRecord], root: Path = WOR
         tmp.unlink(missing_ok=True)
 
 
-def find_record(records: list[DatasetRecord], dataset_id: str) -> DatasetRecord | None:
-    """The record with this id among this project's records."""
-    return next((r for r in records if r.id == dataset_id), None)
-
-
-# ---- ids and paths ------------------------------------------------------------
-
-
 def _slug(text: str) -> str:
     ascii_text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode()
     return re.sub(r"[^a-z0-9]+", "-", ascii_text.lower()).strip("-")
 
 
-def make_id(source: Source, source_id: str, existing: list[DatasetRecord]) -> str:
-    """hf-<owner>--<name> / zenodo-<id>; -2, -3… on a clash; same (source, source_id) keeps its id."""
-    for r in existing:
-        if r.source == source and r.source_id == source_id:
-            return r.id
+def base_id(source: Source, source_id: str) -> str:
+    """hf-<owner>--<name> / zenodo-<id>: the readable slug of a catalog dataset."""
     prefix = "hf" if source == "huggingface" else source
     body = "--".join(p for p in (_slug(part) for part in source_id.split("/")) if p) or "dataset"
-    base = re.sub(r"-{3,}", "--", f"{prefix}-{body}")[:DATASET_ID_MAX].strip("-")
-    taken = {r.id for r in existing}
+    return re.sub(r"-{3,}", "--", f"{prefix}-{body}")[:DATASET_ID_MAX].strip("-")
+
+
+def make_id(source: Source, source_id: str, taken_ids: set[str]) -> str:
+    """base_id, with -2, -3… when another dataset of the project already has it."""
+    base = base_id(source, source_id)
     candidate, n = base, 2
-    while candidate in taken:
+    while candidate in taken_ids:
         suffix = f"-{n}"
         candidate = base[: DATASET_ID_MAX - len(suffix)].rstrip("-") + suffix
         n += 1
@@ -227,13 +218,18 @@ def partial_dir(project_id: str, dataset_id: str, suffix: str = "", root: Path =
     return _inside(partial_root(project_id, root), dataset_id + suffix)
 
 
-def file_path(project_id: str, dataset_id: str, relpath: str, root: Path = WORKSPACES_DIR, folder: Path | None = None) -> Path:
-    """One dataset file on disk (in `folder`, default dataset_dir); must stay under it after resolve()."""
-    base = (folder or dataset_dir(project_id, dataset_id, root)).resolve()
+def path_inside(folder: Path, relpath: str) -> Path:
+    """folder/relpath; must stay under the folder after resolve()."""
+    base = folder.resolve()
     path = (base / safe_relpath(relpath)).resolve()
     if path == base or not path.is_relative_to(base):
         raise WorkspaceError(ErrorCode.BAD_PAYLOAD, "Unsafe file name in the dataset.")
     return path
+
+
+def file_path(project_id: str, dataset_id: str, relpath: str, root: Path = WORKSPACES_DIR) -> Path:
+    """One file of files/datasets/<id>/, resolved; must stay under it."""
+    return path_inside(dataset_dir(project_id, dataset_id, root), relpath)
 
 
 def kernel_path(dataset_id: str, relpath: str = "") -> str:
@@ -244,23 +240,7 @@ def kernel_path(dataset_id: str, relpath: str = "") -> str:
 # ---- disk state ---------------------------------------------------------------
 
 
-def missing_files(project_id: str, record: DatasetRecord, root: Path = WORKSPACES_DIR) -> list[str]:
-    """Ready files that are gone from disk or whose size changed (A14)."""
-    missing = []
-    for f in record.files:
-        if not f.ready:
-            continue
-        try:
-            path = file_path(project_id, record.id, f.path, root)
-            ok = path.is_file() and path.stat().st_size == f.size
-        except (WorkspaceError, OSError):
-            ok = False
-        if not ok:
-            missing.append(f.path)
-    return missing
-
-
-def _rmtree(path: Path) -> None:
+def remove_tree(path: Path) -> None:
     """Remove a folder (or a symlink in its place) without following links."""
     if path.is_symlink() or path.is_file():
         path.unlink()
@@ -279,34 +259,11 @@ def remove_dataset_dir(project_id: str, dataset_id: str, root: Path = WORKSPACES
         base = datasets_root(project_id, root)
     except WorkspaceError:
         return
-    _rmtree(base / dataset_id)
-
-
-def remove_partial(project_id: str, dataset_id: str, root: Path = WORKSPACES_DIR) -> None:
-    """Delete .dataset-partial/<id>/ and <id>.new/ (a failed or cancelled job, A16)."""
-    for suffix in ("", ".new"):
-        _rmtree(partial_dir(project_id, dataset_id, suffix, root))
-    try:
-        partial_root(project_id, root).rmdir()  # only when empty
-    except OSError:
-        pass
-
-
-def swap_in_update(project_id: str, dataset_id: str, root: Path = WORKSPACES_DIR) -> None:
-    """Move the old folder to <id>.old, <id>.new into place, then delete <id>.old (A15)."""
-    final = dataset_dir(project_id, dataset_id, root)
-    new = partial_dir(project_id, dataset_id, ".new", root)
-    old = partial_dir(project_id, dataset_id, ".old", root)
-    _rmtree(old)
-    final.parent.mkdir(parents=True, exist_ok=True)
-    if final.exists():
-        os.replace(final, old)
-    os.replace(new, final)
-    _rmtree(old)
+    remove_tree(base / dataset_id)
 
 
 def recover_partials(project_id: str, root: Path = WORKSPACES_DIR) -> None:
-    """At startup: restore <id>.old if the final folder is missing, then clear .dataset-partial/."""
+    """NB-3 leftovers, before the migration: restore <id>.old if the final folder is missing, then clear .dataset-partial/."""
     base = partial_root(project_id, root)
     if not base.is_dir():
         return
@@ -317,4 +274,102 @@ def recover_partials(project_id: str, root: Path = WORKSPACES_DIR) -> None:
             if not final.exists():
                 final.parent.mkdir(parents=True, exist_ok=True)
                 os.replace(entry, final)
-    _rmtree(base)
+    remove_tree(base)
+
+
+# ---- format 2: links to pool entries (NB-4 plan §3.3) ---------------------------
+
+MANIFEST_FORMAT_LINKS = 2
+V1_BACKUP_SUFFIX = ".v1"
+STORED_STATUSES = ("queued", "downloading", "ready", "failed")
+
+
+@dataclass
+class ProjectDataset:
+    id: str  # generated slug, folder name under files/datasets/
+    pool_entry: str  # which pooled version this project uses; changes only with update: true
+    selection: list[str] | None  # every `files` pattern asked for so far; None = all files
+    status: StoredStatus
+    files: list[str] = field(default_factory=list)  # paths only; sizes and checksums live in the pool entry
+    requested_at: str = ""  # ISO 8601 UTC; queue order
+    linked_at: str | None = None  # when this project got the files (may be long after the pool did)
+    error: str | None = None  # one-line reason when failed
+
+
+def _project_dataset_from_dict(d: dict) -> ProjectDataset:
+    dataset = ProjectDataset(
+        id=str(d["id"]),
+        pool_entry=str(d["pool_entry"]),
+        selection=[str(p) for p in d["selection"]] if d.get("selection") is not None else None,
+        status=d.get("status", "failed"),
+        files=[str(p) for p in d.get("files") or []],
+        requested_at=str(d.get("requested_at") or ""),
+        linked_at=d.get("linked_at"),
+        error=d.get("error"),
+    )
+    if not DATASET_ID_RE.match(dataset.id) or dataset.status not in STORED_STATUSES:
+        raise ValueError("bad record")
+    return dataset
+
+
+def read_manifest_format(project_id: str, root: Path = WORKSPACES_DIR) -> int | None:
+    """1 or 2; None when there's no datasets.json; 0 when it can't be read. A format 2 file means 'migrated'."""
+    path = manifest_path(project_id, root)
+    if not path.is_file():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (ValueError, OSError):
+        return 0
+    found = data.get("format") if isinstance(data, dict) else None
+    return found if found in (MANIFEST_FORMAT, MANIFEST_FORMAT_LINKS) else 0
+
+
+def load_project_datasets(project_id: str, root: Path = WORKSPACES_DIR) -> list[ProjectDataset]:
+    """Read datasets.json format 2; missing = []. A corrupt file is renamed .bad and read as [] (A6).
+
+    A format 1 file is left alone (the migration reads it), so a late reader
+    never wipes data that hasn't been migrated yet.
+    """
+    path = manifest_path(project_id, root)
+    if not path.is_file():
+        return []
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(data, dict) and data.get("format") == MANIFEST_FORMAT:
+            return []
+        if not isinstance(data, dict) or data.get("format") != MANIFEST_FORMAT_LINKS:
+            raise ValueError("unknown format")
+        return [_project_dataset_from_dict(d) for d in data.get("datasets") or []]
+    except (ValueError, KeyError, TypeError, AttributeError):
+        os.replace(path, path.with_name(MANIFEST_FILE + ".bad"))
+        return []
+
+
+def save_project_datasets(project_id: str, datasets: list[ProjectDataset], root: Path = WORKSPACES_DIR) -> None:
+    """Write datasets.json format 2 atomically."""
+    data = {"format": MANIFEST_FORMAT_LINKS, "datasets": [asdict(d) for d in datasets]}
+    _write_manifest(manifest_path(project_id, root), data)
+
+
+def back_up_v1_manifest(project_id: str, root: Path = WORKSPACES_DIR) -> None:
+    """Keep the NB-3 datasets.json as datasets.json.v1 before it's replaced (once)."""
+    path = manifest_path(project_id, root)
+    backup = path.with_name(MANIFEST_FILE + V1_BACKUP_SUFFIX)
+    if path.is_file() and not backup.exists():
+        shutil.copy2(path, backup)
+
+
+def find_project_dataset(datasets: list[ProjectDataset], dataset_id: str) -> ProjectDataset | None:
+    """The dataset with this id among this project's datasets."""
+    return next((d for d in datasets if d.id == dataset_id), None)
+
+
+def link_path(project_id: str, dataset_id: str, relpath: str, root: Path = WORKSPACES_DIR) -> Path:
+    """files/datasets/<id>/<relpath>, not resolved (it's a link). Refused when a folder on the way is a link (SEC23)."""
+    folder = dataset_dir(project_id, dataset_id, root)
+    path = folder / safe_relpath(relpath)
+    for parent in path.relative_to(folder).parents:
+        if (folder / parent).is_symlink():
+            raise _linked()
+    return path

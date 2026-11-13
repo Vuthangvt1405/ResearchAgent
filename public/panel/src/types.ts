@@ -49,6 +49,8 @@ export interface DatasetProps {
   requested_at: string;
   files: DatasetFile[];
   error: string | null;
+  /** Other projects using the same stored copy (NB-4); deleting here then frees nothing */
+  shared_with: number;
 }
 
 export interface ProjectRef {

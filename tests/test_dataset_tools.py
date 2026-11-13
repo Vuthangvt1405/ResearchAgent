@@ -26,6 +26,7 @@ STARTED = {
     "license": "mit",
     "url": "https://huggingface.co/datasets/org/name",
     "note": "Downloading in the background. The user can keep chatting; you'll be told when it's ready. Don't read the files until then.",
+    "from_pool": False,
 }
 
 
@@ -33,7 +34,7 @@ def view(id, status, done=None, position=None, size=1000):
     return {
         "dataset_id": id, "name": id, "status": status, "done_bytes": done, "position_in_queue": position,
         "size_bytes": size, "license": "mit", "url": None, "path": f"/work/datasets/{id}", "files": [],
-        "file_count": 1, "missing_files": [], "downloaded_at": None, "error": None,
+        "file_count": 1, "missing_files": [], "downloaded_at": None, "error": None, "shared_with": 0,
     }
 
 

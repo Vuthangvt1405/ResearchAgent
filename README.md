@@ -107,6 +107,7 @@ researchchat/
     datasets_store.py       datasets.json, dataset ids and safe paths on disk
     dataset_sources.py      Hugging Face / Zenodo file lists and safe HTTPS downloads
     dataset_service.py      Download queue, checks, delete/cancel, chat notes
+    dataset_pool.py         Shared dataset pool: index, links, cleanup, NB-3 migration
     panel.py                The right-side Notebook panel
     actions.py              Buttons the panel calls
 public/
@@ -120,7 +121,7 @@ tests/                      pytest tests
 
 Each project gets one notebook, one Python kernel and one `files/` folder,
 stored in `workspaces/<project>/` (git-ignored). The plan is in
-`docs/plans/notebook-workspace-plan.md`; right now only the skeleton exists.
+`docs/plans/done/notebook-workspace-plan.md`; right now only the skeleton exists.
 
 - Code runs in a **Docker container** per project, so Docker Desktop must be
   running. Build the kernel image once:
@@ -135,7 +136,7 @@ stored in `workspaces/<project>/` (git-ignored). The plan is in
 
 With the Notebook switch on, the assistant can download a Hugging Face or
 Zenodo dataset it found with `dataset_search` into the current project
-(`dataset_download`). The plan is in `docs/plans/NB-3-dataset-download-plan.md`.
+(`dataset_download`). The plan is in `docs/plans/done/NB-3-dataset-download-plan.md`.
 
 - Downloads run **in the background**: you keep chatting, the panel's
   Datasets section shows progress, and the chat gets a message when it's ready.
@@ -150,6 +151,28 @@ Zenodo dataset it found with `dataset_search` into the current project
 - `[datasets]` in `config.toml` sets the limits: `min_free_disk_mb`,
   `ask_above_mb`, `max_files`, `parallel_downloads` (app-wide) and
   `stall_timeout_seconds`.
+
+
+### Shared dataset pool
+
+Downloaded data is stored once and shared by every project. The plan is in
+`docs/plans/NB-4-dataset-pool-plan.md`.
+
+- The bytes live in `workspaces/.dataset-pool/<dataset>@<revision>/`, listed in
+  `workspaces/.dataset-pool.json`. A project's `files/datasets/<id>/` holds
+  relative links into it, so `/work/datasets/<id>/...` paths work the same
+  in notebook code, and a dataset another project already has is ready at once.
+- Kernels see the pool read-only: to change a file, copy it elsewhere in `/work`
+  first. Removing a link from `/work/datasets/` only makes the dataset show as
+  missing; asking for it again links it back without downloading.
+- Two projects asking for the same files at once share one download; cancelling
+  stops it for that project only.
+- Delete removes a dataset from one project. Its files go when no project uses
+  it any more; until then the panel says which other projects still use it.
+- A project keeps its version until you ask to update it; then only that project
+  moves to the new version.
+- Datasets downloaded before this (NB-3) are moved into the pool on the first
+  start; the old `datasets.json` is kept as `datasets.json.v1`.
 
 ### How a message flows
 

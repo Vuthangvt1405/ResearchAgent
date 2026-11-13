@@ -1,6 +1,6 @@
 """Running code in the Docker kernel (needs Docker).
 
-Plan: docs/plans/notebook-workspace-plan.md section 7.
+Plan: docs/plans/done/notebook-workspace-plan.md section 7.
 These start real kernel containers; they skip when Docker or the image is missing.
 """
 
@@ -13,7 +13,7 @@ import nbformat
 import pytest
 
 from researchchat.workspace import ErrorCode, WorkspaceError, store
-from researchchat.workspace.kernels import SCOPE_LABEL, DockerSettings, KernelRegistry, _docker
+from researchchat.workspace.kernels import SCOPE_LABEL, ContainerMounts, DockerSettings, KernelRegistry, _docker
 from researchchat.workspace.service import NotebookService, output_props
 
 pytestmark = pytest.mark.docker
@@ -524,3 +524,19 @@ def test_kernel_ports_bound_to_localhost(root):
         assert len(bindings) == 5 and all(b["HostIp"] == "127.0.0.1" for b in bindings)
 
     go(root)
+
+
+# ---- NB-4 Group 11: Shared pool · kernel arguments
+
+
+def test_kernel_mounts_pool_read_only(root):
+    # G11✅4 · Changed: build the docker run arguments
+    # Then: the pool is mounted read-only (at /.dataset-pool, where the relative links land); still only files/ at /work
+    # Demonstrates: the pool can't be changed from a kernel
+    reg = make_registry(root)
+    mounts = ContainerMounts(root / "p" / "files", root / ".kernels" / "p", root / ".dataset-pool")
+    args = reg.run_arguments("rc-kernel-x", "p", mounts, (1, 2, 3, 4, 5))
+    mount_specs = [args[i + 1] for i, a in enumerate(args) if a == "--mount"]
+    assert f"type=bind,source={root / '.dataset-pool'},target=/.dataset-pool,readonly" in mount_specs
+    assert [m for m in mount_specs if "target=/work" in m] == [f"type=bind,source={root / 'p' / 'files'},target=/work"]
+    assert all(m.endswith(",readonly") for m in mount_specs if "target=/work" not in m)

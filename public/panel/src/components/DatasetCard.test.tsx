@@ -1,5 +1,5 @@
 // Group 3 — Progress re-renders only one card (AC2 · component)
-// Plan: docs/plans/panel-react-build-plan.md §7
+// Plan: docs/plans/done/panel-react-build-plan.md §7
 // Baseline: Given 3 datasets with one downloading at 10% · When props arrive with that dataset at 40%
 import { describe, it, expect } from "vitest";
 import { act, screen, within } from "@testing-library/react";

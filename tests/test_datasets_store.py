@@ -7,6 +7,7 @@ import pytest
 from researchchat.workspace import WorkspaceError
 from researchchat.workspace import datasets_store as ds
 from researchchat.workspace import store
+from researchchat.workspace.dataset_pool import DatasetPool
 
 
 @pytest.fixture
@@ -44,16 +45,15 @@ def test_corrupt_manifest_is_set_aside(root):
     assert ds.load_records("p1", root) == []
 
 
-def test_make_id_suffixes_clashes_and_reuses_same_source():
-    # G6 (added in implementation) · Changed: ids that collide / the same dataset asked again
-    # Then: readable slug; -2 for a different dataset with the same slug; same id for the same source
-    # Demonstrates: two datasets never share a folder, and one dataset never gets two
-    assert ds.make_id("huggingface", "David-Egea/Creditcard-fraud-detection", []) == "hf-david-egea--creditcard-fraud-detection"
-    assert ds.make_id("zenodo", "7395559", []) == "zenodo-7395559"
-    first = record(id="hf-org--name", source_id="org/name")
-    assert ds.make_id("huggingface", "org/name", [first]) == "hf-org--name"
-    assert ds.make_id("huggingface", "Org/Name", [first]) == "hf-org--name-2"
-    long_id = ds.make_id("huggingface", "o/" + "x" * 200, [])
+def test_make_id_suffixes_clashes():
+    # G6 (added in implementation; NB-4: the same dataset is found through its pool entry, not by id)
+    # Changed: ids that collide · Then: readable slug; -2 for a different dataset with the same slug
+    # Demonstrates: two datasets never share a folder
+    assert ds.make_id("huggingface", "David-Egea/Creditcard-fraud-detection", set()) == "hf-david-egea--creditcard-fraud-detection"
+    assert ds.make_id("zenodo", "7395559", set()) == "zenodo-7395559"
+    assert ds.make_id("huggingface", "org/name", set()) == "hf-org--name"
+    assert ds.make_id("huggingface", "Org/Name", {"hf-org--name"}) == "hf-org--name-2"
+    long_id = ds.make_id("huggingface", "o/" + "x" * 200, set())
     assert len(long_id) <= 80 and ds.DATASET_ID_RE.match(long_id)
 
 
@@ -79,21 +79,32 @@ def test_dataset_paths_stay_inside_dataset_folder(root):
     assert sorted(p.name for p in root.iterdir()) == ["p1"]
 
 
-def test_delete_ignores_tampered_manifest(root):
-    # S❌5 · Changed: record edited to files: [{"path": "../../notebook.ipynb"}]
-    # Then: only files/datasets/<id> removed; notebook intact
-    # Demonstrates: delete can't be steered (#8)
+def test_delete_ignores_tampered_manifests(root):
+    # S❌5 (updated for NB-4) · Changed: record edited to files: ["../../notebook.ipynb"], pool_entry: "../x"
+    # Then: only files/datasets/<id> links and the real entry handled; notebook intact
+    # Demonstrates: delete can't be steered (#8, #23)
+    pool = DatasetPool(root)
+    pool_file = pool.pool_file_path("hf-org--name@1111111", "a.csv")
+    pool_file.parent.mkdir(parents=True)
+    pool_file.write_text("abc")
     folder = ds.dataset_dir("p1", "hf-org--name", root)
     folder.mkdir(parents=True)
-    (folder / "a.csv").write_text("abc")
+    (folder / "a.csv").symlink_to(pool.link_target("hf-org--name@1111111", "a.csv"))
     other = ds.dataset_dir("p1", "zenodo-1", root)
     other.mkdir()
-    tampered = record(files=[ds.DatasetFile("../../notebook.ipynb", 1, None, True)])
-    ds.save_records("p1", [tampered], root)
+    path = ds.manifest_path("p1", root)
+    path.write_text(json.dumps({"format": 2, "datasets": [
+        {"id": "hf-org--name", "pool_entry": "../x", "selection": None, "status": "ready", "files": ["../../notebook.ipynb"]},
+    ]}))
 
-    ds.remove_dataset_dir("p1", ds.load_records("p1", root)[0].id, root)
+    [tampered] = ds.load_project_datasets("p1", root)
+    pool.unlink_dataset("p1", tampered.id)
+    assert pool.remove_unused_entry(tampered.pool_entry) == 0
+    with pytest.raises(WorkspaceError):
+        pool.entry_dir(tampered.pool_entry)
 
     project = store.project_dir("p1", root)
     assert (project / "notebook.ipynb").is_file()
     assert not folder.exists()
     assert other.is_dir()
+    assert pool_file.read_text() == "abc"

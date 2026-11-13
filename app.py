@@ -52,6 +52,7 @@ async def on_chat_start():
         _cleaned = True
         asyncio.create_task(notebook.kernels.cleanup_leftovers())
         # Downloads cut off by an earlier run; dataset_download waits for this (NB-3)
+        # It first moves NB-3 datasets into the shared pool, once (NB-4)
         asyncio.create_task(notebook.datasets.startup_cleanup())
 
     cl.user_session.set(
