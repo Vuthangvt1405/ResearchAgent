@@ -35,3 +35,7 @@ Thumbs.db
 
 # Notebook workspaces (your projects, notebooks and files)
 workspaces/
+
+# Notebook panel build (plan: docs/plans/panel-react-build-plan.md)
+public/panel/node_modules/
+!public/build/

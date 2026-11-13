@@ -57,6 +57,8 @@ html.rc-nb-animating [data-resize-handle] { transition:opacity .2s ease; }
   #${TOGGLE_ID} svg { animation:none !important; transition:none !important; }
   html.rc-nb-animating [data-panel], html.rc-nb-animating [data-resize-handle] { transition:none !important; }
 }
+/* The notebook uses the sidebar's full width: Chainlit's 24px side padding is halved */
+#side-view-content:has(#rc-panel-root) { padding-left:12px !important; padding-right:12px !important; }
 /* Chainlit's own back arrow closes the panel for good; the top-bar toggle replaces it */
 #side-view-title > button { display:none !important; }
 `;
@@ -99,6 +101,19 @@ html.rc-nb-animating [data-resize-handle] { transition:opacity .2s ease; }
     btn.setAttribute("aria-pressed", String(!collapsed));
   }
 
+  // Open the sidebar as wide as Chainlit allows (the chat keeps its 40% minimum). Done
+  // once per divider, i.e. each time the sidebar opens; a later drag by the user is kept.
+  // The Home key is the resize library's own "shrink the left panel to its minimum".
+  const widened = new WeakSet();
+
+  function widenSidebar() {
+    const handle = document.querySelector("[data-resize-handle]:has(+ [data-panel] #side-view-content)");
+    if (!handle || widened.has(handle)) return;
+    widened.add(handle);
+    if (document.documentElement.classList.contains(COLLAPSED_CLASS)) return;
+    handle.dispatchEvent(new KeyboardEvent("keydown", { key: "Home", bubbles: true }));
+  }
+
   function ensureToggle() {
     const theme = document.getElementById("theme-toggle");
     const hasSidebar = !!document.getElementById("side-view-content");
@@ -119,7 +134,30 @@ html.rc-nb-animating [data-resize-handle] { transition:opacity .2s ease; }
     renderToggle();
   }
 
+  // ---- notebook panel bundle (plan: docs/plans/panel-react-build-plan.md) ----
+  // The panel is a bundled React app (public/panel → public/build). Load it once per
+  // page, same-origin only (SEC3). public/elements/Notebook.jsx waits on this promise.
+  const PANEL_JS = "/public/build/notebook-panel.js";
+  const PANEL_CSS = "/public/build/notebook-panel.css";
+
+  function loadPanel() {
+    if (!window.__rcPanelReady) {
+      window.__rcPanelReady = new Promise((resolve) => (window.__rcPanelResolve = resolve));
+    }
+    if (document.querySelector(`script[src="${PANEL_JS}"]`)) return;
+    const css = document.createElement("link");
+    css.rel = "stylesheet";
+    css.href = PANEL_CSS;
+    document.head.appendChild(css);
+    const js = document.createElement("script");
+    js.type = "module";
+    js.src = PANEL_JS;
+    js.onerror = () => console.error("[notebook panel] could not load " + PANEL_JS);
+    document.head.appendChild(js);
+  }
+
   function mount() {
+    loadPanel();
     const style = document.createElement("style");
     style.textContent = CSS;
     document.head.appendChild(style);
@@ -140,9 +178,11 @@ html.rc-nb-animating [data-resize-handle] { transition:opacity .2s ease; }
       setTimeout(() => {
         queued = false;
         ensureToggle();
+        widenSidebar();
       }, 50);
     }).observe(document.body, { childList: true, subtree: true });
     ensureToggle();
+    widenSidebar();
   }
 
   if (document.body) mount();
