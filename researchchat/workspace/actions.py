@@ -24,7 +24,7 @@ from researchchat.workspace.created_datasets import missing_notice
 from researchchat.workspace.dataset_service import DatasetService, DatasetsSettings
 from researchchat.workspace.kernels import KernelRegistry
 from researchchat.workspace.panel import PanelRegistry, skip_session
-from researchchat.workspace.service import NotebookService
+from researchchat.workspace.service import NotebookProps, NotebookService
 
 log = logging.getLogger(__name__)
 
@@ -152,47 +152,55 @@ async def create_and_switch(svc: NotebookService, session, name: str):
     return props
 
 
+async def list_projects_with_current(svc: NotebookService, session, _payload: dict) -> dict:
+    return {"projects": await svc.list_projects(), "current": session_project(session)}
+
+
+async def delete_dataset(svc: NotebookService, project_id: str, payload: dict) -> NotebookProps:
+    await datasets.delete(project_id, payload["dataset_id"])
+    return await svc.props(project_id)
+
+
+async def cancel_dataset_download(svc: NotebookService, project_id: str, payload: dict) -> NotebookProps:
+    await datasets.cancel(project_id, payload["dataset_id"])
+    return await svc.props(project_id)
+
+
+# Actions that change which project the chat points at: they get the session, not a project id.
+SESSION_ACTIONS: dict[str, Callable[[NotebookService, object, dict], Awaitable]] = {
+    "nb_switch_project": lambda svc, session, p: switch_project(svc, session, p["project_id"]),
+    "nb_create_project": lambda svc, session, p: create_and_switch(svc, session, p["name"]),
+    "nb_list_projects": list_projects_with_current,
+}
+
+# Actions on the chat's current project: (service, project_id, payload) -> props.
+PROJECT_ACTIONS: dict[str, Callable[[NotebookService, str, dict], Awaitable]] = {
+    "nb_add_cell": lambda svc, pid, p: svc.add_cell(pid, p["version"], p.get("after_id"), p.get("type", "code")),
+    "nb_update_cell": lambda svc, pid, p: svc.update_cell(pid, p["version"], p["cell_id"], p["source"]),
+    "nb_delete_cell": lambda svc, pid, p: svc.delete_cell(pid, p["version"], p["cell_id"]),
+    "nb_move_cell": lambda svc, pid, p: svc.move_cell(pid, p["version"], p["cell_id"], p["direction"]),
+    "nb_reorder_cell": lambda svc, pid, p: svc.reorder_cell(pid, p["version"], p["cell_id"], p.get("before_id")),
+    "nb_duplicate_cell": lambda svc, pid, p: svc.duplicate_cell(pid, p["version"], p["cell_id"]),
+    "nb_clear_cell_outputs": lambda svc, pid, p: svc.clear_cell_outputs(pid, p["version"], p["cell_id"]),
+    "nb_run_cell": lambda svc, pid, p: svc.run_cell(pid, p["version"], p["cell_id"], p["source"]),
+    "nb_run_all": lambda svc, pid, p: svc.run_all(pid, p["version"]),
+    "nb_interrupt": lambda svc, pid, _p: svc.interrupt(pid),
+    "nb_restart": lambda svc, pid, _p: svc.restart(pid),
+    "nb_clear_outputs": lambda svc, pid, p: svc.clear_outputs(pid, p["version"]),
+    "ds_delete": lambda svc, pid, p: delete_dataset(svc, pid, p),
+    "ds_cancel": lambda svc, pid, p: cancel_dataset_download(svc, pid, p),
+}
+
+
 async def dispatch(svc: NotebookService, session, name: str, payload) -> dict | list:
     """Run one panel action. Raises WorkspaceError when rejected."""
-    p = read_payload(name, payload)
-    if name == "nb_switch_project":
-        return await switch_project(svc, session, p["project_id"])
-    if name == "nb_create_project":
-        return await create_and_switch(svc, session, p["name"])
-    if name == "nb_list_projects":
-        return {"projects": await svc.list_projects(), "current": session_project(session)}
-    pid = session_project(session)
-    if name == "nb_add_cell":
-        return await svc.add_cell(pid, p["version"], p.get("after_id"), p.get("type", "code"))
-    if name == "nb_update_cell":
-        return await svc.update_cell(pid, p["version"], p["cell_id"], p["source"])
-    if name == "nb_delete_cell":
-        return await svc.delete_cell(pid, p["version"], p["cell_id"])
-    if name == "nb_move_cell":
-        return await svc.move_cell(pid, p["version"], p["cell_id"], p["direction"])
-    if name == "nb_reorder_cell":
-        return await svc.reorder_cell(pid, p["version"], p["cell_id"], p.get("before_id"))
-    if name == "nb_duplicate_cell":
-        return await svc.duplicate_cell(pid, p["version"], p["cell_id"])
-    if name == "nb_clear_cell_outputs":
-        return await svc.clear_cell_outputs(pid, p["version"], p["cell_id"])
-    if name == "nb_run_cell":
-        return await svc.run_cell(pid, p["version"], p["cell_id"], p["source"])
-    if name == "nb_run_all":
-        return await svc.run_all(pid, p["version"])
-    if name == "nb_interrupt":
-        return await svc.interrupt(pid)
-    if name == "nb_restart":
-        return await svc.restart(pid)
-    if name == "nb_clear_outputs":
-        return await svc.clear_outputs(pid, p["version"])
-    if name == "ds_delete":
-        await datasets.delete(pid, p["dataset_id"])
-        return await svc.props(pid)
-    if name == "ds_cancel":
-        await datasets.cancel(pid, p["dataset_id"])
-        return await svc.props(pid)
-    raise WorkspaceError(ErrorCode.BAD_PAYLOAD, "Unknown action.")
+    clean_payload = read_payload(name, payload)
+    if name in SESSION_ACTIONS:
+        return await SESSION_ACTIONS[name](svc, session, clean_payload)
+    handler = PROJECT_ACTIONS.get(name)
+    if handler is None:
+        raise WorkspaceError(ErrorCode.BAD_PAYLOAD, "Unknown action.")
+    return await handler(svc, session_project(session), clean_payload)
 
 
 async def handle(svc: NotebookService, session, name: str, payload) -> dict | list:
