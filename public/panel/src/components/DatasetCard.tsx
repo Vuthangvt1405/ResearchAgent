@@ -18,6 +18,9 @@ const SOURCES: Record<string, string> = { huggingface: "Hugging Face", zenodo: "
 /** Renders per card id, for the "only the changed card re-renders" test (G3✅2) */
 export const cardRenders: Record<string, number> = {};
 
+/** "Also used by 1 other project" / "…by 2 other projects" (NB-4 AC25) */
+export const alsoUsedBy = (n: number) => `Also used by ${n} other project${n === 1 ? "" : "s"}`;
+
 export interface DatasetCardProps {
   d: DatasetProps;
   inserting: boolean;
@@ -93,6 +96,12 @@ function DatasetCardView({ d, inserting, onCancel, onDelete, onInsert }: Dataset
             <dd>{d.license || "Not stated"}</dd>
             <dt>Files</dt>
             <dd>{d.file_count}</dd>
+            {d.shared_with > 0 && (
+              <>
+                <dt>Shared</dt>
+                <dd>{alsoUsedBy(d.shared_with)}</dd>
+              </>
+            )}
             {d.downloaded_at && (
               <>
                 <dt>Added</dt>
@@ -144,7 +153,11 @@ function DatasetCardView({ d, inserting, onCancel, onDelete, onInsert }: Dataset
 
           {confirming && (
             <div className="rcds-confirm">
-              <span style={{ flex: 1 }}>Delete {d.name} and free {fmtBytes(d.size_bytes)}?</span>
+              <span style={{ flex: 1 }}>
+                {d.shared_with > 0
+                  ? `Delete ${d.name} from this project? ${alsoUsedBy(d.shared_with)}: frees 0 MB here.`
+                  : `Delete ${d.name} and free ${fmtBytes(d.size_bytes)}?`}
+              </span>
               <Button variant="destructive" size="sm" className="rcds-btn" onClick={() => { setConfirming(false); onDelete(d.id); }}>Delete</Button>
               <Button variant="outline" size="sm" className="rcds-btn" onClick={() => setConfirming(false)}>Keep</Button>
             </div>

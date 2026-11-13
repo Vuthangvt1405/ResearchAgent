@@ -18,6 +18,7 @@ export function dataset(over: Partial<DatasetProps> = {}): DatasetProps {
     requested_at: "2026-11-13T10:00:00Z",
     files: [{ path: "iris.csv", size: 1000 }],
     error: null,
+    shared_with: 0,
     ...over,
   };
 }
