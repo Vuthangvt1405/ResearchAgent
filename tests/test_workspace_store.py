@@ -3,11 +3,14 @@
 Plan: docs/plans/done/notebook-workspace-plan.md section 7.
 """
 
-import json
+from pathlib import Path
 
 import nbformat
 import pytest
+from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 
+from researchchat.db.engine import database_for
 from researchchat.workspace import ErrorCode, WorkspaceError
 from researchchat.workspace import store
 
@@ -33,18 +36,6 @@ class FakeSession:
 
 # ---- Group 1: Projects (AC1, AC5, AC18) · unit
 # Baseline: Given an empty temp `workspaces_dir` · When a project "Tokyo housing" is created and its notebook is loaded
-
-
-def test_new_project_has_empty_notebook_and_files_dir(root):
-    # G1✅1 (baseline) · Demonstrates: a project is a self-contained workspace
-    project = store.create_project("Tokyo housing", root)
-    folder = root / project.id
-    assert project.id == "tokyo-housing"
-    assert json.loads((folder / "project.json").read_text("utf-8"))["name"] == "Tokyo housing"
-    assert (folder / "files").is_dir()
-    nb = store.load_notebook(project.id, root)
-    assert nb.cells == []
-    assert store.get_version(nb) == 0
 
 
 def test_project_name_becomes_safe_slug():
@@ -165,3 +156,144 @@ def run(coro):
     import asyncio
 
     return asyncio.run(coro)
+
+
+# ---- SQLite plan G2 — Projects in the database (AC2, AC6, SEC3) · integration
+# Baseline: Given a workspace at head · When `store.create_project("Tokyo housing", root)` and then `list_projects` / `get_project`
+# Plan: docs/plans/sqlite-alembic-storage-plan.md §7
+
+
+def project_rows(root) -> list[tuple[str, str]]:
+    with database_for(root).connect() as connection:
+        return [tuple(row) for row in connection.execute(text("SELECT slug, name FROM projects ORDER BY pk"))]
+
+
+def insert_project_row(root, slug: str) -> None:
+    with database_for(root).begin() as connection:
+        connection.execute(
+            text("INSERT INTO projects (slug, name, created_at) VALUES (:slug, 'Hand made', 't')"), {"slug": slug}
+        )
+
+
+def test_new_project_is_a_row_with_notebook_and_files_dir(root):
+    # G2✅1 · baseline · rewrite of test_new_project_has_empty_notebook_and_files_dir
+    # Changed: —
+    # Then: row (slug tokyo-housing, "Tokyo housing", created_at); folder has notebook.ipynb and files/; **no** project.json
+    # Demonstrates: projects live in the DB, notebooks stay files
+    project = store.create_project("Tokyo housing", root)
+
+    folder = root / project.id
+    assert project.id == "tokyo-housing"
+    assert project_rows(root) == [("tokyo-housing", "Tokyo housing")]
+    assert store.get_project("tokyo-housing", root) == project
+    assert (folder / "files").is_dir()
+    assert not (folder / "project.json").exists()
+    notebook = store.load_notebook(project.id, root)
+    assert notebook.cells == []
+    assert store.get_version(notebook) == 0
+
+
+def test_projects_are_listed_by_name_then_id(root):
+    # G2✅2 · edge
+    # Changed: three projects, names differing only in case
+    # Then: same order as today (name.lower(), then id)
+    # Demonstrates: sorting didn't change
+    store.create_project("beta", root, project_id="b2")
+    store.create_project("Alpha", root, project_id="a1")
+    store.create_project("Beta", root, project_id="b1")
+
+    assert [p.id for p in store.list_projects(root)] == ["a1", "b1", "b2"]
+
+
+@pytest.mark.parametrize("bad_name", ["", "   ", "x" * (store.PROJECT_NAME_MAX + 1)])
+def test_bad_project_names_are_rejected_without_a_row(root, bad_name):
+    # G2❌1 · negative
+    # Changed: name "", "   ", 81 chars
+    # Then: BAD_NAME; no row; no folder
+    # Demonstrates: validation still runs before any write
+    store.ensure_default_project(root)
+
+    with pytest.raises(WorkspaceError) as rejected:
+        store.create_project(bad_name, root)
+
+    assert rejected.value.code == ErrorCode.BAD_NAME
+    assert project_rows(root) == [("default", "Default")]
+    assert sorted(p.name for p in root.iterdir() if p.is_dir()) == ["default"]
+
+
+def test_failed_folder_create_leaves_no_row(root, monkeypatch):
+    # G2❌2 · negative
+    # Changed: mkdir raises OSError
+    # Then: error raised; no row
+    # Demonstrates: a project is never half-created
+    store.ensure_default_project(root)
+    real_mkdir = Path.mkdir
+
+    def refuse_project_folder(self, *args, **kwargs):
+        if self.name == "tokyo-housing":
+            raise OSError("disk full")
+        return real_mkdir(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "mkdir", refuse_project_folder)
+
+    with pytest.raises(OSError, match="disk full"):
+        store.create_project("Tokyo housing", root)
+
+    assert project_rows(root) == [("default", "Default")]
+
+
+def test_id_taken_by_a_folder_without_a_row_is_not_reused(root):
+    # G2❌3 · negative
+    # Changed: workspaces/tokyo-housing/ exists, no row
+    # Then: new project gets tokyo-housing-2; old folder untouched
+    # Demonstrates: a stray folder is never overwritten
+    stray = root / "tokyo-housing"
+    stray.mkdir(parents=True)
+    (stray / "keep.txt").write_text("mine")
+
+    project = store.create_project("Tokyo housing", root)
+
+    assert project.id == "tokyo-housing-2"
+    assert sorted(p.name for p in stray.iterdir()) == ["keep.txt"]
+
+
+def test_unknown_project_is_not_found(root):
+    # G2❌4 · negative
+    # Changed: get_project("nope")
+    # Then: NOT_FOUND
+    # Demonstrates: same error as today
+    store.ensure_default_project(root)
+
+    with pytest.raises(WorkspaceError) as missing:
+        store.get_project("nope", root)
+
+    assert missing.value.code == ErrorCode.NOT_FOUND
+
+
+def test_tampered_project_row_is_ignored(root, tmp_path):
+    # G2❌5 · negative
+    # Changed: a row with slug ../x inserted by hand
+    # Then: not listed; get_project("../x") → NOT_FOUND; nothing outside root touched
+    # Demonstrates: a tampered row can't become a path
+    store.ensure_default_project(root)
+    insert_project_row(root, "../x")
+    before_outside = sorted(p.name for p in tmp_path.iterdir())
+
+    assert [p.id for p in store.list_projects(root)] == ["default"]
+    with pytest.raises(WorkspaceError) as missing:
+        store.get_project("../x", root)
+    assert missing.value.code == ErrorCode.NOT_FOUND
+    assert sorted(p.name for p in tmp_path.iterdir()) == before_outside
+
+
+def test_duplicate_project_slug_is_refused_by_the_database(root):
+    # G2❌6 · negative
+    # Changed: insert a second row with slug default directly
+    # Then: IntegrityError (UNIQUE); one row
+    # Demonstrates: the unique slug holds even when _unique_id is bypassed
+    store.ensure_default_project(root)
+
+    with pytest.raises(IntegrityError):
+        insert_project_row(root, "default")
+
+    assert project_rows(root) == [("default", "Default")]

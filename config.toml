@@ -53,6 +53,7 @@ stall_timeout_seconds = 120    # fail when no data arrives for this long
 #   docker build -f docker/kernel.Dockerfile -t researchchat-kernel:1 docker
 [notebook]
 workspaces_dir = "workspaces"
+database_file = "researchchat.db" # SQLite file inside workspaces_dir (projects, datasets, pool index)
 cell_timeout_seconds = 60        # then the cell is interrupted
 max_output_chars = 20000         # per cell, text outputs
 max_image_kb = 1024              # per image output

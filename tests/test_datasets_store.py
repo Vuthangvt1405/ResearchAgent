@@ -1,13 +1,16 @@
-"""Tests for datasets.json, dataset ids and safe paths (NB-3 plan §7: G6❌1, S❌2, S❌5, + make_id)."""
+"""Tests for project datasets in the database, dataset ids and safe paths (NB-3 plan §7: S❌2, make_id; SQLite plan G3)."""
 
-import json
+from dataclasses import fields
 
 import pytest
+from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 
-from researchchat.workspace import WorkspaceError
+from researchchat.config import DATABASE_FILE
+from researchchat.db.engine import database_for
+from researchchat.workspace import WorkspaceError, store
 from researchchat.workspace import datasets_store as ds
-from researchchat.workspace import store
-from researchchat.workspace.dataset_pool import DatasetPool
+from researchchat.workspace.dataset_pool import DatasetPool, PoolEntry, PoolFile
 
 
 @pytest.fixture
@@ -17,32 +20,7 @@ def root(tmp_path):
     return root
 
 
-def record(id="hf-org--name", source="huggingface", source_id="org/name", files=None, status="ready"):
-    return ds.DatasetRecord(
-        id=id, name=source_id, source=source, source_id=source_id, revision="r1", url=None, license="mit",
-        selection=None, status=status, files=files or [ds.DatasetFile("a.csv", 3, None, True)],
-    )
-
-
-# ---- Group 6 — Manifest (AC28) · unit
-# Baseline: Given the project has a ready dataset · When the manifest is read
-
-
-def test_corrupt_manifest_is_set_aside(root):
-    # G6❌1 · Changed: invalid datasets.json
-    # Then: treated as empty; .bad copy kept
-    # Demonstrates: a broken file never crashes the panel
-    ds.save_records("p1", [record()], root)
-    assert [r.id for r in ds.load_records("p1", root)] == ["hf-org--name"]
-
-    path = ds.manifest_path("p1", root)
-    path.write_text("{not json", encoding="utf-8")
-    assert ds.load_records("p1", root) == []
-    assert (path.parent / "datasets.json.bad").read_text(encoding="utf-8") == "{not json"
-    assert not path.exists()
-
-    path.write_text(json.dumps({"format": 1, "datasets": [{"id": "../x", "source": "huggingface", "source_id": "a"}]}))
-    assert ds.load_records("p1", root) == []
+# ---- Group 6 — Dataset ids · unit
 
 
 def test_make_id_suffixes_clashes():
@@ -68,43 +46,228 @@ def test_dataset_paths_stay_inside_dataset_folder(root):
     for bad_id in ("../p1", "a/b", "", "UPPER", "x" * 81, None):
         with pytest.raises(WorkspaceError):
             ds.dataset_dir("p1", bad_id, root)
-        with pytest.raises(WorkspaceError):
-            ds.partial_dir("p1", bad_id, "", root)
     for bad_path in ("../x", "a/../../x", "/etc/passwd", "a\\b", "C:/x", "a\x00b", "", "  ", ".", 5):
         with pytest.raises(WorkspaceError):
             ds.file_path("p1", "hf-org--name", bad_path, root)
     assert ds.safe_relpath("data/./train.csv") == "data/train.csv"
     inside = ds.file_path("p1", "hf-org--name", "data/train.csv", root)
     assert inside.is_relative_to(ds.dataset_dir("p1", "hf-org--name", root))
-    assert sorted(p.name for p in root.iterdir()) == ["p1"]
+    assert sorted(p.name for p in root.iterdir() if not p.name.startswith(DATABASE_FILE)) == ["p1"]
 
 
-def test_delete_ignores_tampered_manifests(root):
-    # S❌5 (updated for NB-4) · Changed: record edited to files: ["../../notebook.ipynb"], pool_entry: "../x"
-    # Then: only files/datasets/<id> links and the real entry handled; notebook intact
-    # Demonstrates: delete can't be steered (#8, #23)
+# ---- SQLite plan G3 — Project datasets in the database (AC3, SEC3, SEC4, SEC5) · integration
+# Baseline: Given project `p1` and pool entry `hf-org--name@r1` · When `save_project_datasets("p1", [dataset])` then `load_project_datasets("p1")`
+# Plan: docs/plans/sqlite-alembic-storage-plan.md §7
+
+ENTRY = "hf-org--name@r1"
+
+
+@pytest.fixture
+def pool(root):
+    """The baseline pool entry, saved, so project datasets can point to it."""
     pool = DatasetPool(root)
-    pool_file = pool.pool_file_path("hf-org--name@1111111", "a.csv")
+    pool.add_entry(PoolEntry(ENTRY, "huggingface", "org/name", "r1", "org/name", None, "mit",
+                             [PoolFile("a.csv", 3, None, True)]))
+    pool.save_index()
+    return pool
+
+
+def dataset(id="hf-org--name", files=("a.csv",), selection=None, status="ready"):
+    return ds.ProjectDataset(
+        id=id, pool_entry=ENTRY, selection=selection, status=status, files=list(files),
+        requested_at="2026-11-15T00:00:00+00:00", linked_at="2026-11-15T00:00:01+00:00", error=None,
+    )
+
+
+def dataset_rows(root) -> list[tuple]:
+    with database_for(root).connect() as connection:
+        return [tuple(r) for r in connection.execute(text("SELECT project_pk, slug, status FROM project_datasets ORDER BY pk"))]
+
+
+def test_project_datasets_round_trip(root, pool):
+    # G3✅1 · baseline
+    # Changed: —
+    # Then: an equal ProjectDataset (every field), same list order
+    # Demonstrates: nothing is lost between dataclass and rows
+    saved = [dataset(), dataset("zenodo-1", status="failed")]
+    saved[1].error = "checksum mismatch"
+
+    ds.save_project_datasets("p1", saved, root)
+
+    assert ds.load_project_datasets("p1", root) == saved
+
+
+def test_selection_none_and_empty_list_stay_distinct(root, pool):
+    # G3✅2 · edge
+    # Changed: selection=None and selection=[] on two datasets
+    # Then: read back as None and []
+    # Demonstrates: "all files" never turns into "no files"
+    ds.save_project_datasets("p1", [dataset("all-files", selection=None), dataset("no-files", selection=[])], root)
+
+    assert [d.selection for d in ds.load_project_datasets("p1", root)] == [None, []]
+
+
+def test_file_order_is_kept(root, pool):
+    # G3✅3 · edge
+    # Changed: files=["b.csv", "a.csv", "dir/c.csv"]
+    # Then: same order
+    # Demonstrates: the panel lists files as before
+    ds.save_project_datasets("p1", [dataset(files=("b.csv", "a.csv", "dir/c.csv"))], root)
+
+    assert ds.load_project_datasets("p1", root)[0].files == ["b.csv", "a.csv", "dir/c.csv"]
+
+
+def test_saving_a_shorter_list_removes_dropped_datasets(root, pool):
+    # G3✅4 · edge
+    # Changed: save 2, then save 1
+    # Then: 1 row and its files only
+    # Demonstrates: delete still works through "save the list"
+    ds.save_project_datasets("p1", [dataset("first"), dataset("second")], root)
+    ds.save_project_datasets("p1", [dataset("second")], root)
+
+    assert [d.id for d in ds.load_project_datasets("p1", root)] == ["second"]
+    with database_for(root).connect() as connection:
+        assert connection.execute(text("SELECT count(*) FROM project_dataset_files")).scalar() == 1
+
+
+def test_same_dataset_slug_in_two_projects_is_allowed(root, pool):
+    # G3✅5 · edge
+    # Changed: p1 and p2 both save zenodo-10117394 → the same pool entry
+    # Then: two rows, same pool_entry_pk; each project loads its own
+    # Demonstrates: the shared pool works with per-project unique slugs (D1, D2)
+    store.create_project("P2", root, project_id="p2")
+    ds.save_project_datasets("p1", [dataset("zenodo-10117394", files=("a.csv",))], root)
+    ds.save_project_datasets("p2", [dataset("zenodo-10117394", files=())], root)
+
+    with database_for(root).connect() as connection:
+        entry_pks = connection.execute(text("SELECT DISTINCT pool_entry_pk FROM project_datasets")).scalars().all()
+    assert len(entry_pks) == 1
+    assert ds.load_project_datasets("p1", root)[0].files == ["a.csv"]
+    assert ds.load_project_datasets("p2", root)[0].files == []
+    assert pool.projects_using(ENTRY) == ["p1", "p2"]
+
+
+def test_integer_keys_never_reach_the_dataclasses(root, pool):
+    # G3✅6 · edge
+    # Changed: —
+    # Then: the loaded ProjectDataset has exactly today's fields; pool_entry is the slug string
+    # Demonstrates: the integer keys stay inside the storage layer
+    ds.save_project_datasets("p1", [dataset()], root)
+
+    [loaded] = ds.load_project_datasets("p1", root)
+
+    assert [f.name for f in fields(ds.ProjectDataset)] == [
+        "id", "pool_entry", "selection", "status", "files", "requested_at", "linked_at", "error",
+    ]
+    assert loaded.pool_entry == ENTRY
+
+
+def test_failed_save_keeps_previous_datasets(root, pool, monkeypatch):
+    # G3❌1 · negative
+    # Changed: the second insert raises mid-transaction
+    # Then: previous rows unchanged
+    # Demonstrates: a crash never leaves half a list
+    ds.save_project_datasets("p1", [dataset("kept")], root)
+    real_insert = ds._insert_project_dataset
+    inserted = []
+
+    def fail_on_second(*args):
+        inserted.append(args)
+        if len(inserted) == 2:
+            raise OSError("disk full")
+        real_insert(*args)
+
+    monkeypatch.setattr(ds, "_insert_project_dataset", fail_on_second)
+
+    with pytest.raises(OSError, match="disk full"):
+        ds.save_project_datasets("p1", [dataset("new-1"), dataset("new-2")], root)
+
+    assert [d.id for d in ds.load_project_datasets("p1", root)] == ["kept"]
+
+
+def test_tampered_dataset_row_is_skipped(root, pool, caplog):
+    # G3❌2 · negative · replaces test_corrupt_manifest_is_set_aside
+    # Changed: rows with slug ../x and status "hacked" inserted by hand
+    # Then: skipped with a warning; good rows still returned
+    # Demonstrates: tampered data never becomes a path or a status
+    ds.save_project_datasets("p1", [dataset("good")], root)
+    with database_for(root).begin() as connection:
+        connection.execute(text("PRAGMA ignore_check_constraints = ON"))  # a hand edit, past the CHECKs
+        for position, (slug, status) in enumerate([("../x", "ready"), ("bad-status", "hacked")], start=1):
+            connection.execute(text(
+                "INSERT INTO project_datasets (project_pk, slug, pool_entry_pk, position, status) "
+                "SELECT p.pk, :slug, e.pk, :position, :status FROM projects p, pool_entries e WHERE p.slug = 'p1'"
+            ), {"slug": slug, "position": position, "status": status})
+
+    assert [d.id for d in ds.load_project_datasets("p1", root)] == ["good"]
+    assert caplog.text.count("Ignored a dataset row") == 2
+
+
+def test_other_projects_datasets_are_not_returned(root, pool):
+    # G3❌3 · negative
+    # Changed: p2 has a dataset too
+    # Then: load("p1") returns only p1's
+    # Demonstrates: projects only read their own datasets
+    store.create_project("P2", root, project_id="p2")
+    ds.save_project_datasets("p1", [dataset("mine")], root)
+    ds.save_project_datasets("p2", [dataset("theirs")], root)
+
+    assert [d.id for d in ds.load_project_datasets("p1", root)] == ["mine"]
+
+
+def test_dataset_pointing_to_unknown_pool_entry_is_refused(root, pool):
+    # G3❌4 · negative
+    # Changed: pool_entry="nope" (no pool_entries row has that slug)
+    # Then: refused before any write; previous rows unchanged
+    # Demonstrates: the slug → pk lookup can't create a dangling reference
+    ds.save_project_datasets("p1", [dataset("kept")], root)
+    dangling = dataset("dangling")
+    dangling.pool_entry = "nope"
+
+    with pytest.raises(ds.UnknownPoolEntry):
+        ds.save_project_datasets("p1", [dangling], root)
+
+    assert [d.id for d in ds.load_project_datasets("p1", root)] == ["kept"]
+
+
+def test_duplicate_dataset_slug_in_one_project_is_refused(root, pool):
+    # G3❌5 · negative
+    # Changed: two datasets with slug hf-org--name in one save
+    # Then: IntegrityError (UNIQUE); previous rows unchanged
+    # Demonstrates: two datasets never share a folder
+    ds.save_project_datasets("p1", [dataset("kept")], root)
+
+    with pytest.raises(IntegrityError):
+        ds.save_project_datasets("p1", [dataset("hf-org--name"), dataset("hf-org--name")], root)
+
+    assert [d.id for d in ds.load_project_datasets("p1", root)] == ["kept"]
+
+
+def test_delete_ignores_tampered_rows(root, pool):
+    # G3❌6 · negative · rewrite of test_delete_ignores_tampered_manifests
+    # Changed: a dataset row whose file paths point outside files/datasets/<id>/
+    # Then: delete removes only files/datasets/<id>/; nothing else
+    # Demonstrates: delete never follows data it reads back
+    pool_file = pool.pool_file_path(ENTRY, "a.csv")
     pool_file.parent.mkdir(parents=True)
     pool_file.write_text("abc")
     folder = ds.dataset_dir("p1", "hf-org--name", root)
     folder.mkdir(parents=True)
-    (folder / "a.csv").symlink_to(pool.link_target("hf-org--name@1111111", "a.csv"))
+    (folder / "a.csv").symlink_to(pool.link_target(ENTRY, "a.csv"))
     other = ds.dataset_dir("p1", "zenodo-1", root)
     other.mkdir()
-    path = ds.manifest_path("p1", root)
-    path.write_text(json.dumps({"format": 2, "datasets": [
-        {"id": "hf-org--name", "pool_entry": "../x", "selection": None, "status": "ready", "files": ["../../notebook.ipynb"]},
-    ]}))
+    ds.save_project_datasets("p1", [dataset(files=("../../notebook.ipynb",))], root)
+    with database_for(root).begin() as connection:  # the pool entry's slug edited by hand too
+        connection.execute(text("UPDATE pool_entries SET slug = '../x'"))
 
     [tampered] = ds.load_project_datasets("p1", root)
+    pool = DatasetPool(root)  # a fresh read of the index, as after a restart
     pool.unlink_dataset("p1", tampered.id)
     assert pool.remove_unused_entry(tampered.pool_entry) == 0
     with pytest.raises(WorkspaceError):
         pool.entry_dir(tampered.pool_entry)
 
-    project = store.project_dir("p1", root)
-    assert (project / "notebook.ipynb").is_file()
+    assert (store.project_dir("p1", root) / "notebook.ipynb").is_file()
     assert not folder.exists()
     assert other.is_dir()
     assert pool_file.read_text() == "abc"

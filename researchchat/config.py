@@ -66,6 +66,7 @@ DATASETS_STALL_TIMEOUT_SECONDS: int = _datasets.get("stall_timeout_seconds", 120
 # Notebook workspaces (one notebook, Docker kernel and files folder per project)
 _notebook = CONFIG.get("notebook", {})
 WORKSPACES_DIR: Path = ROOT / _notebook.get("workspaces_dir", "workspaces")
+DATABASE_FILE: str = _notebook.get("database_file", "researchchat.db")  # inside each workspaces root
 CELL_TIMEOUT_SECONDS: int = _notebook.get("cell_timeout_seconds", 60)
 MAX_OUTPUT_CHARS: int = _notebook.get("max_output_chars", 20000)
 MAX_IMAGE_KB: int = _notebook.get("max_image_kb", 1024)

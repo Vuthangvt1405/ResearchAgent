@@ -1,19 +1,20 @@
-"""Tests for the shared dataset pool and the NB-3 migration (NB-4 plan §7: G11, G14).
+"""Tests for the shared dataset pool and its index in the database (NB-4 plan §7: G11; SQLite plan G4).
 
 Same fakes as test_dataset_service.py (no network, fake disk, tmp_path), reused from there.
 """
 
 import asyncio
-import hashlib
-import json
 import os
 
 import pytest
+from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 
-from researchchat.workspace import WorkspaceError, store
+from researchchat.db.engine import database_for
+from researchchat.workspace import WorkspaceError, dataset_pool, store
 from researchchat.workspace import dataset_sources as src
 from researchchat.workspace import datasets_store as ds
-from researchchat.workspace.dataset_pool import DatasetPool
+from researchchat.workspace.dataset_pool import DatasetPool, PoolEntry, PoolFile
 from researchchat.workspace.kernels import KernelRegistry
 from tests.conftest import fake_lookup
 from tests.test_dataset_service import (
@@ -216,25 +217,6 @@ async def _ignore(_output):
     return None
 
 
-def test_corrupt_pool_index_is_rebuilt(root):
-    # G11❌4 · Changed: .dataset-pool.json invalid
-    # Then: rebuilt from the pool folders; .bad copy kept; nothing deleted; the projects' links keep working
-    # Demonstrates: a broken index never loses data
-    async def scenario():
-        env = await pooled_for_p1(root)
-        index = root / ".dataset-pool.json"
-        index.write_text("{not json", encoding="utf-8")
-        env2 = Env(root, catalog=env.catalog)
-        await env2.start()
-        assert (root / ".dataset-pool.json.bad").read_text(encoding="utf-8") == "{not json"
-        [entry] = DatasetPool(root).load_index()
-        assert entry.id == ENTRY_R1 and entry.ready_paths() == {"a.csv", "b.csv"}
-        assert env2.svc.list_for_model("p1")[0]["status"] == "ready"
-        assert (env2.folder("p1") / "a.csv").read_bytes() == A_CSV
-
-    run(scenario())
-
-
 def test_cleanup_waits_for_a_project_linking_at_the_same_time(root):
     # G11❌5 · Changed: p1 deletes its last use while p2 links the same entry
     # Then: entry kept, p2 linked
@@ -268,166 +250,165 @@ def test_cleanup_waits_for_a_project_linking_at_the_same_time(root):
     run(scenario())
 
 
-# ---- Group 14: Migration from NB-3 (AC29, SEC24) · unit
-# Baseline: Given projects with NB-3 datasets.json format 1 and real files in files/datasets/<id>/
-#           · When migrate() runs on start
+# ---- SQLite plan G4 — Pool index in the database (AC3, SEC3, SEC4, SEC5) · integration
+# Baseline: Given a workspace at head · When `pool.add_entry(entry)`; `pool.save_index()`; a new `DatasetPool(root).entries()`
+# Plan: docs/plans/sqlite-alembic-storage-plan.md §7
+
+MTIME_NS = 1794468807764441482  # a real value from the workspace's pool index
 
 
-def nb3_dataset(root, pid, files=None, revision=R1):
-    """Write a format 1 record and its real files, the way NB-3 left them."""
-    files = files or {"a.csv": A_CSV, "b.csv": b"x\n" * 50}
-    folder = ds.dataset_dir(pid, "hf-org--name", root)
-    folder.mkdir(parents=True, exist_ok=True)
-    for path, body in files.items():
-        (folder / path).write_bytes(body)
-    record = ds.DatasetRecord(
-        id="hf-org--name", name="org/name", source="huggingface", source_id="org/name", revision=revision,
-        url="https://huggingface.co/datasets/org/name", license="mit", selection=None, status="ready",
-        files=[ds.DatasetFile(p, len(b), "sha256:" + hashlib.sha256(b).hexdigest(), True) for p, b in files.items()],
-        requested_at="2026-11-01T00:00:00+00:00", downloaded_at="2026-11-01T00:01:00+00:00",
+def pool_entry(slug=ENTRY_R1, created_at="2026-11-15T00:00:00+00:00", files=None):
+    return PoolEntry(
+        slug, "huggingface", "org/name", R1, "org/name", "https://huggingface.co/datasets/org/name", "mit",
+        files if files is not None else [PoolFile("b.csv", 5, "sha256:" + "0" * 64, True, MTIME_NS),
+                                         PoolFile("a.csv", 3, None, False, None)],
+        created_at,
     )
-    ds.save_records(pid, [record], root)
-    return folder
 
 
-def test_migration_moves_files_into_pool_and_links_them(root):
-    # G14✅1 · Changed: one project, one dataset
-    # Then: files in .dataset-pool/<entry>/; links in files/datasets/<id>/; format 2 + .v1 backup; same /work paths
-    # Demonstrates: old downloads keep working
-    folder = nb3_dataset(root, "p1")
-    report = DatasetPool(root).migrate()
-    assert report.migrated_projects == ["p1"]
+def saved_pool(root, *entries) -> DatasetPool:
     pool = DatasetPool(root)
-    assert pool.pool_file_path(ENTRY_R1, "a.csv").read_bytes() == A_CSV
-    assert (folder / "a.csv").is_symlink() and (folder / "a.csv").read_bytes() == A_CSV
-    assert json.loads(ds.manifest_path("p1", root).read_text())["format"] == 2
-    assert json.loads((ds.manifest_path("p1", root).with_name("datasets.json.v1")).read_text())["format"] == 1
-
-    async def scenario():
-        env = Env(root)
-        await env.start()
-        [view] = env.svc.list_for_model("p1")
-        assert view["status"] == "ready" and view["path"] == "/work/datasets/hf-org--name"
-        assert view["name"] == "org/name" and view["license"] == "mit"
-
-    run(scenario())
+    for entry in entries or (pool_entry(),):
+        pool.add_entry(entry)
+    pool.save_index()
+    return pool
 
 
-def test_same_dataset_in_two_projects_is_stored_once(root):
-    # G14✅2 · Changed: p1 and p2 both have X at the same revision
-    # Then: one pool entry; p2's duplicate files removed; both linked
-    # Demonstrates: migration frees duplicate space
-    nb3_dataset(root, "p1")
-    p2_folder = nb3_dataset(root, "p2")
-    DatasetPool(root).migrate()
-    [entry] = DatasetPool(root).load_index()
-    assert entry.id == ENTRY_R1
-    assert all((p2_folder / p).is_symlink() for p in ("a.csv", "b.csv"))
-    assert (p2_folder / "a.csv").read_bytes() == A_CSV
-    assert sorted(p.name for p in DatasetPool(root).entry_dir(ENTRY_R1).iterdir()) == ["a.csv", "b.csv"]
+def use_entry(root, project_id, entry_id=ENTRY_R1):
+    ds.save_project_datasets(project_id, [ds.ProjectDataset("hf-org--name", entry_id, None, "ready", ["b.csv"])], root)
 
 
-def test_migration_is_safe_to_run_twice(root):
-    # G14✅3 · Changed: run migrate() again
-    # Then: no changes, no errors
-    # Demonstrates: restarts don't redo or break anything
-    nb3_dataset(root, "p1")
-    DatasetPool(root).migrate()
-    manifest = ds.manifest_path("p1", root).read_text()
-    index = (root / ".dataset-pool.json").read_text()
-    report = DatasetPool(root).migrate()
-    assert report.migrated_projects == [] and report.skipped_projects == []
-    assert ds.manifest_path("p1", root).read_text() == manifest
-    assert (root / ".dataset-pool.json").read_text() == index
+def entry_pk(root, slug=ENTRY_R1):
+    with database_for(root).connect() as connection:
+        return connection.execute(text("SELECT pk FROM pool_entries WHERE slug = :slug"), {"slug": slug}).scalar()
 
 
-def test_migration_marks_gone_or_changed_files(root):
-    # G14❌1 · Changed: one file deleted, one with a different size
-    # Then: deleted → missing; changed → not moved, left in place, not ready in the pool
-    # Demonstrates: migration never puts wrong data in the pool
-    folder = nb3_dataset(root, "p1", {"a.csv": A_CSV, "b.csv": b"bb", "c.csv": b"cc"})
-    (folder / "b.csv").unlink()
-    (folder / "c.csv").write_bytes(b"changed!")
-    DatasetPool(root).migrate()
-    [entry] = DatasetPool(root).load_index()
-    assert entry.ready_paths() == {"a.csv"}
-    assert (folder / "c.csv").read_bytes() == b"changed!" and not (folder / "c.csv").is_symlink()
-    assert not DatasetPool(root).pool_file_path(ENTRY_R1, "c.csv").exists()
+def test_pool_entries_round_trip_with_files_in_order(root):
+    # G4✅1 · baseline
+    # Changed: —
+    # Then: equal PoolEntry with files in the same order
+    # Demonstrates: the index survives a restart
+    saved_pool(root)
 
-    async def scenario():
-        env = Env(root)
-        await env.start()
-        [view] = env.svc.list_for_model("p1")
-        assert view["status"] == "missing" and sorted(view["missing_files"]) == ["b.csv", "c.csv"]
-
-    run(scenario())
+    assert list(DatasetPool(root).entries().values()) == [pool_entry()]
 
 
-def test_migration_resumes_after_a_crash(root):
-    # G14❌2 · Changed: crash after project 1 of 2
-    # Then: next start migrates project 2 only; project 1 untouched
-    # Demonstrates: an interrupted migration finishes cleanly
-    nb3_dataset(root, "p1")
-    DatasetPool(root).migrate_project("p1")  # the first run got this far
-    p1_manifest = ds.manifest_path("p1", root).read_text()
-    nb3_dataset(root, "p2")
-    report = DatasetPool(root).migrate()
-    assert report.migrated_projects == ["p2"]
-    assert ds.manifest_path("p1", root).read_text() == p1_manifest
-    assert (ds.dataset_dir("p2", "hf-org--name", root) / "a.csv").is_symlink()
+def test_large_mtime_ns_round_trips(root):
+    # G4✅2 · edge
+    # Changed: mtime_ns=1794468807764441482
+    # Then: the same int
+    # Demonstrates: change detection (SEC16 of NB-4) still works
+    saved_pool(root)
+
+    assert DatasetPool(root).get_entry(ENTRY_R1).file("b.csv").mtime_ns == MTIME_NS
 
 
-def test_migration_skips_corrupt_manifest(root):
-    # G14❌3 · Changed: p2/datasets.json invalid
-    # Then: p2 skipped and logged (A6 rule); p1 migrated
-    # Demonstrates: one broken project doesn't block the rest
-    nb3_dataset(root, "p1")
-    ds.manifest_path("p2", root).write_text("{not json", encoding="utf-8")
-    report = DatasetPool(root).migrate()
-    assert report.migrated_projects == ["p1"] and report.skipped_projects == ["p2"]
-    assert ds.manifest_path("p2", root).read_text() == "{not json"
+def test_projects_using_reads_from_database(root):
+    # G4✅3 · edge
+    # Changed: entry used by p1 and p2, not p3
+    # Then: ["p1", "p2"]
+    # Demonstrates: "used by" counts come from one query
+    store.create_project("P3", root, project_id="p3")
+    pool = saved_pool(root)
+    use_entry(root, "p2")
+    use_entry(root, "p1")
+
+    assert pool.projects_using(ENTRY_R1) == ["p1", "p2"]
 
 
-def test_migration_resumes_after_a_crash_inside_a_project(root):
-    # G14❌4 (added in implementation) · Changed: crash after a file was moved but before datasets.json
-    # was rewritten, and the pool index is gone too
-    # Then: the next start finds the moved file, links it, and keeps the catalog details; nothing lost
-    # Demonstrates: a crash at any point of the move loses no data
-    folder = nb3_dataset(root, "p1")
-    pool = DatasetPool(root)
-    target = pool.pool_file_path(ENTRY_R1, "a.csv")
-    target.parent.mkdir(parents=True)
-    os.rename(folder / "a.csv", target)  # the first run got this far
-    report = DatasetPool(root).migrate()
-    assert report.migrated_projects == ["p1"]
-    [entry] = DatasetPool(root).load_index()
-    assert (entry.id, entry.source_id) == (ENTRY_R1, "org/name")
-    assert entry.ready_paths() == {"a.csv", "b.csv"}
-    assert (folder / "a.csv").is_symlink() and (folder / "a.csv").read_bytes() == A_CSV
+def test_find_entries_newest_first(root):
+    # G4✅4 · edge
+    # Changed: two revisions of one dataset
+    # Then: newest created_at first
+    # Demonstrates: reuse picks the same version as today
+    older = pool_entry(ENTRY_R1, "2026-11-01T00:00:00+00:00")
+    newer = pool_entry(f"hf-org--name@{R2[:7]}", "2026-11-10T00:00:00+00:00")
+    saved_pool(root, older, newer)
+
+    found = DatasetPool(root).find_entries("huggingface", "org/name")
+
+    assert [e.id for e in found] == [newer.id, older.id]
 
 
-def test_project_skipped_by_migration_is_never_overwritten(root):
-    # G14❌5 (added in implementation) · Changed: the start-up migration failed for p1 (stays format 1)
-    # Then: it's migrated when first read; the NB-3 data is linked, .v1 kept, nothing downloaded again
-    # Demonstrates: an un-migrated project is never read as empty and overwritten
-    nb3_dataset(root, "p1")
+def test_saving_the_index_again_keeps_entry_keys(root):
+    # G4✅5 · edge
+    # Changed: entry used by p1; change its files; save_index() again
+    # Then: same pool_entries.pk; p1's row still points to it; files replaced
+    # Demonstrates: an upsert on slug never breaks a project's reference
+    pool = saved_pool(root)
+    use_entry(root, "p1")
+    first_pk = entry_pk(root)
 
-    async def scenario():
-        env = Env(root)
-        broken = env.start
-        original = DatasetPool.migrate
-        DatasetPool.migrate = lambda self: (_ for _ in ()).throw(OSError("disk hiccup"))
-        try:
-            await broken()
-        finally:
-            DatasetPool.migrate = original
-        # migrated when start-up first read the project, instead of being read as empty
-        assert json.loads(ds.manifest_path("p1", root).read_text())["format"] == 2
-        before = len(env.catalog.file_requests())
-        started = await download(env)
-        assert started["already_downloaded"] is True
-        assert env.catalog.file_requests()[before:] == []
-        assert ds.manifest_path("p1", root).with_name("datasets.json.v1").is_file()
-        assert (env.folder("p1") / "a.csv").read_bytes() == A_CSV
+    pool.get_entry(ENTRY_R1).files = [PoolFile("c.csv", 7, None, True, 1)]
+    pool.save_index()
 
-    run(scenario())
+    assert entry_pk(root) == first_pk
+    assert pool.projects_using(ENTRY_R1) == ["p1"]
+    assert [f.path for f in DatasetPool(root).get_entry(ENTRY_R1).files] == ["c.csv"]
+
+
+def test_entry_in_use_cannot_be_deleted(root):
+    # G4❌1 · negative
+    # Changed: delete the entry row while p1 uses it
+    # Then: IntegrityError; entry and files still there
+    # Demonstrates: cleanup can never orphan a project
+    pool = saved_pool(root)
+    use_entry(root, "p1")
+
+    with pytest.raises(IntegrityError):
+        pool.save_index([])
+
+    assert list(DatasetPool(root).entries()) == [ENTRY_R1]
+    assert len(DatasetPool(root).get_entry(ENTRY_R1).files) == 2
+
+
+def test_tampered_pool_row_is_skipped(root, caplog):
+    # G4❌2 · negative · replaces test_corrupt_pool_index_is_rebuilt
+    # Changed: rows with entry slug ../x and file path ../../etc/passwd
+    # Then: skipped with a warning; good entries returned
+    # Demonstrates: a tampered row can't make a link target outside the pool
+    saved_pool(root, pool_entry(), pool_entry("zenodo-1", files=[PoolFile("ok.csv", 1, None, True)]))
+    with database_for(root).begin() as connection:
+        connection.execute(text("INSERT INTO pool_entries (slug, source, source_id, name) VALUES ('../x', 'zenodo', '1', 'x')"))
+        connection.execute(text("UPDATE pool_files SET path = '../../etc/passwd' WHERE path = 'ok.csv'"))
+
+    assert list(DatasetPool(root).entries()) == [ENTRY_R1]
+    assert caplog.text.count("Ignored a pool entry row") == 2
+
+
+def test_failed_index_save_keeps_previous_index(root, monkeypatch):
+    # G4❌3 · negative
+    # Changed: an insert raises mid-save
+    # Then: previous entries and files unchanged
+    # Demonstrates: the index is all-or-nothing
+    pool = saved_pool(root)
+    pool.add_entry(pool_entry("zenodo-2", files=[PoolFile("z.csv", 1, None, True)]))
+    real_replace = dataset_pool._replace_entry_files
+
+    def fail_for_new_entry(connection, pk, files):
+        if files and files[0].path == "z.csv":
+            raise OSError("disk full")
+        real_replace(connection, pk, files)
+
+    monkeypatch.setattr(dataset_pool, "_replace_entry_files", fail_for_new_entry)
+
+    with pytest.raises(OSError, match="disk full"):
+        pool.save_index()
+
+    assert list(DatasetPool(root).entries().values()) == [pool_entry()]
+
+
+def test_duplicate_pool_slug_is_refused_by_the_database(root):
+    # G4❌4 · negative
+    # Changed: insert a second row with an existing entry slug directly
+    # Then: IntegrityError (UNIQUE); one row
+    # Demonstrates: one folder is never two entries
+    saved_pool(root)
+
+    with pytest.raises(IntegrityError), database_for(root).begin() as connection:
+        connection.execute(text(
+            "INSERT INTO pool_entries (slug, source, source_id, name) VALUES (:slug, 'zenodo', '1', 'x')"
+        ), {"slug": ENTRY_R1})
+
+    with database_for(root).connect() as connection:
+        assert connection.execute(text("SELECT count(*) FROM pool_entries")).scalar() == 1

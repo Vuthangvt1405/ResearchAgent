@@ -9,17 +9,17 @@ awaited with wait_idle().
 import asyncio
 import hashlib
 import json
+import re
+from pathlib import Path
 from types import SimpleNamespace
 
 import httpx
 import pytest
 
-from researchchat.workspace import ErrorCode, WorkspaceError
-from researchchat.workspace import actions
+from researchchat.workspace import ErrorCode, WorkspaceError, actions, store
 from researchchat.workspace import dataset_sources as src
 from researchchat.workspace import datasets_store as ds
-from researchchat.workspace import store
-from researchchat.workspace.dataset_pool import DatasetPool
+from researchchat.workspace.dataset_pool import DatasetPool, PoolEntry, PoolFile
 from researchchat.workspace.dataset_service import DatasetService, DatasetsSettings
 from researchchat.workspace.dataset_sources import DatasetPlan, PlannedFile
 from researchchat.workspace.service import NotebookService
@@ -287,7 +287,7 @@ def test_declined_download_writes_nothing(root):
             await svc.request("p1", "s1", "hf:org/name", approve=no)
         assert e.value.code == ErrorCode.DECLINED
         assert svc.list_for_model("p1") == [] and svc._jobs == []
-        assert not ds.manifest_path("p1", root).exists()
+        assert ds.load_project_datasets("p1", root) == []
         assert not (store.project_dir("p1", root) / "files" / "datasets").exists()
 
     run(scenario())
@@ -667,19 +667,19 @@ def test_same_dataset_while_running_returns_running_job(root):
 
 
 def test_startup_marks_stale_jobs_failed(root):
-    # G6❌3 · Changed: records queued/downloading, files in .dataset-partial/ · Then: failed; partial cleared
-    # Demonstrates: a crash leaves no half files
-    def rec(id, status):
-        return ds.DatasetRecord(id=id, name=id, source="zenodo", source_id=id[-1], revision=None, url=None, license=None,
-                                selection=None, status=status, files=[ds.DatasetFile("x.csv", 3, None, False)])
-
-    ds.save_records("p1", [rec("zenodo-1", "queued"), rec("zenodo-2", "downloading")], root)
-    part = ds.partial_dir("p1", "zenodo-2", "", root)
-    part.mkdir(parents=True)
-    (part / "x.csv").write_text("ha")
-    old = ds.partial_dir("p1", "zenodo-3", ".old", root)  # crash mid update-swap
-    old.mkdir()
-    (old / "y.csv").write_text("kept")
+    # G6❌3 (SQLite plan G5✅1: rows instead of NB-3 records) · Changed: rows queued/downloading, files in .dataset-partial/
+    # Then: failed; partial cleared · Demonstrates: a crash leaves no half files
+    pool = DatasetPool(root)
+    for entry_id in ("zenodo-1", "zenodo-2"):
+        pool.add_entry(PoolEntry(entry_id, "zenodo", entry_id[-1], None, entry_id, None, None, [PoolFile("x.csv", 3, None)]))
+    pool.save_index()
+    ds.save_project_datasets("p1", [
+        ds.ProjectDataset("zenodo-1", "zenodo-1", None, "queued", ["x.csv"]),
+        ds.ProjectDataset("zenodo-2", "zenodo-2", None, "downloading", ["x.csv"]),
+    ], root)
+    job_folder = pool.partial_dir() / "job-7"
+    job_folder.mkdir(parents=True)
+    (job_folder / "x.csv").write_text("ha")
 
     async def scenario():
         env = Env(root)
@@ -691,8 +691,8 @@ def test_startup_marks_stale_jobs_failed(root):
         }
 
     run(scenario())
-    assert not ds.partial_root("p1", root).exists()
-    assert (ds.dataset_dir("p1", "zenodo-3", root) / "y.csv").read_text() == "kept"
+    assert not pool.partial_dir().exists()
+    assert [d.status for d in ds.load_project_datasets("p1", root)] == ["failed", "failed"]
 
 
 # ---- Group 7 — Delete and cancel (AC25, AC26, AC27, SEC4, SEC9) · unit
@@ -1251,3 +1251,53 @@ def test_delete_last_user_removes_pool_data(root):
         assert DatasetPool(root).load_index() == []
 
     run(scenario())
+
+
+# ---- SQLite plan G5 — Startup without NB-3 (AC3, AC7) · integration
+# Baseline: Given a workspace at head with project `p1` · When `DatasetService.startup_cleanup()`
+# TODO(AC3,AC7): shared baseline setup (a workspace at head) once database_for exists
+# Plan: docs/plans/sqlite-alembic-storage-plan.md §7
+
+
+def test_startup_ignores_old_json_files(root):
+    # G5❌1 · negative
+    # Changed: a leftover datasets.json (format 1) and .dataset-pool.json in the workspace
+    # Then: no rows created from them; files untouched; no error
+    # Demonstrates: the old formats are really gone, not half-supported
+    old_manifest = store.project_dir("p1", root) / "datasets.json"
+    old_manifest.write_text(json.dumps({"format": 1, "datasets": [
+        {"id": "hf-org--name", "source": "huggingface", "source_id": "org/name", "status": "ready", "files": []},
+    ]}))
+    old_index = root / ".dataset-pool.json"
+    old_index.write_text(json.dumps({"format": 1, "entries": [{"id": "hf-org--name@1111111"}]}))
+    before = (old_manifest.read_text(), old_index.read_text())
+
+    async def scenario():
+        svc = await Env(root).start()
+        assert svc.list_for_model("p1") == []
+        assert DatasetPool(root).entries() == {}
+
+    run(scenario())
+    assert (old_manifest.read_text(), old_index.read_text()) == before
+
+
+REMOVED_FORMAT_NAMES = (
+    "datasets.json", ".dataset-pool.json", "load_records", "save_records", "migrate_project",
+    "read_manifest_format", "DatasetRecord", "rebuild_index",
+)
+
+
+def test_no_code_references_removed_formats():
+    # G5❌2 · negative
+    # Changed: grep the package for datasets.json, .dataset-pool.json, load_records, migrate_project (vulture runs separately)
+    # Then: no hits
+    # Demonstrates: AC7: the removal is complete
+    package = Path(__file__).resolve().parent.parent / "researchchat"
+    hits = [
+        f"{path.relative_to(package)}: {name}"
+        for path in package.rglob("*.py")
+        for name in REMOVED_FORMAT_NAMES
+        if re.search(rf"(?<![\w.]){re.escape(name)}(?!\w)", path.read_text(encoding="utf-8"))
+    ]
+
+    assert hits == []
