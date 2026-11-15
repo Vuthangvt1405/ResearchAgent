@@ -6,3 +6,5 @@ ddgs>=9.0
 pytest>=8.0
 jupyter_client>=8.6
 nbformat>=5.10
+sqlalchemy>=2.0
+alembic>=1.13

@@ -31,12 +31,7 @@ from researchchat.config import WORKSPACES_DIR
 from researchchat.workspace import ErrorCode, WorkspaceError, store
 from researchchat.workspace import dataset_sources as sources
 from researchchat.workspace import datasets_store as ds
-from researchchat.workspace.dataset_pool import (
-    STOPPED_DURING_DOWNLOAD,
-    DatasetPool,
-    PoolEntry,
-    PoolFile,
-)
+from researchchat.workspace.dataset_pool import DatasetPool, PoolEntry, PoolFile
 from researchchat.workspace.dataset_sources import DatasetPlan, PlannedFile
 from researchchat.workspace.datasets_store import DatasetStatus, ProjectDataset, Source
 from researchchat.workspace.service import DatasetProps, NotebookProps, Notify
@@ -55,6 +50,7 @@ READY_WAIT_SECONDS = 60  # longest a request waits for startup cleanup
 VIEW_FILES_MAX = 50
 PANEL_FILES_MAX = 200
 PROGRESS_INTERVAL = 1.0  # seconds between progress pushes (each re-sends the panel props)
+STOPPED_DURING_DOWNLOAD = "app stopped during download"  # error of a download cut off by an app restart
 
 
 def disk_free(path: Path) -> int:
@@ -247,7 +243,7 @@ class DatasetService:
         self.pool = pool or DatasetPool(root)  # index, links, and the one lock for both (SEC9)
         self.notes: dict[str, list[str]] = {}  # session_id -> pending finish lines
         self.rev = 0  # datasets_rev for NotebookProps (SEC16)
-        self._datasets: dict[str, list[ProjectDataset]] = {}  # project_id -> datasets (cache of datasets.json)
+        self._datasets: dict[str, list[ProjectDataset]] = {}  # project_id -> datasets (cache of its database rows)
         self._jobs: list[Job] = []  # app-wide, in queue order (running ones included)
         self._job_ids = 0
         self._ready = asyncio.Event()  # set by startup_cleanup (SEC18)
@@ -260,21 +256,8 @@ class DatasetService:
 
     def _load(self, pid: str) -> list[ProjectDataset]:
         if pid not in self._datasets:
-            self._migrate_if_still_nb3(pid)
             self._datasets[pid] = ds.load_project_datasets(pid, self.root)
         return self._datasets[pid]
-
-    def _migrate_if_still_nb3(self, pid: str) -> None:
-        """A project the start-up migration skipped is migrated before it's read, never overwritten (AC29)."""
-        if ds.read_manifest_format(pid, self.root) != ds.MANIFEST_FORMAT:
-            return
-        try:
-            self.pool.migrate_project(pid)
-        except (OSError, WorkspaceError) as e:
-            log.exception("Moving the datasets of project %s into the pool failed", pid)
-            raise WorkspaceError(
-                ErrorCode.BUSY, "This project's datasets couldn't be moved into the shared pool yet (see the app log)."
-            ) from e
 
     def _save(self, pid: str) -> None:
         ds.save_project_datasets(pid, self._load(pid), self.root)
@@ -334,7 +317,7 @@ class DatasetService:
         return ready + sum(j.done_bytes for j in jobs)
 
     def _users_by_entry(self) -> dict[str, set[str]]:
-        """entry id -> project ids using it, from every project's datasets.json (one read for many rows)."""
+        """entry id -> project ids using it, from every project's dataset rows (one read for many rows)."""
         users: dict[str, set[str]] = {}
         for project in store.list_projects(self.root):
             try:
@@ -602,6 +585,7 @@ class DatasetService:
         self.pool.unlink_dataset(pid, dataset.id)
         dataset.pool_entry, dataset.files = entry.id, sorted(wanted)
         self.pool.link_files(pid, dataset.id, entry, wanted)
+        self.pool.save_index()  # the new version may be new to the index; the project row points to it (FK)
         self._save(pid)
         self._remove_entry_if_unused(old_entry)
 
@@ -740,24 +724,15 @@ class DatasetService:
     # ---- background side ----
 
     async def startup_cleanup(self) -> None:
-        """Migrate NB-3 data into the pool once (AC29); stale downloads -> failed; clear partial files."""
+        """Stale downloads -> failed; clear partial files."""
         try:
             self._datasets.clear()
             async with self._lock:
-                await asyncio.to_thread(self._migrate)  # checksums of big files must not block the chat
                 ds.remove_tree(self.pool.partial_dir())
                 for project in store.list_projects(self.root):
                     self._fail_stale(project.id)
         finally:
             self._ready.set()
-
-    def _migrate(self) -> None:
-        try:
-            self.pool.migrate()
-        except Exception:
-            log.exception("Moving NB-3 datasets into the pool failed; it's retried on the next start")
-        self.pool.forget_cached_index()
-        self.pool.entries()  # read now, so a broken index is rebuilt before any request (G11❌4)
 
     def _fail_stale(self, pid: str) -> None:
         try:

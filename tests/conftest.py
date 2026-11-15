@@ -66,6 +66,15 @@ def pytest_collection_modifyitems(config, items):
             item.add_marker(pytest.mark.skip(reason=reason))
 
 
+@pytest.fixture(autouse=True)
+def close_workspace_databases():
+    """Each test's tmp_path workspace gets its own SQLite engine; close them all after the test."""
+    from researchchat.db.engine import close_all_databases
+
+    yield
+    close_all_databases()
+
+
 @pytest.fixture
 def fake_kernels():
     return FakeKernels()

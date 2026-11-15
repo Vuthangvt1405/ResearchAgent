@@ -2,7 +2,7 @@
 
 workspaces/
     .dataset-pool/<entry>/<path>   the bytes, stored once; mounted read-only in every kernel
-    .dataset-pool.json             the pool index (not visible to kernels)
+    researchchat.db                the pool index: pool_entries + pool_files (not visible to kernels)
     .dataset-partial/job-<n>/      downloads in progress, app-wide
     <project>/files/datasets/<id>/ relative links → ../../../../.dataset-pool/<entry>/<path>
 
@@ -13,43 +13,41 @@ never trusts a link it finds: it compares the link text with the one it would
 write and reads sizes from the pool folder itself (SEC23).
 
 This module owns the pool index, linking files into projects, "used by"
-counts, cleanup, rebuilding a broken index and the one-time migration from
-NB-3's per-project storage. It never downloads and holds no lock of its own:
+counts and cleanup. It never downloads and holds no lock of its own:
 DatasetService calls it only while holding `lock` (one app-wide lock, so
 cleanup and linking can't race, SEC9).
 
-Plan: docs/plans/done/NB-4-dataset-pool-plan.md
+Plans: docs/plans/done/NB-4-dataset-pool-plan.md, docs/plans/sqlite-alembic-storage-plan.md
 """
 
 import asyncio
 import hashlib
-import json
 import logging
 import os
 import re
 import shutil
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from pathlib import Path
 
+from sqlalchemy import Connection, Row, delete, func, insert, select
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+
 from researchchat.config import WORKSPACES_DIR
-from researchchat.workspace import ErrorCode, WorkspaceError, store
+from researchchat.db.engine import database_for
+from researchchat.db.schema import pool_entries, pool_files, project_datasets, projects
+from researchchat.workspace import ErrorCode, WorkspaceError
 from researchchat.workspace import datasets_store as ds
-from researchchat.workspace.datasets_store import DatasetRecord, ProjectDataset, Source
+from researchchat.workspace.datasets_store import Source
 
 log = logging.getLogger(__name__)
 
 POOL_DIR = ".dataset-pool"
-POOL_INDEX_FILE = ".dataset-pool.json"
-POOL_INDEX_FORMAT = 1
 POOL_PARTIAL_DIR = ".dataset-partial"
 KERNEL_POOL_ROOT = "/" + POOL_DIR  # where kernels see the pool; the relative links land here
 LINK_CLIMB_TO_WORKSPACES = 4  # files/datasets/<id>/ → <id>, datasets, files, <project>
 REVISION_PREFIX_LENGTH = 7  # "<dataset-id>@<first 7 of revision>"
 ENTRY_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,79}(@[a-z0-9]{1,7})?$")
-BAD_INDEX_SUFFIX = ".bad"
 HASH_CHUNK_BYTES = 1 << 20
-UNKNOWN_SOURCE_ID = ""
-STOPPED_DURING_DOWNLOAD = "app stopped during download"  # rebuilt entries whose catalog key was lost with the index
 
 
 @dataclass
@@ -78,18 +76,6 @@ class PoolEntry:
 
     def ready_paths(self) -> set[str]:
         return {f.path for f in self.files if f.ready}
-
-
-@dataclass
-class LinkResult:
-    linked_paths: list[str]  # files now visible in the project
-    missing_paths: list[str]  # files the pool lacks; a download job must fetch them
-
-
-@dataclass
-class MigrationReport:
-    migrated_projects: list[str] = field(default_factory=list)
-    skipped_projects: list[str] = field(default_factory=list)  # corrupt manifests, logged (A6)
 
 
 def checksum_matches(path: Path, checksum: str | None) -> bool:
@@ -151,67 +137,30 @@ class DatasetPool:
 
     # ---- index ----
 
-    def index_path(self) -> Path:
-        return self.root / POOL_INDEX_FILE
-
     def entries(self) -> dict[str, PoolEntry]:
         """The index, read once and cached."""
         if self._entries is None:
             self._entries = {e.id: e for e in self.load_index()}
         return self._entries
 
-    def forget_cached_index(self) -> None:
-        """Read the index from disk again on next use."""
-        self._entries = None
-
     def load_index(self) -> list[PoolEntry]:
-        """Read .dataset-pool.json; a corrupt file is kept as .bad and the index rebuilt (G11❌4)."""
-        path = self.index_path()
-        if not path.is_file():
-            return self.rebuild_index() if self.pool_dir().is_dir() else []
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-            if not isinstance(data, dict) or data.get("format") != POOL_INDEX_FORMAT:
-                raise ValueError("unknown format")
-            return [_entry_from_dict(d) for d in data.get("entries") or []]
-        except (ValueError, KeyError, TypeError, AttributeError, WorkspaceError):
-            os.replace(path, path.with_name(POOL_INDEX_FILE + BAD_INDEX_SUFFIX))
-            log.warning("Dataset pool index was unreadable; rebuilt it (old copy kept as .bad)")
-            entries = self.rebuild_index()
-            self.save_index(entries)
-            return entries
+        """Read the pool index from the database; a tampered row is skipped and logged (SEC23)."""
+        with database_for(self.root).connect() as connection:
+            entry_rows = connection.execute(select(pool_entries).order_by(pool_entries.c.pk)).all()
+            files_by_entry = _pool_files_by_entry(connection)
+        entries = (_entry_from_row(row, files_by_entry.get(row.pk, [])) for row in entry_rows)
+        return [entry for entry in entries if entry is not None]
 
     def save_index(self, entries: list[PoolEntry] | None = None) -> None:
-        """Write .dataset-pool.json atomically (temp file + os.replace)."""
+        """Write the index in one transaction: upsert entries on slug (keeps their pk), replace their files,
+        delete entries no longer listed (a used one is refused by the RESTRICT foreign key, SEC4)."""
         listed = list(self.entries().values()) if entries is None else entries
-        data = {"format": POOL_INDEX_FORMAT, "entries": [asdict(e) for e in listed]}
-        path = self.index_path()
-        path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_name(POOL_INDEX_FILE + ".tmp")
-        try:
-            tmp.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
-            os.replace(tmp, path)
-        finally:
-            tmp.unlink(missing_ok=True)
-
-    def rebuild_index(self) -> list[PoolEntry]:
-        """Rebuild from the folders in .dataset-pool/ (nothing is deleted).
-
-        The catalog metadata went with the index, so a rebuilt entry keeps its
-        files and its projects' links but isn't matched by new requests; files
-        have no checksum, so they're trusted by size from now on.
-        """
-        entries = []
-        if not self.pool_dir().is_dir():
-            return entries
-        for folder in sorted(self.pool_dir().iterdir()):
-            if folder.is_symlink() or not folder.is_dir() or not ENTRY_ID_RE.match(folder.name):
-                continue
-            entries.append(PoolEntry(
-                id=folder.name, source="huggingface", source_id=UNKNOWN_SOURCE_ID, revision=None,
-                name=folder.name, url=None, license=None, files=_files_on_disk(folder),
-            ))
-        return entries
+        with database_for(self.root).begin() as connection:
+            for entry in listed:
+                entry_pk = _upsert_entry(connection, entry)
+                _replace_entry_files(connection, entry_pk, entry.files)
+            listed_slugs = [entry.id for entry in listed]
+            connection.execute(delete(pool_entries).where(pool_entries.c.slug.not_in(listed_slugs)))
 
     def find_entries(self, source: Source, source_id: str) -> list[PoolEntry]:
         """Every pooled version of this dataset, newest first."""
@@ -276,17 +225,12 @@ class DatasetPool:
 
     # ---- linking ----
 
-    def link_files(self, project_id: str, dataset_id: str, entry: PoolEntry, paths: list[str]) -> LinkResult:
-        """Link the ready pooled files among `paths` into files/datasets/<id>/; report the rest."""
-        linked, missing = [], []
+    def link_files(self, project_id: str, dataset_id: str, entry: PoolEntry, paths: list[str]) -> None:
+        """Link the ready pooled files among `paths` into files/datasets/<id>/; the rest wait for a download job."""
         for path in paths:
             pool_file = entry.file(path)
-            if pool_file is None or not pool_file.ready:
-                missing.append(path)
-                continue
-            self._write_link(project_id, dataset_id, entry.id, path)
-            linked.append(path)
-        return LinkResult(linked, missing)
+            if pool_file is not None and pool_file.ready:
+                self._write_link(project_id, dataset_id, entry.id, path)
 
     def _write_link(self, project_id: str, dataset_id: str, entry_id: str, relpath: str) -> None:
         link = ds.link_path(project_id, dataset_id, relpath, self.root)
@@ -320,13 +264,17 @@ class DatasetPool:
     # ---- users and cleanup ----
 
     def projects_using(self, entry_id: str) -> list[str]:
-        """Project ids whose datasets.json points to this entry (read from disk, the source of truth)."""
-        users = []
-        for project in store.list_projects(self.root):
-            datasets = ds.load_project_datasets(project.id, self.root)
-            if any(d.pool_entry == entry_id for d in datasets):
-                users.append(project.id)
-        return users
+        """Project ids whose datasets point to this entry, in project-bar order (one query)."""
+        query = (
+            select(projects.c.slug)
+            .join(project_datasets, project_datasets.c.project_pk == projects.c.pk)
+            .join(pool_entries, pool_entries.c.pk == project_datasets.c.pool_entry_pk)
+            .where(pool_entries.c.slug == entry_id)
+            .distinct()
+            .order_by(func.lower(projects.c.name), projects.c.slug)
+        )
+        with database_for(self.root).connect() as connection:
+            return list(connection.scalars(query))
 
     def remove_unused_entry(self, entry_id: str) -> int:
         """Delete the entry when no project uses it (re-checked now, under the caller's lock); freed bytes."""
@@ -343,139 +291,58 @@ class DatasetPool:
         self.save_index()
         return freed
 
-    # ---- migration from NB-3 ----
-
-    def migrate(self) -> MigrationReport:
-        """Move NB-3 datasets into the pool once, before any job runs (AC29, D8). Safe to run again."""
-        report = MigrationReport()
-        for project in store.list_projects(self.root):
-            found_format = ds.read_manifest_format(project.id, self.root)
-            if found_format == ds.MANIFEST_FORMAT:
-                try:
-                    self.migrate_project(project.id)
-                except (OSError, WorkspaceError):
-                    log.exception("Migrating datasets of project %s failed; retried on the next start", project.id)
-                    report.skipped_projects.append(project.id)
-                    continue
-                report.migrated_projects.append(project.id)
-            elif found_format == 0:
-                log.warning("Skipped migrating datasets of project %s: datasets.json is unreadable", project.id)
-                report.skipped_projects.append(project.id)
-        return report
-
-    def migrate_project(self, project_id: str) -> None:
-        """Move one project's ready files into the pool, replace them with links, write format 2."""
-        ds.recover_partials(project_id, self.root)
-        records = ds.load_records(project_id, self.root)
-        migrated = [self._migrate_record(project_id, record) for record in records]
-        self.save_index()
-        ds.back_up_v1_manifest(project_id, self.root)
-        ds.save_project_datasets(project_id, migrated, self.root)
-
-    def _migrate_record(self, project_id: str, record: DatasetRecord) -> ProjectDataset:
-        entry = self._entry_for_record(record)
-        self.save_index()  # before any move, so a crash mid-way finds the entry again (G14❌2)
-        for record_file in record.files:
-            if not record_file.ready:
-                continue
-            try:
-                self._migrate_file(project_id, record, entry, record_file)
-            except WorkspaceError:
-                log.warning("Left %s of %s/%s in place: unsafe path", record_file.path, project_id, record.id)
-        linked = self.link_files(project_id, record.id, entry, [f.path for f in record.files if f.ready])
-        was_stopped = record.status in ("queued", "downloading")
-        return ProjectDataset(
-            id=record.id, pool_entry=entry.id, selection=record.selection, status="failed" if was_stopped else record.status,
-            files=[f.path for f in record.files], requested_at=record.requested_at,
-            linked_at=record.downloaded_at if linked.linked_paths else None,
-            error=STOPPED_DURING_DOWNLOAD if was_stopped else record.error,
-        )
-
-    def _entry_for_record(self, record: DatasetRecord) -> PoolEntry:
-        for entry in self.find_entries(record.source, record.source_id):
-            if entry.revision == record.revision:
-                return entry
-        entry_id = self.make_entry_id(ds.base_id(record.source, record.source_id), record.revision)
-        known = PoolEntry(
-            id=entry_id, source=record.source, source_id=record.source_id, revision=record.revision,
-            name=record.name, url=record.url, license=record.license, created_at=record.downloaded_at or record.requested_at,
-        )
-        rebuilt = self.get_entry(entry_id)
-        if rebuilt is not None and rebuilt.source_id == UNKNOWN_SOURCE_ID:
-            return self._restore_metadata(rebuilt, known)
-        return self.add_entry(known)
-
-    @staticmethod
-    def _restore_metadata(rebuilt: PoolEntry, known: PoolEntry) -> PoolEntry:
-        """A rebuilt entry (index lost) gets its catalog metadata back from an NB-3 record."""
-        rebuilt.source, rebuilt.source_id, rebuilt.revision = known.source, known.source_id, known.revision
-        rebuilt.name, rebuilt.url, rebuilt.license, rebuilt.created_at = known.name, known.url, known.license, known.created_at
-        return rebuilt
-
-    def _migrate_file(self, project_id: str, record: DatasetRecord, entry: PoolEntry, record_file: ds.DatasetFile) -> None:
-        """Pool already has it → drop the project copy; else move it in once size and checksum match."""
-        source = ds.link_path(project_id, record.id, record_file.path, self.root)  # refuses linked folders
-        target = self.pool_file_path(entry.id, record_file.path)
-        pool_file = entry.file(record_file.path) or PoolFile(record_file.path, record_file.size, record_file.checksum)
-        if entry.file(record_file.path) is None:
-            entry.files.append(pool_file)
-        is_regular_file = source.is_file() and not source.is_symlink()
-        if pool_file.ready or self._adopt_moved_file(pool_file, target):
-            if is_regular_file:
-                source.unlink()
-            return
-        is_intact = is_regular_file and source.stat().st_size == record_file.size
-        if not (is_intact and checksum_matches(source, record_file.checksum)):
-            return  # gone or changed: left in place, not ready in the pool (G14❌1)
-        self.move_into_pool(source, target)
-        pool_file.ready, pool_file.mtime_ns = True, target.stat().st_mtime_ns
-
-    @staticmethod
-    def _adopt_moved_file(pool_file: PoolFile, target: Path) -> bool:
-        """A crash after the move but before the index was saved: the file is already in the pool."""
-        is_there = target.is_file() and not target.is_symlink() and target.stat().st_size == pool_file.size
-        if is_there and checksum_matches(target, pool_file.checksum):
-            pool_file.ready, pool_file.mtime_ns = True, target.stat().st_mtime_ns
-            return True
-        return False
-
-    @staticmethod
-    def move_into_pool(source_path: Path, target_path: Path) -> None:
-        """os.rename on one disk; copy then delete when the pool is on another disk (A14)."""
-        target_path.parent.mkdir(parents=True, exist_ok=True)
-        try:
-            os.rename(source_path, target_path)
-        except OSError:
-            shutil.copy2(source_path, target_path)
-            source_path.unlink()
-
-
 def check_entry_id(entry_id: object) -> None:
     """Only generated entry ids name a pool folder (SEC23)."""
     if not isinstance(entry_id, str) or not ENTRY_ID_RE.match(entry_id):
         raise WorkspaceError(ErrorCode.NOT_FOUND, "Unknown dataset.")
 
 
-def _entry_from_dict(d: dict) -> PoolEntry:
-    entry = PoolEntry(
-        id=str(d["id"]), source=d["source"], source_id=str(d["source_id"]), revision=d.get("revision"),
-        name=str(d.get("name") or d["id"])[: ds.NAME_MAX], url=d.get("url"), license=d.get("license"),
-        files=[
-            PoolFile(ds.safe_relpath(f["path"]), int(f["size"]), f.get("checksum"), bool(f.get("ready", False)), f.get("mtime_ns"))
-            for f in d.get("files") or []
-        ],
-        created_at=str(d.get("created_at") or ""),
-    )
-    check_entry_id(entry.id)
-    if entry.source not in ("huggingface", "zenodo"):
-        raise ValueError("bad source")
-    return entry
-
-
-def _files_on_disk(folder: Path) -> list[PoolFile]:
-    files = []
-    for path in sorted(folder.rglob("*")):
-        if path.is_file() and not path.is_symlink():
-            stat = path.stat()
-            files.append(PoolFile(path.relative_to(folder).as_posix(), stat.st_size, None, True, stat.st_mtime_ns))
+def _pool_files_by_entry(connection: Connection) -> dict[int, list[Row]]:
+    files: dict[int, list[Row]] = {}
+    for row in connection.execute(select(pool_files).order_by(pool_files.c.entry_pk, pool_files.c.position)):
+        files.setdefault(row.entry_pk, []).append(row)
     return files
+
+
+def _entry_from_row(row: Row, file_rows: list[Row]) -> PoolEntry | None:
+    """A PoolEntry, or None (logged) when its id, source or a file path was edited into something unsafe."""
+    try:
+        check_entry_id(row.slug)
+        files = [
+            PoolFile(ds.safe_relpath(f.path), f.size, f.checksum, f.ready, f.mtime_ns) for f in file_rows
+        ]
+    except WorkspaceError:
+        log.warning("Ignored a pool entry row with an unsafe id or file path: %r", row.slug[:80])
+        return None
+    if row.source not in ("huggingface", "zenodo"):
+        log.warning("Ignored a pool entry row with an unknown source: %r", row.slug[:80])
+        return None
+    return PoolEntry(
+        id=row.slug, source=row.source, source_id=row.source_id, revision=row.revision,
+        name=row.name[: ds.NAME_MAX], url=row.url, license=row.license, files=files, created_at=row.created_at,
+    )
+
+
+def _upsert_entry(connection: Connection, entry: PoolEntry) -> int:
+    """Insert or update one entry by slug; the pk stays the same, so project rows keep pointing at it."""
+    values = {
+        "source": entry.source, "source_id": entry.source_id, "revision": entry.revision, "name": entry.name,
+        "url": entry.url, "license": entry.license, "created_at": entry.created_at,
+    }
+    statement = (
+        sqlite_insert(pool_entries)
+        .values(slug=entry.id, **values)
+        .on_conflict_do_update(index_elements=[pool_entries.c.slug], set_=values)
+        .returning(pool_entries.c.pk)
+    )
+    return connection.execute(statement).scalar_one()
+
+
+def _replace_entry_files(connection: Connection, entry_pk: int, files: list[PoolFile]) -> None:
+    connection.execute(delete(pool_files).where(pool_files.c.entry_pk == entry_pk))
+    if files:
+        connection.execute(insert(pool_files), [
+            {"entry_pk": entry_pk, "path": f.path, "position": i, "size": f.size, "checksum": f.checksum,
+             "ready": f.ready, "mtime_ns": f.mtime_ns}
+            for i, f in enumerate(files)
+        ])

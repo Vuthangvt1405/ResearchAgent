@@ -1,137 +1,49 @@
-"""Datasets of a project on disk (NB-3 plan §3.3, NB-4 plan §3.3).
+"""Datasets of a project: database rows, and their links on disk.
 
-workspaces/<project_id>/
-    datasets.json              {"format": 2, "datasets": [ProjectDataset, ...]}
-    files/datasets/<id>/       links into the shared pool (seen by the kernel at /work/datasets/<id>/)
+workspaces/
+    researchchat.db                    project_datasets + project_dataset_files (one row per dataset)
+    <project_id>/files/datasets/<id>/  links into the shared pool (seen by the kernel at /work/datasets/<id>/)
 
-Format 1 (NB-3: full DatasetRecord, real files in files/datasets/<id>/, and
-.dataset-partial/<id>[.new|.old]/ in the project) is only read by the
-one-time migration in dataset_pool.py.
+The database sits at the workspaces root, outside every kernel mount, so kernel
+code can't edit it. This module only reads and writes storage: no locks, no
+network. The rules (who may delete, when to download) live in dataset_service.py.
 
-datasets.json sits next to files/, not in it, so kernel code can't edit it.
-This module only reads and writes disk: no locks, no network. The rules
-(who may delete, when to download) live in dataset_service.py.
-
-Plan: docs/plans/done/NB-3-dataset-download-plan.md
+Plans: docs/plans/done/NB-3-dataset-download-plan.md, docs/plans/sqlite-alembic-storage-plan.md
 """
 
-import json
-import os
+import logging
 import re
 import shutil
 import unicodedata
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import Literal
 
+from sqlalchemy import Connection, Row, Select, delete, insert, select
+
 from researchchat.config import WORKSPACES_DIR
+from researchchat.db.engine import database_for
+from researchchat.db.schema import (
+    pool_entries,
+    project_dataset_files,
+    project_datasets,
+    projects,
+)
 from researchchat.workspace import ErrorCode, WorkspaceError, store
 
-MANIFEST_FILE = "datasets.json"
-MANIFEST_FORMAT = 1
+log = logging.getLogger(__name__)
+
 DATASETS_DIR = "datasets"  # under the project's files/
-PARTIAL_DIR = ".dataset-partial"
 DATASET_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,79}$")
 DATASET_ID_MAX = 80
 NAME_MAX = 200
 PATH_MAX = 1024
 KERNEL_ROOT = "/work/datasets"  # how the kernel sees files/datasets/
-PARTIAL_SUFFIXES = ("", ".new", ".old")
 DRIVE_RE = re.compile(r"^[A-Za-z]:")
 
 Source = Literal["huggingface", "zenodo"]
 StoredStatus = Literal["queued", "downloading", "ready", "failed"]
 DatasetStatus = Literal["queued", "downloading", "ready", "failed", "missing"]  # missing is computed on read
-
-
-@dataclass
-class DatasetFile:
-    path: str  # relative to the dataset folder; checked by safe_relpath
-    size: int  # bytes, as the catalog declared it
-    checksum: str | None  # "md5:…" / "sha256:…", or None when the catalog gives none
-    ready: bool = False  # downloaded, verified and moved into files/datasets/<id>/
-
-
-@dataclass
-class DatasetRecord:
-    id: str  # generated slug, folder name under files/datasets/; never from model text
-    name: str  # title for people (≤ 200 chars)
-    source: Source  # which catalog
-    source_id: str  # stable key in that catalog (HF repo id, Zenodo record id)
-    revision: str | None  # HF commit hash; None for Zenodo (records are versioned by id)
-    url: str | None  # landing page
-    license: str | None  # shown while downloading and in the details
-    selection: list[str] | None  # every `files` pattern asked for so far; None = all files
-    status: StoredStatus
-    files: list[DatasetFile] = field(default_factory=list)
-    requested_at: str = ""  # ISO 8601 UTC; queue order
-    downloaded_at: str | None = None  # ISO 8601 UTC
-    error: str | None = None  # one-line reason when failed
-
-
-# ---- manifest -----------------------------------------------------------------
-
-
-def manifest_path(project_id: str, root: Path = WORKSPACES_DIR) -> Path:
-    """workspaces/<project>/datasets.json, inside the project folder."""
-    return store.project_dir(project_id, root) / MANIFEST_FILE
-
-
-def _record_from_dict(d: dict) -> DatasetRecord:
-    files = [
-        DatasetFile(str(f["path"]), int(f["size"]), f.get("checksum"), bool(f.get("ready", False)))
-        for f in d.get("files") or []
-    ]
-    record = DatasetRecord(
-        id=str(d["id"]),
-        name=str(d.get("name") or d["id"])[:NAME_MAX],
-        source=d["source"],
-        source_id=str(d["source_id"]),
-        revision=d.get("revision"),
-        url=d.get("url"),
-        license=d.get("license"),
-        selection=list(d["selection"]) if d.get("selection") is not None else None,
-        status=d.get("status", "failed"),
-        files=files,
-        requested_at=str(d.get("requested_at") or ""),
-        downloaded_at=d.get("downloaded_at"),
-        error=d.get("error"),
-    )
-    if not DATASET_ID_RE.match(record.id) or record.source not in ("huggingface", "zenodo"):
-        raise ValueError("bad record")
-    if record.status not in ("queued", "downloading", "ready", "failed"):
-        raise ValueError("bad status")
-    return record
-
-
-def load_records(project_id: str, root: Path = WORKSPACES_DIR) -> list[DatasetRecord]:
-    """Read a format 1 datasets.json (migration only); missing = []. A corrupt file is renamed .bad and read as [] (A6)."""
-    path = manifest_path(project_id, root)
-    if not path.is_file():
-        return []
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-        if not isinstance(data, dict) or data.get("format") != MANIFEST_FORMAT:
-            raise ValueError("unknown format")
-        return [_record_from_dict(d) for d in data.get("datasets") or []]
-    except (ValueError, KeyError, TypeError, AttributeError):
-        os.replace(path, path.with_name(MANIFEST_FILE + ".bad"))
-        return []
-
-
-def save_records(project_id: str, records: list[DatasetRecord], root: Path = WORKSPACES_DIR) -> None:
-    """Write a format 1 datasets.json (tests that set up NB-3 data for the migration)."""
-    _write_manifest(manifest_path(project_id, root), {"format": MANIFEST_FORMAT, "datasets": [asdict(r) for r in records]})
-
-
-def _write_manifest(path: Path, data: dict) -> None:
-    """Write atomically (temp file + os.replace, like store.save_notebook)."""
-    tmp = path.with_name(path.name + ".tmp")
-    try:
-        tmp.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
-        os.replace(tmp, path)
-    finally:
-        tmp.unlink(missing_ok=True)
 
 
 def _slug(text: str) -> str:
@@ -170,15 +82,6 @@ def safe_relpath(name) -> str:
     return "/".join(parts)
 
 
-def _inside(base: Path, name: str) -> Path:
-    """base/name, resolved; must be a direct child of the resolved base."""
-    base = base.resolve()
-    folder = (base / name).resolve()
-    if folder.parent != base:
-        raise WorkspaceError(ErrorCode.NOT_FOUND, "Unknown dataset.")
-    return folder
-
-
 def _check_id(dataset_id) -> None:
     if not isinstance(dataset_id, str) or not DATASET_ID_RE.match(dataset_id):
         raise WorkspaceError(ErrorCode.NOT_FOUND, "Unknown dataset.")
@@ -204,18 +107,6 @@ def dataset_dir(project_id: str, dataset_id: str, root: Path = WORKSPACES_DIR) -
     if folder.resolve() != folder:
         raise _linked()
     return folder
-
-
-def partial_root(project_id: str, root: Path = WORKSPACES_DIR) -> Path:
-    return store.project_dir(project_id, root) / PARTIAL_DIR
-
-
-def partial_dir(project_id: str, dataset_id: str, suffix: str = "", root: Path = WORKSPACES_DIR) -> Path:
-    """.dataset-partial/<id>[.new|.old]/, checked to resolve inside the project folder."""
-    _check_id(dataset_id)
-    if suffix not in PARTIAL_SUFFIXES:
-        raise ValueError(f"bad partial suffix {suffix!r}")
-    return _inside(partial_root(project_id, root), dataset_id + suffix)
 
 
 def path_inside(folder: Path, relpath: str) -> Path:
@@ -262,25 +153,8 @@ def remove_dataset_dir(project_id: str, dataset_id: str, root: Path = WORKSPACES
     remove_tree(base / dataset_id)
 
 
-def recover_partials(project_id: str, root: Path = WORKSPACES_DIR) -> None:
-    """NB-3 leftovers, before the migration: restore <id>.old if the final folder is missing, then clear .dataset-partial/."""
-    base = partial_root(project_id, root)
-    if not base.is_dir():
-        return
-    for entry in base.iterdir():
-        name = entry.name
-        if name.endswith(".old") and DATASET_ID_RE.match(name[:-4]) and not entry.is_symlink():
-            final = dataset_dir(project_id, name[:-4], root)
-            if not final.exists():
-                final.parent.mkdir(parents=True, exist_ok=True)
-                os.replace(entry, final)
-    remove_tree(base)
+# ---- project datasets: rows pointing at shared pool entries (NB-4 plan §3.3) --------
 
-
-# ---- format 2: links to pool entries (NB-4 plan §3.3) ---------------------------
-
-MANIFEST_FORMAT_LINKS = 2
-V1_BACKUP_SUFFIX = ".v1"
 STORED_STATUSES = ("queued", "downloading", "ready", "failed")
 
 
@@ -296,68 +170,99 @@ class ProjectDataset:
     error: str | None = None  # one-line reason when failed
 
 
-def _project_dataset_from_dict(d: dict) -> ProjectDataset:
-    dataset = ProjectDataset(
-        id=str(d["id"]),
-        pool_entry=str(d["pool_entry"]),
-        selection=[str(p) for p in d["selection"]] if d.get("selection") is not None else None,
-        status=d.get("status", "failed"),
-        files=[str(p) for p in d.get("files") or []],
-        requested_at=str(d.get("requested_at") or ""),
-        linked_at=d.get("linked_at"),
-        error=d.get("error"),
-    )
-    if not DATASET_ID_RE.match(dataset.id) or dataset.status not in STORED_STATUSES:
-        raise ValueError("bad record")
-    return dataset
-
-
-def read_manifest_format(project_id: str, root: Path = WORKSPACES_DIR) -> int | None:
-    """1 or 2; None when there's no datasets.json; 0 when it can't be read. A format 2 file means 'migrated'."""
-    path = manifest_path(project_id, root)
-    if not path.is_file():
-        return None
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (ValueError, OSError):
-        return 0
-    found = data.get("format") if isinstance(data, dict) else None
-    return found if found in (MANIFEST_FORMAT, MANIFEST_FORMAT_LINKS) else 0
-
-
 def load_project_datasets(project_id: str, root: Path = WORKSPACES_DIR) -> list[ProjectDataset]:
-    """Read datasets.json format 2; missing = []. A corrupt file is renamed .bad and read as [] (A6).
-
-    A format 1 file is left alone (the migration reads it), so a late reader
-    never wipes data that hasn't been migrated yet.
-    """
-    path = manifest_path(project_id, root)
-    if not path.is_file():
-        return []
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-        if isinstance(data, dict) and data.get("format") == MANIFEST_FORMAT:
-            return []
-        if not isinstance(data, dict) or data.get("format") != MANIFEST_FORMAT_LINKS:
-            raise ValueError("unknown format")
-        return [_project_dataset_from_dict(d) for d in data.get("datasets") or []]
-    except (ValueError, KeyError, TypeError, AttributeError):
-        os.replace(path, path.with_name(MANIFEST_FILE + ".bad"))
-        return []
+    """The project's datasets from the database, in list order; a tampered row is skipped and logged (SEC3)."""
+    store.project_dir(project_id, root)  # NOT_FOUND for an id that isn't a safe slug
+    with database_for(root).connect() as connection:
+        rows = connection.execute(_project_datasets_query(project_id)).all()
+        files_by_dataset = _files_by_dataset(connection, [row.pk for row in rows])
+    datasets = (_project_dataset_from_row(row, files_by_dataset.get(row.pk, [])) for row in rows)
+    return [dataset for dataset in datasets if dataset is not None]
 
 
 def save_project_datasets(project_id: str, datasets: list[ProjectDataset], root: Path = WORKSPACES_DIR) -> None:
-    """Write datasets.json format 2 atomically."""
-    data = {"format": MANIFEST_FORMAT_LINKS, "datasets": [asdict(d) for d in datasets]}
-    _write_manifest(manifest_path(project_id, root), data)
+    """Replace the project's datasets in one transaction. Their pool entries must be saved first (FK)."""
+    store.project_dir(project_id, root)
+    with database_for(root).begin() as connection:
+        project_pk = _project_pk(connection, project_id)
+        entry_pks = _pool_entry_pks(connection, {dataset.pool_entry for dataset in datasets})
+        connection.execute(delete(project_datasets).where(project_datasets.c.project_pk == project_pk))
+        for position, dataset in enumerate(datasets):
+            _insert_project_dataset(connection, project_pk, entry_pks[dataset.pool_entry], position, dataset)
 
 
-def back_up_v1_manifest(project_id: str, root: Path = WORKSPACES_DIR) -> None:
-    """Keep the NB-3 datasets.json as datasets.json.v1 before it's replaced (once)."""
-    path = manifest_path(project_id, root)
-    backup = path.with_name(MANIFEST_FILE + V1_BACKUP_SUFFIX)
-    if path.is_file() and not backup.exists():
-        shutil.copy2(path, backup)
+class UnknownPoolEntry(ValueError):
+    """A project dataset names a pool entry the database doesn't have (save the index first)."""
+
+
+def _project_datasets_query(project_id: str) -> Select:
+    return (
+        select(
+            project_datasets.c.pk, project_datasets.c.slug, pool_entries.c.slug.label("pool_entry"),
+            project_datasets.c.selection, project_datasets.c.status, project_datasets.c.requested_at,
+            project_datasets.c.linked_at, project_datasets.c.error,
+        )
+        .join(projects, projects.c.pk == project_datasets.c.project_pk)
+        .join(pool_entries, pool_entries.c.pk == project_datasets.c.pool_entry_pk)
+        .where(projects.c.slug == project_id)
+        .order_by(project_datasets.c.position)
+    )
+
+
+def _files_by_dataset(connection: Connection, dataset_pks: list[int]) -> dict[int, list[str]]:
+    rows = connection.execute(
+        select(project_dataset_files.c.dataset_pk, project_dataset_files.c.path)
+        .where(project_dataset_files.c.dataset_pk.in_(dataset_pks))
+        .order_by(project_dataset_files.c.dataset_pk, project_dataset_files.c.position)
+    )
+    files: dict[int, list[str]] = {}
+    for row in rows:
+        files.setdefault(row.dataset_pk, []).append(row.path)
+    return files
+
+
+def _project_dataset_from_row(row: Row, files: list[str]) -> ProjectDataset | None:
+    """A ProjectDataset, or None (logged) when the row was edited into something unsafe."""
+    is_list_of_patterns = isinstance(row.selection, list) and all(isinstance(p, str) for p in row.selection)
+    is_valid = DATASET_ID_RE.match(row.slug) and row.status in STORED_STATUSES
+    if not is_valid or not (row.selection is None or is_list_of_patterns):
+        log.warning("Ignored a dataset row that isn't valid: %r", row.slug[:80])
+        return None
+    return ProjectDataset(
+        id=row.slug, pool_entry=row.pool_entry, selection=row.selection, status=row.status, files=files,
+        requested_at=row.requested_at, linked_at=row.linked_at, error=row.error,
+    )
+
+
+def _project_pk(connection: Connection, project_id: str) -> int:
+    project_pk = connection.scalar(select(projects.c.pk).where(projects.c.slug == project_id))
+    if project_pk is None:
+        raise WorkspaceError(ErrorCode.NOT_FOUND, "Unknown project.")
+    return project_pk
+
+
+def _pool_entry_pks(connection: Connection, entry_slugs: set[str]) -> dict[str, int]:
+    rows = connection.execute(select(pool_entries.c.slug, pool_entries.c.pk).where(pool_entries.c.slug.in_(entry_slugs)))
+    entry_pks = {row.slug: row.pk for row in rows}
+    unknown = sorted(entry_slugs - entry_pks.keys())
+    if unknown:
+        raise UnknownPoolEntry(f"pool entries not saved yet: {unknown}")
+    return entry_pks
+
+
+def _insert_project_dataset(
+    connection: Connection, project_pk: int, entry_pk: int, position: int, dataset: ProjectDataset
+) -> None:
+    dataset_pk = connection.execute(insert(project_datasets).values(
+        project_pk=project_pk, slug=dataset.id, pool_entry_pk=entry_pk, position=position,
+        selection=dataset.selection, status=dataset.status, requested_at=dataset.requested_at,
+        linked_at=dataset.linked_at, error=dataset.error,
+    )).inserted_primary_key[0]
+    if dataset.files:
+        connection.execute(
+            insert(project_dataset_files),
+            [{"dataset_pk": dataset_pk, "position": i, "path": path} for i, path in enumerate(dataset.files)],
+        )
 
 
 def find_project_dataset(datasets: list[ProjectDataset], dataset_id: str) -> ProjectDataset | None:

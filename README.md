@@ -99,21 +99,26 @@ researchchat/
     dataset_download.py     Download a dataset into the project in the background
     dataset_list.py         The project's datasets, with status and paths
     dataset_delete.py       Delete a dataset (always asks you first)
+  db/                       The app's SQLite database (see "Where your data lives")
+    schema.py               Table definitions (SQLAlchemy Core), read by Alembic
+    engine.py               Opens workspaces/researchchat.db and upgrades it on start
+    migrations/             Alembic migrations (versions/0001_initial_schema.py, ...)
   workspace/                Project notebooks (in progress, see below)
-    store.py                Projects and .ipynb files on disk
+    store.py                Projects (database rows) and their .ipynb files on disk
     kernels.py              One Docker kernel container per project
     risk.py                 Flags risky model code
     service.py              Edits and runs notebooks under a per-project lock
-    datasets_store.py       datasets.json, dataset ids and safe paths on disk
+    datasets_store.py       Project datasets (database rows), dataset ids and safe paths
     dataset_sources.py      Hugging Face / Zenodo file lists and safe HTTPS downloads
     dataset_service.py      Download queue, checks, delete/cancel, chat notes
-    dataset_pool.py         Shared dataset pool: index, links, cleanup, NB-3 migration
+    dataset_pool.py         Shared dataset pool: index (database rows), links, cleanup
     panel.py                The right-side Notebook panel
     actions.py              Buttons the panel calls
 public/
   elements/Notebook.jsx     The Notebook panel UI
   custom.js                 Project picker (pill) inside the message box
 docker/kernel.Dockerfile    The notebook kernel image
+alembic.ini                 Alembic CLI config (schema migrations)
 tests/                      pytest tests
 ```
 
@@ -159,7 +164,7 @@ Downloaded data is stored once and shared by every project. The plan is in
 `docs/plans/done/NB-4-dataset-pool-plan.md`.
 
 - The bytes live in `workspaces/.dataset-pool/<dataset>@<revision>/`, listed in
-  `workspaces/.dataset-pool.json`. A project's `files/datasets/<id>/` holds
+  the database (`pool_entries`, `pool_files`). A project's `files/datasets/<id>/` holds
   relative links into it, so `/work/datasets/<id>/...` paths work the same
   in notebook code, and a dataset another project already has is ready at once.
 - Kernels see the pool read-only: to change a file, copy it elsewhere in `/work`
@@ -171,8 +176,40 @@ Downloaded data is stored once and shared by every project. The plan is in
   it any more; until then the panel says which other projects still use it.
 - A project keeps its version until you ask to update it; then only that project
   moves to the new version.
-- Datasets downloaded before this (NB-3) are moved into the pool on the first
-  start; the old `datasets.json` is kept as `datasets.json.v1`.
+
+### Where your data lives
+
+Projects, each project's datasets and the shared pool index are stored in one
+SQLite file, `workspaces/researchchat.db` (name set by `[notebook] database_file`).
+Notebooks (`notebook.ipynb`), project files and pooled dataset files stay
+ordinary files in `workspaces/`. Kernels never see the database: they only get
+the project's `files/` and the read-only pool. The plan is in
+`docs/plans/sqlite-alembic-storage-plan.md`.
+
+- The app creates the database on first start and applies new migrations on
+  every start. A damaged file, or one made by a newer version, stops the app
+  with a message saying what to do.
+- **Upgrading from an older checkout:** the old JSON files (`project.json`,
+  `datasets.json`, `.dataset-pool.json`) aren't read any more. Delete the
+  contents of `workspaces/` (copy out any notebook you want to keep) and start
+  the app; it begins with an empty `Default` project.
+
+### Changing the database schema
+
+The schema is managed by [Alembic](https://alembic.sqlalchemy.org/). Edit the
+tables in `researchchat/db/schema.py`, then from the repo root:
+
+```
+alembic revision --autogenerate --rev-id 0002 -m "describe the change"
+alembic upgrade head
+```
+
+To run them on another file than `workspaces/researchchat.db`, add
+`-x database=path/to/file.db` (e.g. `alembic -x database=/tmp/try.db upgrade head`).
+Review the generated file in `researchchat/db/migrations/versions/` before
+committing it (SQLite changes run in Alembic's batch mode). The app also runs
+`upgrade head` itself on start, and `tests/test_database.py` checks that the
+migrations match `schema.py`.
 
 ### How a message flows
 

@@ -8,10 +8,13 @@ import os
 import chainlit as cl
 from chainlit.config import FILES_DIRECTORY
 
-from researchchat.config import GREETING, SYSTEM_PROMPT, TOOL_MAX_ROUNDS, check_local_host, check_setup
+from researchchat.config import GREETING, SYSTEM_PROMPT, TOOL_MAX_ROUNDS, WORKSPACES_DIR, check_local_host, check_setup
+from researchchat.db.engine import database_for
 
 # Wrong Python or no API key: say how to fix it before anything else fails
 check_setup()
+# Create or upgrade workspaces/researchchat.db now; a damaged or newer file stops here with steps (AC4)
+database_for(WORKSPACES_DIR)
 
 from researchchat.llm import model_params, stream_round  # noqa: E402 (needs the key checked first)
 from researchchat.progress import Progress
@@ -52,7 +55,6 @@ async def on_chat_start():
         _cleaned = True
         asyncio.create_task(notebook.kernels.cleanup_leftovers())
         # Downloads cut off by an earlier run; dataset_download waits for this (NB-3)
-        # It first moves NB-3 datasets into the shared pool, once (NB-4)
         asyncio.create_task(notebook.datasets.startup_cleanup())
 
     cl.user_session.set(

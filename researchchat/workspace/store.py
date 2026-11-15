@@ -1,12 +1,15 @@
-"""Projects and notebooks on disk.
+"""Projects (database rows) and their notebooks (files on disk).
 
-workspaces/<project_id>/
-    project.json     {"name": ..., "created_at": ...}
-    notebook.ipynb   nbformat 4.5; metadata.researchchat.version = int
-    files/           mounted into the kernel container as /work
+workspaces/
+    researchchat.db         the `projects` table: slug (the id), name, created_at
+    <project_id>/
+        notebook.ipynb      nbformat 4.5; metadata.researchchat.version = int
+        files/              mounted into the kernel container as /work
+
+Plan: docs/plans/sqlite-alembic-storage-plan.md (projects moved from project.json)
 """
 
-import json
+import logging
 import os
 import re
 import unicodedata
@@ -17,9 +20,14 @@ from typing import Literal
 
 import nbformat
 from nbformat import NotebookNode
+from sqlalchemy import Connection, Row, insert, select
 
 from researchchat.config import WORKSPACES_DIR
+from researchchat.db.engine import database_for
+from researchchat.db.schema import projects
 from researchchat.workspace import ErrorCode, WorkspaceError
+
+log = logging.getLogger(__name__)
 
 PROJECT_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,39}$")
 PROJECT_ID_MAX = 40
@@ -29,7 +37,6 @@ DEFAULT_PROJECT_NAME = "Default"
 FALLBACK_ID = "project"  # for names with no Latin letters or digits
 MAX_SOURCE_BYTES = 100 * 1024
 
-PROJECT_FILE = "project.json"
 NOTEBOOK_FILE = "notebook.ipynb"
 FILES_DIR = "files"
 
@@ -68,14 +75,20 @@ def project_dir(project_id: str, root: Path = WORKSPACES_DIR) -> Path:
     return folder
 
 
-def _unique_id(base: str, root: Path) -> str:
-    if not (Path(root) / base).exists():
+def _is_taken(project_id: str, root: Path, connection: Connection) -> bool:
+    """A row or a leftover folder has this id; a folder is never reused."""
+    has_row = connection.scalar(select(projects.c.pk).where(projects.c.slug == project_id)) is not None
+    return has_row or (Path(root) / project_id).exists()
+
+
+def _unique_id(base: str, root: Path, connection: Connection) -> str:
+    if not _is_taken(base, root, connection):
         return base
     n = 2
     while True:
         suffix = f"-{n}"
         candidate = base[: PROJECT_ID_MAX - len(suffix)].rstrip("-") + suffix
-        if not (Path(root) / candidate).exists():
+        if not _is_taken(candidate, root, connection):
             return candidate
         n += 1
 
@@ -88,21 +101,19 @@ def _new_notebook() -> NotebookNode:
 
 
 def create_project(name: str, root: Path = WORKSPACES_DIR, project_id: str | None = None) -> Project:
-    """Create the folder, project.json, an empty notebook and files/."""
+    """Insert the row, then create the folder, an empty notebook and files/ (one transaction)."""
     name = (name or "").strip()
     if not name or len(name) > PROJECT_NAME_MAX:
         raise WorkspaceError(ErrorCode.BAD_NAME, f"Project names must be 1-{PROJECT_NAME_MAX} characters.")
     Path(root).mkdir(parents=True, exist_ok=True)
-    pid = project_id or _unique_id(slugify(name), root)
-    folder = project_dir(pid, root)
-    folder.mkdir(exist_ok=False)  # never reuse an existing folder
-    (folder / FILES_DIR).mkdir()
-    project = Project(pid, name, datetime.now(timezone.utc).isoformat(timespec="seconds"))
-    (folder / PROJECT_FILE).write_text(
-        json.dumps({"name": project.name, "created_at": project.created_at}, ensure_ascii=False, indent=1),
-        encoding="utf-8",
-    )
-    save_notebook(pid, _new_notebook(), root)
+    with database_for(root).begin() as connection:  # a failed folder rolls the row back (G2❌2)
+        pid = project_id or _unique_id(slugify(name), root, connection)
+        folder = project_dir(pid, root)
+        project = Project(pid, name, datetime.now(timezone.utc).isoformat(timespec="seconds"))
+        connection.execute(insert(projects).values(slug=project.id, name=project.name, created_at=project.created_at))
+        folder.mkdir(exist_ok=False)  # never reuse an existing folder
+        (folder / FILES_DIR).mkdir()
+        save_notebook(pid, _new_notebook(), root)
     return project
 
 
@@ -118,20 +129,31 @@ def list_projects(root: Path = WORKSPACES_DIR) -> list[Project]:
     """All projects, for the project bar, sorted by name."""
     if not Path(root).is_dir():
         return []
-    projects = []
-    for folder in Path(root).iterdir():
-        if folder.is_dir() and PROJECT_ID_RE.match(folder.name) and (folder / PROJECT_FILE).is_file():
-            projects.append(get_project(folder.name, root))
-    return sorted(projects, key=lambda p: (p.name.lower(), p.id))
+    with database_for(root).connect() as connection:
+        rows = connection.execute(select(projects.c.slug, projects.c.name, projects.c.created_at)).all()
+    listed = [project for project in (_project_from_row(row) for row in rows) if project is not None]
+    return sorted(listed, key=lambda p: (p.name.lower(), p.id))
 
 
 def get_project(project_id: str, root: Path = WORKSPACES_DIR) -> Project:
     """One project; NOT_FOUND if it doesn't exist."""
-    path = project_dir(project_id, root) / PROJECT_FILE
-    if not path.is_file():
+    project_dir(project_id, root)  # NOT_FOUND for an id that isn't a safe slug
+    with database_for(root).connect() as connection:
+        row = connection.execute(
+            select(projects.c.slug, projects.c.name, projects.c.created_at).where(projects.c.slug == project_id)
+        ).first()
+    project = _project_from_row(row) if row is not None else None
+    if project is None:
         raise WorkspaceError(ErrorCode.NOT_FOUND, "Unknown project.")
-    data = json.loads(path.read_text(encoding="utf-8"))
-    return Project(project_id, str(data.get("name") or project_id), str(data.get("created_at", "")))
+    return project
+
+
+def _project_from_row(row: Row) -> Project | None:
+    """A Project, or None (logged) when the row was edited into something unsafe (SEC3)."""
+    if not PROJECT_ID_RE.match(row.slug):
+        log.warning("Ignored a project row with an unsafe id: %r", row.slug[:80])
+        return None
+    return Project(row.slug, row.name or row.slug, row.created_at or "")
 
 
 # ---- notebook file ---------------------------------------------------------------
