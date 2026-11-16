@@ -16,7 +16,6 @@ class ErrorCode:
     NOT_CODE = "NOT_CODE"  # tried to run a note
     KERNEL_DEAD = "KERNEL_DEAD"  # the kernel container crashed
     KERNEL_UNAVAILABLE = "KERNEL_UNAVAILABLE"  # Docker isn't running
-    TIMEOUT = "TIMEOUT"  # cell ran past the time limit
     # NB-3 dataset downloads (docs/plans/done/NB-3-dataset-download-plan.md §4.3)
     BAD_REF = "BAD_REF"  # empty or malformed dataset ref, or a URL on another host
     UNSUPPORTED_SOURCE = "UNSUPPORTED_SOURCE"  # a catalog without a file API (Kaggle, DataCite)

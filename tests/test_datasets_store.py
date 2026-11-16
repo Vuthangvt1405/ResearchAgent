@@ -79,11 +79,6 @@ def dataset(id="hf-org--name", files=("a.csv",), selection=None, status="ready")
     )
 
 
-def dataset_rows(root) -> list[tuple]:
-    with database_for(root).connect() as connection:
-        return [tuple(r) for r in connection.execute(text("SELECT project_pk, slug, status FROM project_datasets ORDER BY pk"))]
-
-
 def test_project_datasets_round_trip(root, pool):
     # G3✅1 · baseline
     # Changed: —
