@@ -4,6 +4,21 @@
 set -uo pipefail
 markdown_file="${1:?usage: check_mermaid.sh <file.md>}"
 MERMAID_CLI_VERSION="11.4.2"
+
+# mermaid-cli asks Puppeteer for one exact Chrome build, which is often not installed.
+# Any recent Chrome renders the same, so reuse one that is already on the machine.
+find_installed_browser() {
+  local cached
+  cached="$(ls -d "$HOME"/.cache/puppeteer/chrome-headless-shell/*/chrome-headless-shell-*/chrome-headless-shell \
+                  "$HOME"/.cache/puppeteer/chrome/*/chrome-*/chrome 2>/dev/null | sort -V | tail -n 1)"
+  if [ -n "$cached" ]; then echo "$cached"; return; fi
+  command -v chromium google-chrome-stable google-chrome chromium-browser 2>/dev/null | head -n 1
+}
+if [ -z "${PUPPETEER_EXECUTABLE_PATH:-}" ]; then
+  installed_browser="$(find_installed_browser)"
+  [ -n "$installed_browser" ] && export PUPPETEER_EXECUTABLE_PATH="$installed_browser"
+fi
+
 work_dir="$(mktemp -d)"
 trap 'rm -rf "$work_dir"' EXIT
 
