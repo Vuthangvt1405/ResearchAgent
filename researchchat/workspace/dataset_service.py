@@ -315,6 +315,10 @@ class DatasetService:
                 return dataset
         return None
 
+    def active_jobs(self) -> list[Job]:
+        """Queued and running jobs, in queue order (a copy)."""
+        return list(self._jobs)
+
     def _jobs_for(self, project_id: str, dataset_id: str) -> list[Job]:
         return [j for j in self._jobs if project_id in j.waiters and j.waiters[project_id].dataset_id == dataset_id]
 

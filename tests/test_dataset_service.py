@@ -244,7 +244,7 @@ def test_small_download_starts_without_asking(root):
         started = await svc.request("p1", "s1", "hf:org/name", approve=approve)
         assert approve.calls == []
         assert started["status"] == "queued" and started["download_bytes"] == 50 * MB
-        assert len(svc._jobs) == 1
+        assert len(svc.active_jobs()) == 1
 
     run(scenario())
 
@@ -258,7 +258,7 @@ def test_big_download_asks_and_starts_on_yes(root):
         approve = Approver(True)
         started = await svc.request("p1", "s1", "hf:org/name", approve=approve)
         assert approve.calls == [("Big data", 300 * MB, "mit", 1)]
-        assert started["status"] == "queued" and len(svc._jobs) == 1
+        assert started["status"] == "queued" and len(svc.active_jobs()) == 1
 
     run(scenario())
 
@@ -283,7 +283,7 @@ def test_declined_download_writes_nothing(root):
         with pytest.raises(WorkspaceError) as e:
             await svc.request("p1", "s1", "hf:org/name", approve=no)
         assert e.value.code == ErrorCode.DECLINED
-        assert svc.list_for_model("p1") == [] and svc._jobs == []
+        assert svc.list_for_model("p1") == [] and svc.active_jobs() == []
         assert ds.load_project_datasets("p1", root) == []
         assert not (store.project_dir("p1", root) / "files" / "datasets").exists()
 
@@ -302,7 +302,7 @@ def test_not_enough_disk_is_refused_before_asking(root):
         assert e.value.code == ErrorCode.NO_SPACE
         assert e.value.details["needed_bytes"] == 50 * GB and e.value.details["free_bytes"] == 40 * GB
         assert e.value.details["available_files"] == [{"path": "data.csv", "size": 50 * GB}]
-        assert approve.calls == [] and svc._jobs == [] and svc.list_for_model("p1") == []
+        assert approve.calls == [] and svc.active_jobs() == [] and svc.list_for_model("p1") == []
 
     run(scenario())
 
@@ -317,7 +317,7 @@ def test_queued_jobs_reserve_disk(root):
         with pytest.raises(WorkspaceError) as e:
             await svc.request("p2", "s2", "hf:org/b", approve=yes)
         assert e.value.code == ErrorCode.NO_SPACE and e.value.details["reserved_bytes"] == 30 * GB
-        assert len(svc._jobs) == 1
+        assert len(svc.active_jobs()) == 1
 
     run(scenario())
 
@@ -656,7 +656,7 @@ def test_same_dataset_while_running_returns_running_job(root):
         first = await svc.request("p1", "s1", "hf:org/name", approve=yes)
         second = await svc.request("p1", "s2", "hf:org/name", approve=yes)
         assert second["dataset_id"] == first["dataset_id"] and second["status"] == "downloading"
-        assert len(svc._jobs) == 1
+        assert len(svc.active_jobs()) == 1
         env.catalog.gate.set()
         await svc.wait_idle()
 
@@ -730,7 +730,7 @@ def test_cancel_running_or_queued_job_removes_it(root):
         await svc.cancel("p1", "hf-org--other")
         await svc.cancel("p1", "hf-org--name")
         await svc.wait_idle()
-        assert svc._jobs == [] and svc.list_for_model("p1") == []
+        assert svc.active_jobs() == [] and svc.list_for_model("p1") == []
         assert catalog.file_requests("o.csv") == []
         assert not env.partial("p1").exists()
         assert not env.folder("p1").exists()
@@ -925,7 +925,7 @@ def test_other_messages_are_handled_while_job_runs(root):
         views = await asyncio.wait_for(asyncio.to_thread(lambda: None), 1) or svc.list_for_model("p1")
         again = await asyncio.wait_for(svc.request("p1", "s1", "hf:org/name", approve=yes), 1)
         assert views[0]["status"] == "downloading" and again["status"] == "downloading"
-        assert len(svc._jobs) == 1 and not svc._jobs[0].task.done()
+        assert len(svc.active_jobs()) == 1 and not svc.active_jobs()[0].task.done()
         env.catalog.gate.set()
         await svc.wait_idle()
 

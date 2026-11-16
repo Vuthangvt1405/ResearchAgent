@@ -160,7 +160,7 @@ def test_model_cannot_skip_approval_with_arguments(tmp_path):
         args = {"ref": "hf:org/name", "approved": True, "approve": True, "force": True}
         shown, result = await dataset_download.run(args, svc=svc, project_id="p1", session_id="s1", approve=skip)
         assert json.loads(result)["error"] == "DECLINED" and "Skipped" in shown
-        assert asked == [300_000_000] and svc._jobs == []
+        assert asked == [300_000_000] and svc.active_jobs() == []
 
     run(scenario())
 

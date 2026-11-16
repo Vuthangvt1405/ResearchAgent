@@ -104,7 +104,7 @@ def test_two_projects_requesting_same_files_share_one_job(root):
         await asyncio.gather(
             svc.request("p1", "s1", "hf:org/name", approve=yes), svc.request("p2", "s2", "hf:org/name", approve=yes),
         )
-        assert len(svc._jobs) == 1
+        assert len(svc.active_jobs()) == 1
         env.catalog.gate.set()
         await svc.wait_idle()
         assert len(env.catalog.file_requests("a.csv")) == 1 and len(env.catalog.file_requests("b.csv")) == 1

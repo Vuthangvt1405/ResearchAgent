@@ -150,7 +150,7 @@ def _image_size(b64: str) -> str:
     try:
         head = base64.b64decode(b64[:64] + "=" * (-len(b64[:64]) % 4))
         return f"{int.from_bytes(head[16:20], 'big')}x{int.from_bytes(head[20:24], 'big')}"
-    except Exception:
+    except ValueError:  # binascii.Error from bad base64
         return "?x?"
 
 

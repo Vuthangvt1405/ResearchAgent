@@ -53,9 +53,12 @@ def slug_of(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", ascii_text.lower()).strip("-")
 
 
+ID_PREFIXES: dict[Source, str] = {"huggingface": "hf"}  # a source not listed here uses its own name
+
+
 def base_id(source: Source, source_id: str) -> str:
     """hf-<owner>--<name> / zenodo-<id>: the readable slug of a catalog dataset."""
-    prefix = "hf" if source == "huggingface" else source
+    prefix = ID_PREFIXES.get(source, source)
     body = "--".join(p for p in (slug_of(part) for part in source_id.split("/")) if p) or "dataset"
     return re.sub(r"-{3,}", "--", f"{prefix}-{body}")[:DATASET_ID_MAX].strip("-")
 
