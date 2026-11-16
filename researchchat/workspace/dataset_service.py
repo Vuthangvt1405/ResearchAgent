@@ -21,12 +21,12 @@ import shutil
 import time
 from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import TypedDict
 
 import httpx
 
+from researchchat.clock import utc_now
 from researchchat.config import WORKSPACES_DIR
 from researchchat.workspace import ErrorCode, WorkspaceError, store
 from researchchat.workspace import dataset_sources as sources
@@ -70,10 +70,6 @@ def human_size(n: int) -> str:
             return f"{n:,.0f} {unit}" if unit == "B" else f"{n:,.1f} {unit}"
         n /= 1000
     return f"{n:,.1f} TB"
-
-
-def _now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
 @dataclass
@@ -528,7 +524,7 @@ class DatasetService:
         if not fetch.has_downloads and not self._missing(project_id, dataset):
             dataset.status, dataset.error = "ready", None
             if newly_linked or dataset.linked_at is None:
-                dataset.linked_at = _now()
+                dataset.linked_at = utc_now()
         return newly_linked
 
     def _queue_downloads(self, request: DownloadRequest, dataset: ProjectDataset, fetch: FetchPlan) -> Job | None:
@@ -596,7 +592,7 @@ class DatasetService:
         entry = PoolEntry(
             id=DatasetPool.make_entry_id(ds.base_id(request.source, request.source_id), plan.revision),
             source=request.source, source_id=request.source_id, revision=plan.revision, name=plan.name,
-            url=plan.url, license=plan.license, created_at=_now(),
+            url=plan.url, license=plan.license, created_at=utc_now(),
         )
         return RequestTarget(entry, plan, is_new_entry=True)
 
@@ -615,7 +611,7 @@ class DatasetService:
         dataset = ProjectDataset(
             id=ds.make_id(request.source, request.source_id, {d.id for d in datasets}), pool_entry=entry.id,
             selection=sorted(set(request.files)) if request.files is not None else None,
-            status="queued", requested_at=_now(),
+            status="queued", requested_at=utc_now(),
         )
         datasets.append(dataset)
         return dataset
@@ -935,7 +931,7 @@ class DatasetService:
             if not waiter.paths <= entry.ready_paths():
                 return False
             self._switch_entry(project_id, dataset, entry, sorted(waiter.paths))
-        dataset.status, dataset.error, dataset.linked_at = "ready", None, _now()
+        dataset.status, dataset.error, dataset.linked_at = "ready", None, utc_now()
         self._save(project_id)
         return True
 

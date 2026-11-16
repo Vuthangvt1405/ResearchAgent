@@ -17,10 +17,10 @@ import asyncio
 import os
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from researchchat.clock import utc_now
 from researchchat.config import CREATED_DATA_EXTENSIONS, WORKSPACES_DIR
 from researchchat.workspace import ErrorCode, WorkspaceError, store
 from researchchat.workspace import created_datasets_store as cds
@@ -38,10 +38,6 @@ POOL_LINKS_DIR = "datasets"  # files/datasets/: pool links, listed as downloaded
 NOTICE_NAME_MAX_CHARS = 80  # per file name in the toast (SEC6)
 CREATED_SOURCE = "created"  # DatasetProps.source; the panel shows "Created by myself" (AC3)
 ELLIPSIS = "…"
-
-
-def utc_now() -> str:
-    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 @dataclass

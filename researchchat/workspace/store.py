@@ -14,7 +14,6 @@ import os
 import re
 import unicodedata
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
 
@@ -22,6 +21,7 @@ import nbformat
 from nbformat import NotebookNode
 from sqlalchemy import Connection, Row, insert, select
 
+from researchchat.clock import utc_now
 from researchchat.config import WORKSPACES_DIR
 from researchchat.db.engine import database_for
 from researchchat.db.schema import projects
@@ -109,7 +109,7 @@ def create_project(name: str, root: Path = WORKSPACES_DIR, project_id: str | Non
     with database_for(root).begin() as connection:  # a failed folder rolls the row back (G2❌2)
         pid = project_id or _unique_id(slugify(name), root, connection)
         folder = project_dir(pid, root)
-        project = Project(pid, name, datetime.now(timezone.utc).isoformat(timespec="seconds"))
+        project = Project(pid, name, utc_now())
         connection.execute(insert(projects).values(slug=project.id, name=project.name, created_at=project.created_at))
         folder.mkdir(exist_ok=False)  # never reuse an existing folder
         (folder / FILES_DIR).mkdir()
