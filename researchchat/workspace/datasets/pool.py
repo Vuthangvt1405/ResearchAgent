@@ -36,8 +36,8 @@ from researchchat.config import WORKSPACES_DIR
 from researchchat.db.engine import database_for
 from researchchat.db.schema import pool_entries, pool_files, project_datasets, projects
 from researchchat.workspace import ErrorCode, WorkspaceError
-from researchchat.workspace import datasets_store as ds
-from researchchat.workspace.datasets_store import Source
+from researchchat.workspace.datasets import store as ds
+from researchchat.workspace.datasets.store import Source
 
 log = logging.getLogger(__name__)
 

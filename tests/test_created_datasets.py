@@ -15,15 +15,15 @@ import pytest
 
 from researchchat.config import CREATED_DATA_EXTENSIONS
 from researchchat.workspace import ErrorCode, WorkspaceError, store
-from researchchat.workspace import datasets_store as ds
-from researchchat.workspace.created_datasets import (
+from researchchat.workspace.datasets import store as ds
+from researchchat.workspace.datasets.created import (
     CreatedDatasets,
     compare_with_stored,
     missing_notice,
 )
-from researchchat.workspace.created_datasets_store import CreatedDataset, FileSnapshot
-from researchchat.workspace.dataset_pool import DatasetPool, PoolEntry, PoolFile
-from researchchat.workspace.dataset_service import DatasetService
+from researchchat.workspace.datasets.created_store import CreatedDataset, FileSnapshot
+from researchchat.workspace.datasets.pool import DatasetPool, PoolEntry, PoolFile
+from researchchat.workspace.datasets.service import DatasetService
 
 IRIS_CSV = "sepal_length,species\n5.1,setosa\n4.9,setosa\n"  # 41 bytes
 

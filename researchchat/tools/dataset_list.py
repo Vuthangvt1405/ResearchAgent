@@ -4,7 +4,7 @@ import json
 
 import chainlit as cl
 
-from researchchat.workspace.dataset_service import human_size
+from researchchat.workspace.datasets.service import human_size
 
 DEFINITION = {
     "type": "function",

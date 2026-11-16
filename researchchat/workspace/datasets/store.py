@@ -6,7 +6,7 @@ workspaces/
 
 The database sits at the workspaces root, outside every kernel mount, so kernel
 code can't edit it. This module only reads and writes storage: no locks, no
-network. The rules (who may delete, when to download) live in dataset_service.py.
+network. The rules (who may delete, when to download) live in service.py.
 
 Plans: docs/plans/done/NB-3-dataset-download-plan.md, docs/plans/sqlite-alembic-storage-plan.md
 """

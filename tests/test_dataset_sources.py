@@ -10,7 +10,7 @@ import httpx
 import pytest
 
 from researchchat.workspace import ErrorCode, WorkspaceError
-from researchchat.workspace import dataset_sources as src
+from researchchat.workspace.datasets import sources as src
 from tests.conftest import catalog_client, fake_lookup
 
 SHA = "a" * 40

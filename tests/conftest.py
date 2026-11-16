@@ -92,7 +92,7 @@ def service_factory(fake_kernels):
 
 
 async def fake_lookup(host: str) -> list[str]:
-    """Stands in for dataset_sources.lookup_host: IP literals as is, names -> a public address."""
+    """Stands in for datasets.sources.lookup_host: IP literals as is, names -> a public address."""
     import ipaddress
 
     try:

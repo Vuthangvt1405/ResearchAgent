@@ -20,8 +20,8 @@ from researchchat.config import (
 )
 from researchchat.workspace import ErrorCode, WorkspaceError
 from researchchat.workspace import store
-from researchchat.workspace.created_datasets import missing_notice
-from researchchat.workspace.dataset_service import DatasetService, DatasetsSettings
+from researchchat.workspace.datasets.created import missing_notice
+from researchchat.workspace.datasets.service import DatasetService, DatasetsSettings
 from researchchat.workspace.kernels import KernelRegistry
 from researchchat.workspace.panel import PanelRegistry, skip_session
 from researchchat.workspace.service import NotebookProps, NotebookService

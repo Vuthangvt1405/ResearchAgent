@@ -9,8 +9,8 @@ from sqlalchemy.exc import IntegrityError
 from researchchat.config import DATABASE_FILE
 from researchchat.db.engine import database_for
 from researchchat.workspace import WorkspaceError, store
-from researchchat.workspace import datasets_store as ds
-from researchchat.workspace.dataset_pool import DatasetPool, PoolEntry, PoolFile
+from researchchat.workspace.datasets import store as ds
+from researchchat.workspace.datasets.pool import DatasetPool, PoolEntry, PoolFile
 
 
 @pytest.fixture
@@ -274,7 +274,7 @@ def test_delete_ignores_tampered_rows(root, pool):
 
 @pytest.fixture
 def project_with_both_kinds(root):
-    from researchchat.workspace import created_datasets_store as cds
+    from researchchat.workspace.datasets import created_store as cds
 
     pool = DatasetPool(root)
     pool.add_entry(PoolEntry("hf-x@1", "huggingface", "o/x", None, "X", None, None, [PoolFile("a.csv", 1, None, True)]))
@@ -290,7 +290,7 @@ def test_saving_downloaded_datasets_keeps_created_rows(project_with_both_kinds):
     # Changed: `save_project_datasets(p, [...])`
     # Then: `file-iris-csv` row still there
     # Demonstrates: a download can't wipe created cards
-    from researchchat.workspace import created_datasets_store as cds
+    from researchchat.workspace.datasets import created_store as cds
 
     root = project_with_both_kinds
     ds.save_project_datasets("p1", [], root)

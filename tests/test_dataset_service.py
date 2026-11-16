@@ -17,11 +17,11 @@ import httpx
 import pytest
 
 from researchchat.workspace import ErrorCode, WorkspaceError, actions, store
-from researchchat.workspace import dataset_sources as src
-from researchchat.workspace import datasets_store as ds
-from researchchat.workspace.dataset_pool import DatasetPool, PoolEntry, PoolFile
-from researchchat.workspace.dataset_service import DatasetService, DatasetsSettings
-from researchchat.workspace.dataset_sources import DatasetPlan, PlannedFile
+from researchchat.workspace.datasets import sources as src
+from researchchat.workspace.datasets import store as ds
+from researchchat.workspace.datasets.pool import DatasetPool, PoolEntry, PoolFile
+from researchchat.workspace.datasets.service import DatasetService, DatasetsSettings
+from researchchat.workspace.datasets.sources import DatasetPlan, PlannedFile
 from researchchat.workspace.service import NotebookService
 from tests.conftest import FakeChats, FakeFreeDisk, FakeKernels, fake_lookup
 

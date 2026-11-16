@@ -11,10 +11,11 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
 from researchchat.db.engine import database_for
-from researchchat.workspace import WorkspaceError, dataset_pool, store
-from researchchat.workspace import dataset_sources as src
-from researchchat.workspace import datasets_store as ds
-from researchchat.workspace.dataset_pool import DatasetPool, PoolEntry, PoolFile
+from researchchat.workspace import WorkspaceError, store
+from researchchat.workspace.datasets import pool as dataset_pool
+from researchchat.workspace.datasets import sources as src
+from researchchat.workspace.datasets import store as ds
+from researchchat.workspace.datasets.pool import DatasetPool, PoolEntry, PoolFile
 from researchchat.workspace.kernels import KernelRegistry
 from tests.conftest import fake_lookup
 from tests.test_dataset_service import (

@@ -39,7 +39,7 @@ from researchchat.config import (
     WORKSPACES_DIR,
 )
 from researchchat.workspace import ErrorCode, WorkspaceError
-from researchchat.workspace.dataset_pool import KERNEL_POOL_ROOT, POOL_DIR
+from researchchat.workspace.datasets.pool import KERNEL_POOL_ROOT, POOL_DIR
 
 CONTAINER_PREFIX = "rc-kernel-"
 SCOPE_LABEL = "researchchat.scope"  # which workspaces folder a container belongs to
@@ -266,7 +266,7 @@ class KernelRegistry:
             "--cpus", str(self.docker.cpus), "--pids-limit", str(self.docker.pids_limit),
             "--mount", f"type=bind,source={mounts.files_dir},target={WORK_DIR}",
             "--mount", f"type=bind,source={mounts.conn_dir},target=/conn,readonly",
-            # Project links into the pool are relative and land here (dataset_pool.py)
+            # Project links into the pool are relative and land here (datasets/pool.py)
             "--mount", f"type=bind,source={mounts.pool_dir},target={KERNEL_POOL_ROOT},readonly",
             "-w", WORK_DIR,
             *published,

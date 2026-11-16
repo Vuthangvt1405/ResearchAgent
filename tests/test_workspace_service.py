@@ -334,7 +334,7 @@ def project_p(root):
 @pytest.fixture
 def wired(root, project_p, fake_kernels):
     """(NotebookService, DatasetService, pushed props) wired the way actions.py wires them."""
-    from researchchat.workspace.dataset_service import DatasetService
+    from researchchat.workspace.datasets.service import DatasetService
     from researchchat.workspace.service import NotebookService
 
     pushed = []
@@ -555,7 +555,7 @@ def test_toast_not_repeated_within_one_opening(wired, iris_listed_then_gone):
 
 @pytest.fixture
 def file_created_in_q(root, project_p, monkeypatch):
-    from researchchat.workspace.dataset_service import DatasetService
+    from researchchat.workspace.datasets.service import DatasetService
 
     store.create_project("Q", root, project_id="q")
     datasets = DatasetService(root=root)

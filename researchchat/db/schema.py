@@ -35,7 +35,7 @@ PROJECT_NAME_MAX = 80  # same rule as store.PROJECT_NAME_MAX
 SOURCES = ("huggingface", "zenodo")
 STORED_STATUSES = ("queued", "downloading", "ready", "failed")  # "missing" is computed, never stored
 ORIGINS = ("downloaded", "created")  # PCD-1: catalog download, or a file the project's own code wrote
-CREATED_PATH_MAX = 1024  # same limit as datasets_store.PATH_MAX
+CREATED_PATH_MAX = 1024  # same limit as datasets.store.PATH_MAX
 # A row is wholly one kind: a download linked to a pool entry, or a created file with its path and stat (PCD-1 §3.3)
 ORIGIN_SHAPE = (
     "(origin = 'downloaded' AND pool_entry_pk IS NOT NULL AND path IS NULL)"

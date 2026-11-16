@@ -10,7 +10,7 @@ still open, and leaves a one-time note for that chat's next model turn.
 
 This module never imports actions.py or reads the Chainlit session: the
 panel push, chat send and props builder are injected (plan §2.1). Disk
-reads and writes go through datasets_store.py.
+reads and writes go through store.py.
 """
 
 import asyncio
@@ -29,12 +29,12 @@ import httpx
 from researchchat.clock import utc_now
 from researchchat.config import WORKSPACES_DIR
 from researchchat.workspace import ErrorCode, WorkspaceError, store
-from researchchat.workspace import dataset_sources as sources
-from researchchat.workspace import datasets_store as ds
-from researchchat.workspace.created_datasets import CreatedDatasets
-from researchchat.workspace.dataset_pool import DatasetPool, PoolEntry, PoolFile
-from researchchat.workspace.dataset_sources import DatasetPlan, PlannedFile
-from researchchat.workspace.datasets_store import DatasetStatus, ProjectDataset, Source
+from researchchat.workspace.datasets import sources
+from researchchat.workspace.datasets import store as ds
+from researchchat.workspace.datasets.created import CreatedDatasets
+from researchchat.workspace.datasets.pool import DatasetPool, PoolEntry, PoolFile
+from researchchat.workspace.datasets.sources import DatasetPlan, PlannedFile
+from researchchat.workspace.datasets.store import DatasetStatus, ProjectDataset, Source
 from researchchat.workspace.service import (
     DatasetOrigin,
     DatasetProps,

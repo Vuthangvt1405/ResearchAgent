@@ -7,7 +7,7 @@ follows a symlink and skips hidden entries and the top-level datasets/ folder,
 where the pool links live (A5, AC10, SEC1, SEC8). Delete removes the file
 itself, never a link target (A7, SEC1, SEC2).
 
-Storage goes through created_datasets_store.py. Nothing here imports actions.py
+Storage goes through created_store.py. Nothing here imports actions.py
 or reads the Chainlit session; the run lock and the clock are injected (CLAUDE.md §2, DIP).
 
 Plan: docs/plans/PCD-1-created-datasets-plan.md
@@ -23,13 +23,13 @@ from typing import TYPE_CHECKING
 from researchchat.clock import utc_now
 from researchchat.config import CREATED_DATA_EXTENSIONS, WORKSPACES_DIR
 from researchchat.workspace import ErrorCode, WorkspaceError, store
-from researchchat.workspace import created_datasets_store as cds
-from researchchat.workspace import datasets_store as ds
-from researchchat.workspace.created_datasets_store import CreatedDataset, FileSnapshot
+from researchchat.workspace.datasets import created_store as cds
+from researchchat.workspace.datasets import store as ds
+from researchchat.workspace.datasets.created_store import CreatedDataset, FileSnapshot
 from researchchat.workspace.service import DatasetPanelStatus, DatasetProps
 
 if TYPE_CHECKING:
-    from researchchat.workspace.dataset_service import DatasetRecordView
+    from researchchat.workspace.datasets.service import DatasetRecordView
 
 RunLockFor = Callable[[str], asyncio.Lock]  # project_id -> its notebook run lock (SEC2)
 Clock = Callable[[], str]  # ISO 8601 UTC now

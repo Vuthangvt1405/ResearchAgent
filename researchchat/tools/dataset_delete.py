@@ -9,7 +9,7 @@ import chainlit as cl
 
 from researchchat.tools.dataset_download import error_json
 from researchchat.workspace import ErrorCode, WorkspaceError
-from researchchat.workspace.dataset_service import human_size
+from researchchat.workspace.datasets.service import human_size
 
 DEFINITION = {
     "type": "function",

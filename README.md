@@ -109,10 +109,13 @@ researchchat/
     kernels.py              One Docker kernel container per project
     risk.py                 Flags risky model code
     service.py              Edits and runs notebooks under a per-project lock
-    datasets_store.py       Project datasets (database rows), dataset ids and safe paths
-    dataset_sources.py      Hugging Face / Zenodo file lists and safe HTTPS downloads
-    dataset_service.py      Download queue, checks, delete/cancel, chat notes
-    dataset_pool.py         Shared dataset pool: index (database rows), links, cleanup
+    datasets/               Everything about a project's datasets
+      store.py              Project datasets (database rows), dataset ids and safe paths
+      sources.py            Hugging Face / Zenodo file lists and safe HTTPS downloads
+      service.py            Download queue, checks, delete/cancel, chat notes
+      pool.py               Shared dataset pool: index (database rows), links, cleanup
+      created.py            Data files created in the notebook, listed as datasets
+      created_store.py      Database rows for those created files
     panel.py                The right-side Notebook panel
     actions.py              Buttons the panel calls
 public/

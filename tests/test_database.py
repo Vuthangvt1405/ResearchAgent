@@ -15,9 +15,9 @@ from sqlalchemy.exc import IntegrityError
 
 from researchchat.db import engine as db
 from researchchat.db.schema import metadata
-from researchchat.workspace import datasets_store as ds
 from researchchat.workspace import store
-from researchchat.workspace.dataset_pool import DatasetPool, PoolEntry, PoolFile
+from researchchat.workspace.datasets import store as ds
+from researchchat.workspace.datasets.pool import DatasetPool, PoolEntry, PoolFile
 from researchchat.workspace.kernels import ContainerMounts, KernelRegistry
 
 APP_TABLES = {"projects", "pool_entries", "pool_files", "project_datasets", "project_dataset_files"}

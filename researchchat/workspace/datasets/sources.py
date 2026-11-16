@@ -21,7 +21,7 @@ from urllib.parse import quote, urljoin, urlparse
 import httpx
 
 from researchchat.workspace import ErrorCode, WorkspaceError
-from researchchat.workspace.datasets_store import NAME_MAX, Source, safe_relpath
+from researchchat.workspace.datasets.store import NAME_MAX, Source, safe_relpath
 
 MAX_REDIRECTS = 5
 USER_AGENT = "ResearchChat"  # generic; no tokens are ever sent (A1, SEC14)
@@ -37,7 +37,7 @@ REDIRECTS = {301, 302, 303, 307, 308}
 
 @dataclass
 class PlannedFile:
-    path: str  # safe relative path (datasets_store.safe_relpath)
+    path: str  # safe relative path (datasets.store.safe_relpath)
     size: int  # bytes, from the catalog
     checksum: str | None  # "sha256:…" (HF LFS) / "md5:…" (Zenodo) / None
     url: str  # https download URL built from the catalog API, pinned to the revision

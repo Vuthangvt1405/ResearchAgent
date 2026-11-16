@@ -4,7 +4,7 @@ A created dataset is a data file the project's own notebook code wrote into
 files/ (seen by the kernel as /work/<path>). It has no pool entry and no
 project_dataset_files rows; its path, size, mtime and inode live on the row
 itself (PCD-1 plan §3.3). This module only reads and writes those rows; the
-rules (what counts, renames, safe delete) live in created_datasets.py.
+rules (what counts, renames, safe delete) live in created.py.
 
 Plan: docs/plans/PCD-1-created-datasets-plan.md
 """
@@ -19,7 +19,7 @@ from researchchat.config import WORKSPACES_DIR
 from researchchat.db.engine import database_for
 from researchchat.db.schema import project_datasets, projects
 from researchchat.workspace import ErrorCode, WorkspaceError, store
-from researchchat.workspace import datasets_store as ds
+from researchchat.workspace.datasets import store as ds
 
 log = logging.getLogger(__name__)
 
@@ -107,7 +107,7 @@ def update_created_dataset(project_id: str, dataset: CreatedDataset, root: Path 
 
 
 def delete_created_dataset(project_id: str, dataset_id: str, root: Path = WORKSPACES_DIR) -> None:
-    """Remove one created row; the file on disk is handled by created_datasets.py."""
+    """Remove one created row; the file on disk is handled by created.py."""
     with database_for(root).begin() as connection:
         connection.execute(delete(project_datasets).where(*_created_row_of(connection, project_id, dataset_id)))
 
@@ -150,7 +150,7 @@ def _created_dataset_from_row(row: Row) -> CreatedDataset | None:
 
 
 def _is_safe_path(path: str) -> bool:
-    """Same rule as catalog file names: relative, no '..', no drive or backslash (datasets_store.safe_relpath)."""
+    """Same rule as catalog file names: relative, no '..', no drive or backslash (datasets.store.safe_relpath)."""
     try:
         return ds.safe_relpath(path) == path
     except WorkspaceError:

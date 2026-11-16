@@ -10,8 +10,8 @@ from researchchat.tools import chosen_tools, dataset_download, dataset_list
 from researchchat.tools import dataset_search as search
 from researchchat.workspace import ErrorCode, WorkspaceError
 from researchchat.workspace import store
-from researchchat.workspace.dataset_service import DatasetService, DatasetsSettings
-from researchchat.workspace.dataset_sources import DatasetPlan, PlannedFile
+from researchchat.workspace.datasets.service import DatasetService, DatasetsSettings
+from researchchat.workspace.datasets.sources import DatasetPlan, PlannedFile
 from tests.conftest import FakeDatasetService, FakeFreeDisk
 
 STARTED = {

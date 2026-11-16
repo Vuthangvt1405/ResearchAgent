@@ -8,10 +8,10 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
 from researchchat.db.engine import database_for
-from researchchat.workspace import created_datasets_store as cds
 from researchchat.workspace import store
-from researchchat.workspace.created_datasets import CreatedDatasets
-from researchchat.workspace.created_datasets_store import CreatedDataset, FileSnapshot
+from researchchat.workspace.datasets import created_store as cds
+from researchchat.workspace.datasets.created import CreatedDatasets
+from researchchat.workspace.datasets.created_store import CreatedDataset, FileSnapshot
 
 IRIS = FileSnapshot(path="Iris.csv", size_bytes=4551, mtime_ns=1_763_000_000_000_000_000, inode=812_345)
 
