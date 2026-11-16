@@ -14,6 +14,7 @@ import ipaddress
 import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from typing import Protocol
 from pathlib import Path
 from urllib.parse import quote, urljoin, urlparse
 
@@ -22,7 +23,6 @@ import httpx
 from researchchat.workspace import ErrorCode, WorkspaceError
 from researchchat.workspace.datasets_store import NAME_MAX, Source, safe_relpath
 
-CATALOG_HOSTS = {"huggingface": "huggingface.co", "zenodo": "zenodo.org"}
 MAX_REDIRECTS = 5
 USER_AGENT = "ResearchChat"  # generic; no tokens are ever sent (A1, SEC14)
 HEADERS = {"User-Agent": USER_AGENT}
@@ -32,7 +32,6 @@ API_TIMEOUT = 30
 
 HF_PART_RE = re.compile(r"^[A-Za-z0-9_.-]{1,96}$")
 ZENODO_ID_RE = re.compile(r"^[0-9]{1,12}$")
-PREFIXES: dict[str, Source] = {"hf": "huggingface", "huggingface": "huggingface", "zenodo": "zenodo"}
 REDIRECTS = {301, 302, 303, 307, 308}
 
 
@@ -66,41 +65,70 @@ def _hf_id(owner: str, name: str) -> str:
     return f"{owner}/{name}"
 
 
+def _hf_id_from_page(segments: list[str]) -> str | None:
+    """huggingface.co/datasets/<owner>/<name>[/...]"""
+    if len(segments) >= 3 and segments[0] == "datasets":
+        return _hf_id(segments[1], segments[2])
+    return None
+
+
+def _hf_id_from_short_ref(rest: str) -> str:
+    """hf:<owner>/<name>"""
+    owner, slash, name = rest.partition("/")
+    if not slash or "/" in name:
+        raise _bad_ref()
+    return _hf_id(owner, name)
+
+
+def _zenodo_id_from_page(segments: list[str]) -> str | None:
+    """zenodo.org/records/<id> (or the older /record/<id>)"""
+    if len(segments) >= 2 and segments[0] in ("records", "record") and ZENODO_ID_RE.match(segments[1]):
+        return segments[1]
+    return None
+
+
+def _zenodo_id_from_short_ref(rest: str) -> str:
+    """zenodo:<id>"""
+    if not ZENODO_ID_RE.match(rest):
+        raise _bad_ref()
+    return rest
+
+
 def parse_ref(ref) -> tuple[Source, str]:
     """'hf:org/name' / 'zenodo:123' / a dataset page URL -> (source, source_id)."""
     if not isinstance(ref, str) or not ref.strip():
         raise _bad_ref("No dataset ref given.")
     ref = ref.strip()
     if "://" in ref:
-        parts = urlparse(ref)
-        segments = [s for s in parts.path.split("/") if s]
-        if parts.scheme != "https" or parts.port is not None or parts.username or parts.password:
-            raise _bad_ref()
-        host = (parts.hostname or "").removeprefix("www.")
-        if host == "huggingface.co" and len(segments) >= 3 and segments[0] == "datasets":
-            return "huggingface", _hf_id(segments[1], segments[2])
-        if host == "zenodo.org" and len(segments) >= 2 and segments[0] in ("records", "record"):
-            if ZENODO_ID_RE.match(segments[1]):
-                return "zenodo", segments[1]
+        return _parse_page_url(ref)
+    return _parse_short_ref(ref)
+
+
+def _parse_page_url(ref: str) -> tuple[Source, str]:
+    parts = urlparse(ref)
+    if parts.scheme != "https" or parts.port is not None or parts.username or parts.password:
         raise _bad_ref()
+    host = (parts.hostname or "").removeprefix("www.")
+    segments = [s for s in parts.path.split("/") if s]
+    catalog = next((c for c in CATALOGS.values() if c.host == host), None)
+    source_id = catalog.id_from_page(segments) if catalog else None
+    if source_id is None:
+        raise _bad_ref()
+    return catalog.source, source_id
+
+
+def _parse_short_ref(ref: str) -> tuple[Source, str]:
     prefix, sep, rest = ref.partition(":")
     if not sep:
         raise _bad_ref()
-    source = PREFIXES.get(prefix.lower())
-    if source is None:
+    catalog = CATALOGS_BY_PREFIX.get(prefix.lower())
+    if catalog is None:
         raise WorkspaceError(
             ErrorCode.UNSUPPORTED_SOURCE,
             f"Downloads work for Hugging Face and Zenodo datasets only, not {prefix[:20]!r}. "
             "Give the user the dataset's page instead.",
         )
-    if source == "zenodo":
-        if not ZENODO_ID_RE.match(rest):
-            raise _bad_ref()
-        return "zenodo", rest
-    owner, slash, name = rest.partition("/")
-    if not slash or "/" in name:
-        raise _bad_ref()
-    return "huggingface", _hf_id(owner, name)
+    return catalog.source, catalog.id_from_short_ref(rest)
 
 
 # ---- URL safety -----------------------------------------------------------------
@@ -223,9 +251,15 @@ def _too_many(max_files: int) -> WorkspaceError:
 
 def file_url(source: Source, source_id: str, revision: str | None, path: str) -> str:
     """The download URL of one file, built from catalog ids only (never from model text)."""
-    if source == "huggingface":
-        return f"https://huggingface.co/datasets/{source_id}/resolve/{revision}/{quote(path)}"
-    return f"https://zenodo.org/api/records/{source_id}/files/{quote(path)}/content"
+    return CATALOGS[source].file_url(source_id, revision, path)
+
+
+def _hf_file_url(repo_id: str, revision: str | None, path: str) -> str:
+    return f"https://huggingface.co/datasets/{repo_id}/resolve/{revision}/{quote(path)}"
+
+
+def _zenodo_file_url(record_id: str, _revision: str | None, path: str) -> str:
+    return f"https://zenodo.org/api/records/{record_id}/files/{quote(path)}/content"
 
 
 async def resolve(
@@ -242,7 +276,7 @@ async def resolve(
     `revision` pins a Hugging Face commit (an existing dataset keeps its
     version, AC12); None means the current revision. Zenodo records never change.
     """
-    resolver = resolve_huggingface if source == "huggingface" else resolve_zenodo
+    resolver = CATALOGS[source].resolve
     if client is not None:
         return await resolver(source_id, files, max_files=max_files, revision=revision, client=client)
     async with httpx.AsyncClient(timeout=API_TIMEOUT) as own:
@@ -295,7 +329,7 @@ async def resolve_huggingface(
                     path=path,
                     size=int(lfs.get("size") or entry.get("size") or 0),
                     checksum=f"sha256:{oid}" if re.fullmatch(r"[0-9a-f]{64}", oid) else None,
-                    url=file_url("huggingface", repo_id, sha, path),
+                    url=_hf_file_url(repo_id, sha, path),
                 )
             )
             if len(planned) > max_files:
@@ -350,7 +384,7 @@ async def resolve_zenodo(
                 path=path,
                 size=int(entry.get("size") or 0),
                 checksum=checksum if re.fullmatch(r"md5:[0-9a-f]{32}", checksum) else None,
-                url=file_url("zenodo", record_id, None, path),
+                url=_zenodo_file_url(record_id, None, path),
             )
         )
         if len(planned) > max_files:
@@ -366,6 +400,39 @@ async def resolve_zenodo(
         license=_clean((meta.get("license") or {}).get("id"), 60),
         files=planned,
     )
+
+
+class CatalogResolver(Protocol):
+    def __call__(
+        self, source_id: str, files: list[str] | None, *, max_files: int, client: httpx.AsyncClient, revision: str | None = None
+    ) -> Awaitable[DatasetPlan]: ...
+
+
+@dataclass(frozen=True)
+class Catalog:
+    """Everything source-specific about one dataset catalog; add a catalog by adding an entry to CATALOGS."""
+
+    source: Source
+    host: str
+    prefixes: tuple[str, ...]  # accepted before ':' in a short ref
+    id_from_page: Callable[[list[str]], str | None]  # dataset page path segments -> id, None if not a dataset page
+    id_from_short_ref: Callable[[str], str]  # the part after ':' -> id
+    file_url: Callable[[str, str | None, str], str]  # (source_id, revision, path) -> download URL
+    resolve: CatalogResolver
+
+
+CATALOGS: dict[Source, Catalog] = {
+    "huggingface": Catalog(
+        "huggingface", "huggingface.co", ("hf", "huggingface"),
+        _hf_id_from_page, _hf_id_from_short_ref, _hf_file_url, resolve_huggingface,
+    ),
+    "zenodo": Catalog(
+        "zenodo", "zenodo.org", ("zenodo",),
+        _zenodo_id_from_page, _zenodo_id_from_short_ref, _zenodo_file_url, resolve_zenodo,
+    ),
+}
+CATALOGS_BY_PREFIX = {prefix: catalog for catalog in CATALOGS.values() for prefix in catalog.prefixes}
+CATALOG_HOSTS = {source: catalog.host for source, catalog in CATALOGS.items()}
 
 
 # ---- download ------------------------------------------------------------------------
