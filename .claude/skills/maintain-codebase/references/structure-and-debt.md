@@ -3,6 +3,7 @@
 ## Contents
 - Part A - Tech debt: categories and how to find them
 - Part A - Rating and prioritising
+- Part B - Size limits: folder width, Rule of Three, depth cap
 - Part B - Folder structure smells
 - Part B - What a good Python layout looks like
 - Part B - Cost checklist
@@ -66,12 +67,48 @@ Group repeated instances ("bare except in 14 places, e.g. a.py:10, b.py:88") ins
 
 ## Part B - Folder structure
 
+### Size limits
+
+Three measurable rules. They turn "this folder feels messy" into a number you can report, and they apply both to the review and to any folder you create or fill.
+
+| Rule | Limit | Why |
+|---|---|---|
+| **Folder width (7 ± 2)** | Aim for 5-9 entries per folder (modules + subfolders, not counting `__init__.py`, `__pycache__`, `py.typed`). Over ~10-12 is a finding. | A developer can take in 5-9 items at a glance, without scrolling and without losing track of what the folder is for. Past ~10-12 the listing stops showing the architecture, and people fall back on fuzzy file search. |
+| **Rule of Three (when to split)** | Make a subfolder only when at least 3 files share a distinct sub-domain or responsibility. Never a subfolder for 1 or 2 files. | Splitting earlier adds a navigation tax: clicking through a folder to reach a single file, and a longer import, for no gain in clarity. |
+| **Depth cap** | At most 3, at most 4, levels below the root package (`pkg/a/b/c/module.py` is 3). | Deep paths hide where responsibilities live and make every import statement noisy. |
+
+How they work together:
+
+- **A wide folder is split by the Rule of Three.** Group its files by responsibility, and promote only groups of 3 or more into a subfolder. If no such group exists, the folder stays wide; report it rather than inventing folders. A flat folder of 11 files is better than three folders of 2-3 unrelated files each.
+- **Splitting must not break the depth cap.** If the only way to narrow a folder adds a fourth or fifth level, prefer a sibling package higher up, or leave it wide.
+- **The reverse holds too.** A subfolder with 1-2 files (often left behind by dead-code removal) goes back into its parent, unless the parent would then cross the width limit.
+- **Tests mirror the source**, so a split in the source is mirrored in `tests/`, and `tests/` gets the same width check.
+- The limits trigger a finding, not a move. The verdict (now / later / leave as is) still comes from benefit vs cost below. A folder at 11 entries with one clean convention can be **leave as is**.
+
+Measuring (run from the repo root; adjust the excludes):
+
+```bash
+# width: entries per folder, widest first
+find <pkg> tests -type d -not -path "*/__pycache__*" | while read -r d; do
+  n=$(find "$d" -mindepth 1 -maxdepth 1 -not -name "__init__.py" -not -name "__pycache__" -not -name "py.typed" | wc -l)
+  echo "$n $d"; done | sort -rn | head -20
+# Rule of Three: subfolders holding fewer than 3 modules
+find <pkg> -type d -not -path "*/__pycache__*" | while read -r d; do
+  n=$(find "$d" -maxdepth 1 -name "*.py" -not -name "__init__.py" | wc -l)
+  [ "$n" -lt 3 ] && [ "$d" != "<pkg>" ] && echo "$n $d"; done
+# depth: deepest modules below the root package
+find <pkg> -name "*.py" -not -path "*/__pycache__*" | awk -F/ '{print NF-2, $0}' | sort -rn | head -10
+```
+
+Report each folder over a limit with its count and a proposed grouping, for example: "`app/workspace/` has 12 modules (limit ~10-12). Six of them are about datasets (`dataset_service`, `dataset_pool`, `dataset_sources`, `datasets_store`, ...), so the Rule of Three allows `app/workspace/datasets/` at depth 2."
+
 ### Smells
 
 - **Dumping grounds**: `utils.py`, `helpers/`, `common/`, `misc/`, `core/` holding unrelated things. Hard to guess what is inside; grows forever.
-- **Overfull folder**: dozens of unrelated modules in one flat package.
+- **Overfull folder**: more than ~10-12 entries in one folder (see "Size limits"), worst when the modules are unrelated.
+- **Premature folder**: a subfolder holding only 1-2 files (breaks the Rule of Three).
 - **Giant module**: one file of several thousand lines containing several concepts.
-- **Needless depth**: `a/b/c/d/thing.py` where each level has one child.
+- **Needless depth**: more than 3-4 levels below the root package, or `a/b/c/d/thing.py` where each level has one child.
 - **Scattered feature**: changing one feature requires edits in many distant folders (`models/x.py`, `views/x.py`, `services/x.py`, `schemas/x.py`, `utils/x.py`) and the project is large enough for that to hurt.
 - **Mixed layers**: HTTP/CLI handlers, business rules and database code in the same module or package (also an SRP/DIP problem).
 - **Circular imports** between packages, or imports inside functions to avoid them: the package boundaries are in the wrong place.
@@ -86,6 +123,7 @@ No single correct layout; judge by these properties:
 
 - A new reader can guess where a thing lives from its name, and guess what a folder contains from its name.
 - Things that change together live together (high cohesion); packages depend on each other in one direction.
+- Every folder within the size limits: 5-9 entries, no subfolder with fewer than 3 files, at most 3-4 levels deep.
 - One convention, applied consistently. Small projects: flat and by layer is fine. Larger projects: group by feature/domain, layers inside each.
 - `tests/` mirrors the source tree.
 - The package's public API is what `__init__.py` exports; internals can then move freely.

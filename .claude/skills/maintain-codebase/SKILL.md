@@ -117,6 +117,7 @@ Make the clean state stay clean, so the next run starts from signal rather than 
   ```
 
   Use 60 for manual maintenance passes; a higher value such as 80 suits automated gates, where false positives block people.
+- **Folder limits.** If the project's coding rules (`CLAUDE.md` or a contributing guide) don't state them yet, *offer* to add the three folder limits there (width 7 ± 2, Rule of Three, depth cap 3-4), so new files land in the right place between passes. Add them only on a yes.
 - **Automation.** If the repo already uses pre-commit or CI, *offer* to add Vulture there (snippets in `references/vulture.md`). Do not add new infrastructure the user did not ask for.
 
 ## Phase 4 - SOLID review
@@ -145,10 +146,16 @@ How to apply it:
 Decide whether the folder/package tree should be reorganised, and if so, **whether now is the right time**. Moving files is the most disruptive kind of refactor: it touches every import, conflicts with every open branch, and can break things tests do not cover (config paths, Docker, CI, dotted-path strings). So the output of this phase is a reasoned decision, and a move happens only when the decision supports it. Details, smells and the checklist are in `references/structure-and-debt.md`.
 
 1. **Map the tree.** List the packages and modules (`tree -d -I ".venv|__pycache__|node_modules|.git"` or `find`), with file counts and sizes. Note what each top-level folder is for.
-2. **Find the structural problems.** Does the layout tell a new reader where things live? Look for dumping-ground modules (`utils`, `helpers`, `common`, `misc`), folders with too many unrelated files, deep nesting with one file per level, one feature scattered over many folders, layers mixed together, circular imports, tests that do not mirror the source, and folders left nearly empty by the dead-code removal.
-3. **Estimate the benefit** of each candidate change in terms of **readability** (can someone find the code and guess what a folder contains?) and **maintainability** (does a typical change touch one place instead of five? are dependencies between packages clearer?).
-4. **Estimate the cost**: files moved, import statements to rewrite, references outside Python code, whether public import paths change, how well tests cover the affected code, and how many open branches/PRs would conflict (`git branch -r`, ask the user if unknown).
-5. **Give one verdict per candidate change:**
+2. **Measure against the size limits** (commands and details in `references/structure-and-debt.md`, "Size limits"):
+   - **Width (7 ± 2):** 5-9 entries per folder; over ~10-12 is a finding.
+   - **Rule of Three:** a subfolder needs at least 3 files sharing a distinct responsibility. Never create one for 1-2 files; fold such a subfolder back into its parent.
+   - **Depth cap:** at most 3-4 levels below the root package.
+
+   Split a wide folder only along groups of 3+ related files, and only if the split stays within the depth cap; otherwise report it and leave it wide. List every folder over a limit with its count in the report.
+3. **Find the structural problems.** Does the layout tell a new reader where things live? Look for dumping-ground modules (`utils`, `helpers`, `common`, `misc`), folders over the width limit, subfolders with only 1-2 files, nesting past the depth cap or with one file per level, one feature scattered over many folders, layers mixed together, circular imports, tests that do not mirror the source, and folders left nearly empty by the dead-code removal.
+4. **Estimate the benefit** of each candidate change in terms of **readability** (can someone find the code and guess what a folder contains?) and **maintainability** (does a typical change touch one place instead of five? are dependencies between packages clearer?).
+5. **Estimate the cost**: files moved, import statements to rewrite, references outside Python code, whether public import paths change, how well tests cover the affected code, and how many open branches/PRs would conflict (`git branch -r`, ask the user if unknown).
+6. **Give one verdict per candidate change:**
 
    | Verdict | When | What you do |
    |---|---|---|
@@ -158,11 +165,12 @@ Decide whether the folder/package tree should be reorganised, and if so, **wheth
 
    If benefit and cost are both high, the verdict is *later*, and the user decides. Never start a large restructuring unasked.
 
-6. **When the verdict is "optimize now":**
+7. **When the verdict is "optimize now":**
    - Use `git mv` so history follows the file, and move without editing content in the same commit (git then records it as a rename).
    - Update every reference: imports, `pyproject.toml` (packages, entry points, tool paths, `[tool.vulture] paths`), test config, `mock.patch("dotted.path")` strings, settings with dotted paths, Dockerfile, CI files, docs, and the Vulture whitelist.
    - If a moved module may be imported from outside the repo, leave a thin re-export at the old path and note it as debt to remove later.
    - One structural change per commit (`refactor(structure): ...`), Phase 2 verification after each, then re-run Vulture.
+   - Re-measure afterwards: no folder you touched may end up over the width limit, under the Rule of Three, or past the depth cap.
 
 ## Final report
 
@@ -228,6 +236,7 @@ Legend: [NEW] created · [SPLIT] created by splitting a larger file · [MOVED] s
 | Location | Principle | Problem | Proposed refactor | Risk/effort |
 
 ## Folder structure (verdict: optimize now / optimize later / leave as is)
+Size limits: <folders over ~10-12 entries, with counts> · <subfolders with 1-2 files> · <deepest path and its depth>, or "all within limits"
 | Problem found | Proposed change | Benefit (readability, maintainability) | Cost (files, imports, risk) | Verdict |
 <for "later": the migration plan in ordered steps>
 
