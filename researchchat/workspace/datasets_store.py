@@ -46,7 +46,8 @@ StoredStatus = Literal["queued", "downloading", "ready", "failed"]
 DatasetStatus = Literal["queued", "downloading", "ready", "failed", "missing"]  # missing is computed on read
 
 
-def _slug(text: str) -> str:
+def slug_of(text: str) -> str:
+    """Lowercase ASCII words joined by '-': the readable part of a dataset id."""
     ascii_text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode()
     return re.sub(r"[^a-z0-9]+", "-", ascii_text.lower()).strip("-")
 
@@ -54,7 +55,7 @@ def _slug(text: str) -> str:
 def base_id(source: Source, source_id: str) -> str:
     """hf-<owner>--<name> / zenodo-<id>: the readable slug of a catalog dataset."""
     prefix = "hf" if source == "huggingface" else source
-    body = "--".join(p for p in (_slug(part) for part in source_id.split("/")) if p) or "dataset"
+    body = "--".join(p for p in (slug_of(part) for part in source_id.split("/")) if p) or "dataset"
     return re.sub(r"-{3,}", "--", f"{prefix}-{body}")[:DATASET_ID_MAX].strip("-")
 
 
