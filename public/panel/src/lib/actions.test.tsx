@@ -8,6 +8,7 @@ import type { ReactNode } from "react";
 import { mountPanel } from "@/test/harness";
 import { cell, dataset, props } from "@/test/fixtures";
 import { useNotebookActions } from "@/lib/notebookActions";
+import { loadCode } from "@/lib/loadCode";
 import { resetStore, usePanel } from "@/store";
 
 const lists = (a: { name: string }) => (a.name === "nb_list_projects" ? { projects: [] } : null);
@@ -112,5 +113,49 @@ describe("Group 5 — Actions", () => {
     });
     expect(fn.mock.calls.filter(([a]) => a.name === "nb_run_all")).toHaveLength(1);
     await act(async () => release());
+  });
+});
+
+// PCD-1 Group 5 — Load code for a created file (AC6, SEC5 · unit)
+// Plan: docs/plans/PCD-1-created-datasets-plan.md §7
+// Baseline: Given a created card {path: "/work/Iris.csv", files: [{path: "Iris.csv"}]} · When load code is built
+const createdCard = (path = "/work/Iris.csv") =>
+  dataset({ id: "file-iris-csv", name: path.split("/").pop(), origin: "created", source: "created", path, files: [{ path: path.split("/").pop()!, size: 4551 }] });
+
+describe("PCD-1 Group 5 — Load code for a created file", () => {
+  it("loads a created csv from its work path", () => {
+    // ✅1 · baseline · changed: —
+    // Then: df = pd.read_csv("/work/Iris.csv") · Demonstrates: AC6
+    expect(loadCode(createdCard())).toBe('import pandas as pd\n\ndf = pd.read_csv("/work/Iris.csv")\ndf.head()\n');
+  });
+
+  it("quotes a name with spaces and quotes safely", () => {
+    // ✅2 · edge · changed: /work/my "iris".csv
+    // Then: the path sits inside one JSON string literal · Demonstrates: SEC5
+    expect(loadCode(createdCard('/work/my "iris".csv'))).toContain('pd.read_csv("/work/my \\"iris\\".csv")');
+  });
+
+  it("uses the right reader per extension", () => {
+    // ✅3 · edge · changed: .parquet, .jsonl, .xlsx
+    // Then: read_parquet, read_json(lines=True), read_excel · Demonstrates: every A4 type loads
+    expect(loadCode(createdCard("/work/a.parquet"))).toContain('pd.read_parquet("/work/a.parquet")');
+    expect(loadCode(createdCard("/work/a.jsonl"))).toContain('pd.read_json("/work/a.jsonl", lines=True)');
+    expect(loadCode(createdCard("/work/a.xlsx"))).toContain('pd.read_excel("/work/a.xlsx")');
+  });
+
+  it("injection in a file name stays a string", () => {
+    // ❌1 · negative · changed: name a"); import os #.csv
+    // Then: no code outside the literal · Demonstrates: file names can't run code
+    const code = loadCode(createdCard('/work/a"); import os #.csv'));
+    expect(code).toContain('pd.read_csv("/work/a\\"); import os #.csv")');
+    expect(code.split("\n").filter((line) => line.startsWith("import "))).toEqual(["import pandas as pd"]);
+  });
+
+  it("downloaded card load code is unchanged", () => {
+    // ❌2 · negative · changed: origin downloaded
+    // Then: same output as today · Demonstrates: no regression
+    const downloaded = dataset({ origin: "downloaded" });
+    expect(loadCode(downloaded)).toBe('import pandas as pd\n\ndf = pd.read_csv("/work/datasets/iris/iris.csv")\ndf.head()\n');
+    expect(loadCode(dataset())).toBe(loadCode(downloaded));
   });
 });

@@ -24,8 +24,9 @@ htmlcov/
 .chainlit/translations/
 .chainlit/.langchain.db
 
-# Claude Code: personal settings stay local; shared launch.json is kept
-.claude/settings.local.json
+# Claude Code config and project docs stay local
+.claude/
+docs/
 
 # Editors and OS
 .vscode/

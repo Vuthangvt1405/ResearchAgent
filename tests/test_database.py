@@ -59,7 +59,7 @@ def test_first_open_creates_database_at_head(root):
     engine = db.database_for(root)
 
     assert db.database_path(root).is_file()
-    assert current_revisions(engine) == ("0001",)
+    assert current_revisions(engine) == ("0002",)
     assert APP_TABLES <= table_names(engine)
 
 
@@ -77,7 +77,7 @@ def test_second_open_reuses_database_without_migrating(root):
     second = db.database_for(root)
 
     assert second is not first
-    assert current_revisions(second) == ("0001",)
+    assert current_revisions(second) == ("0002",)
     with second.connect() as connection:
         assert connection.execute(text("SELECT slug FROM projects")).scalars().all() == ["p1"]
 
@@ -200,3 +200,105 @@ def test_sql_metacharacters_are_stored_as_plain_text(root):
     assert (entry.license, entry.files[0].path) == (hostile_license, hostile_path)
     assert ds.load_project_datasets(project.id, root)[0].files == [hostile_path]
     assert APP_TABLES <= table_names(db.database_for(root))
+
+
+# ---- PCD-1 Group 10 — Storage: both kinds in one table (D2, §3.3) · integration (real SQLite)
+# Baseline: Given a workspace with project `p` and a downloaded dataset `hf-x` (pool entry + 2 file rows) ·
+#   When migration 0002 runs up or down
+
+
+def migrate(engine, step, revision: str) -> None:
+    """Run one Alembic step the way the app does: foreign keys off around the transaction."""
+    config = db.alembic_config()
+    with engine.connect() as connection, db.foreign_keys_off(connection), connection.begin():
+        config.attributes["connection"] = connection
+        step(config, revision)
+
+
+def seed_downloaded_dataset(engine) -> None:
+    """Project p with dataset hf-x (pool entry hf-x@1) listing a.csv and b.csv."""
+    with engine.begin() as connection:
+        connection.execute(text("INSERT INTO projects (slug, name, created_at) VALUES ('p', 'P', 't')"))
+        connection.execute(text(
+            "INSERT INTO pool_entries (slug, source, source_id, name, created_at) "
+            "VALUES ('hf-x@1', 'huggingface', 'o/x', 'X', 't')"
+        ))
+        connection.execute(text(
+            "INSERT INTO project_datasets (project_pk, slug, pool_entry_pk, position, status) VALUES (1, 'hf-x', 1, 0, 'ready')"
+        ))
+        connection.execute(text(
+            "INSERT INTO project_dataset_files (dataset_pk, position, path) VALUES (1, 0, 'a.csv'), (1, 1, 'b.csv')"
+        ))
+
+
+def insert_created_row(engine) -> None:
+    with engine.begin() as connection:
+        connection.execute(text(
+            "INSERT INTO project_datasets (project_pk, slug, position, status, origin, path, size_bytes, mtime_ns, inode) "
+            "VALUES (1, 'file-iris-csv', 1, 'ready', 'created', 'Iris.csv', 4551, 1, 7)"
+        ))
+
+
+def file_list_paths(engine) -> list[str]:
+    with engine.connect() as connection:
+        return list(connection.execute(text("SELECT path FROM project_dataset_files ORDER BY position")).scalars())
+
+
+def test_migration_0002_marks_existing_rows_downloaded(root):
+    # G10✅2 · edge
+    # Changed: upgrade a 0001 database with rows
+    # Then: every old row `origin = 'downloaded'`, pool entry kept, `status_known` check still there,
+    #   and every `project_dataset_files` row intact (the rebuild must not cascade-delete them)
+    # Demonstrates: upgrade loses nothing
+    engine = db.database_for(root)
+    migrate(engine, command.downgrade, "0001")
+    seed_downloaded_dataset(engine)
+
+    migrate(engine, command.upgrade, "head")
+
+    with engine.connect() as connection:
+        row = connection.execute(text("SELECT origin, pool_entry_pk, path FROM project_datasets")).one()
+    assert tuple(row) == ("downloaded", 1, None)
+    assert file_list_paths(engine) == ["a.csv", "b.csv"]
+    with pytest.raises(IntegrityError), engine.begin() as connection:
+        connection.execute(text("UPDATE project_datasets SET status = 'missing'"))
+
+
+def test_migration_0002_downgrade_drops_created_rows_only(root):
+    # G10✅3 · edge
+    # Changed: downgrade to 0001
+    # Then: created rows gone, downloaded rows and their `project_dataset_files` intact,
+    #   `pool_entry_pk` NOT NULL again; files on disk untouched
+    # Demonstrates: rollback is safe
+    engine = db.database_for(root)
+    seed_downloaded_dataset(engine)
+    insert_created_row(engine)
+    created_file = root / "p" / "files" / "Iris.csv"
+    created_file.parent.mkdir(parents=True)
+    created_file.write_text("a,b\n")
+
+    migrate(engine, command.downgrade, "0001")
+
+    with engine.connect() as connection:
+        assert list(connection.execute(text("SELECT slug FROM project_datasets")).scalars()) == ["hf-x"]
+    assert file_list_paths(engine) == ["a.csv", "b.csv"]
+    columns = {column["name"]: column for column in inspect(engine).get_columns("project_datasets")}
+    assert columns["pool_entry_pk"]["nullable"] is False and "origin" not in columns
+    assert created_file.read_text() == "a,b\n"
+
+
+def test_upgrade_with_foreign_keys_on_would_empty_file_lists(root):
+    # G10✅2 · edge (added in implementation: proves why engine.foreign_keys_off exists)
+    # Changed: the same upgrade, but run inside one transaction with foreign keys on
+    # Then: project_dataset_files is emptied by the table rebuild's DROP
+    # Demonstrates: the guard in upgrade_to_latest is load-bearing
+    engine = db.database_for(root)
+    migrate(engine, command.downgrade, "0001")
+    seed_downloaded_dataset(engine)
+    config = db.alembic_config()
+
+    with engine.begin() as connection:
+        config.attributes["connection"] = connection
+        command.upgrade(config, "head")
+
+    assert file_list_paths(engine) == []

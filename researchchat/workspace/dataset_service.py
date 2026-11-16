@@ -31,10 +31,16 @@ from researchchat.config import WORKSPACES_DIR
 from researchchat.workspace import ErrorCode, WorkspaceError, store
 from researchchat.workspace import dataset_sources as sources
 from researchchat.workspace import datasets_store as ds
+from researchchat.workspace.created_datasets import CreatedDatasets
 from researchchat.workspace.dataset_pool import DatasetPool, PoolEntry, PoolFile
 from researchchat.workspace.dataset_sources import DatasetPlan, PlannedFile
 from researchchat.workspace.datasets_store import DatasetStatus, ProjectDataset, Source
-from researchchat.workspace.service import DatasetProps, NotebookProps, Notify
+from researchchat.workspace.service import (
+    DatasetOrigin,
+    DatasetProps,
+    NotebookProps,
+    Notify,
+)
 
 log = logging.getLogger(__name__)
 
@@ -120,6 +126,7 @@ class DatasetRecordView(TypedDict):
     downloaded_at: str | None
     error: str | None
     shared_with: int  # other projects using the same pool entry (NB-4)
+    origin: DatasetOrigin  # PCD-1 AC9: tells the model a file was created in this project, not downloaded
 
 
 class DeleteResult(TypedDict):
@@ -229,6 +236,7 @@ class DatasetService:
         resolve: Resolve = sources.resolve,
         progress_interval: float = PROGRESS_INTERVAL,
         pool: DatasetPool | None = None,
+        created: CreatedDatasets | None = None,
     ):
         # Only stores dependencies: actions.py builds this at import time.
         self.settings = settings or DatasetsSettings()
@@ -241,6 +249,7 @@ class DatasetService:
         self.resolve = resolve
         self.progress_interval = progress_interval
         self.pool = pool or DatasetPool(root)  # index, links, and the one lock for both (SEC9)
+        self.created = created or CreatedDatasets(root)  # PCD-1: files the project's own code wrote
         self.notes: dict[str, list[str]] = {}  # session_id -> pending finish lines
         self.rev = 0  # datasets_rev for NotebookProps (SEC16)
         self._datasets: dict[str, list[ProjectDataset]] = {}  # project_id -> datasets (cache of its database rows)
@@ -638,12 +647,19 @@ class DatasetService:
             "downloaded_at": dataset.linked_at,
             "error": dataset.error,
             "shared_with": len(users.get(dataset.pool_entry, set()) - {pid}),
+            "origin": "downloaded",
         }
+
+    def sync_created(self, project_id: str) -> None:
+        """NotebookService.after_run: scan the project's files/ and bump datasets_rev when created rows changed (PCD-1 A2)."""
+        if self.created.sync(project_id):
+            self.rev += 1
 
     def list_for_model(self, project_id: str) -> list[DatasetRecordView]:
         """dataset_list result: every dataset with status, progress and /work paths (AC24)."""
         users = self._users_by_entry()
-        return [self._view(project_id, d, users) for d in self._load(project_id)]
+        downloaded = [self._view(project_id, d, users) for d in self._load(project_id)]
+        return downloaded + self.created.model_views(project_id)
 
     def describe(self, project_id: str, dataset_id: str) -> DatasetRecordView:
         """One dataset, for the Delete / Keep prompt (name, size it frees, other users)."""
@@ -656,6 +672,8 @@ class DatasetService:
 
     async def delete(self, project_id: str, dataset_id: str) -> DeleteResult:
         """Remove the dataset from this project; its pool entry goes when no project uses it (AC25, D7)."""
+        if self.created.owns(project_id, dataset_id):
+            return await self._delete_created(project_id, dataset_id)
         async with self._lock:
             datasets = self._load(project_id)
             dataset = ds.find_project_dataset(datasets, dataset_id) if isinstance(dataset_id, str) else None
@@ -670,6 +688,13 @@ class DatasetService:
             still_used_by = len(self.pool.projects_using(dataset.pool_entry))
         await self._push(project_id)
         return {"deleted": dataset_id, "freed_bytes": freed, "still_used_by": still_used_by}
+
+    async def _delete_created(self, project_id: str, dataset_id: str) -> DeleteResult:
+        """A created file has no pool entry and no other user: its bytes are freed here (PCD-1 AC8)."""
+        freed = await self.created.delete(project_id, dataset_id)
+        self.rev += 1
+        await self._push(project_id)
+        return {"deleted": dataset_id, "freed_bytes": freed, "still_used_by": 0}
 
     def _remove_entry_if_unused(self, entry_id: str) -> int:
         if self._jobs_on_entry(entry_id):
@@ -943,9 +968,10 @@ class DatasetService:
                     "files": [{"path": p, "size": f.size if f else 0} for p, f in ((p, entry.file(p)) for p in dataset.files[:PANEL_FILES_MAX])],
                     "error": dataset.error if status == "failed" else None,
                     "shared_with": view["shared_with"],
+                    "origin": "downloaded",
                 }
             )
-        return rows, self.rev
+        return rows + self.created.panel_rows(project_id), self.rev
 
     def take_notes(self, session_id: str) -> str | None:
         """The pending finish note for this chat's next turn, once; None if nothing finished."""

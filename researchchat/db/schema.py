@@ -34,6 +34,14 @@ NAMING_CONVENTION = {
 PROJECT_NAME_MAX = 80  # same rule as store.PROJECT_NAME_MAX
 SOURCES = ("huggingface", "zenodo")
 STORED_STATUSES = ("queued", "downloading", "ready", "failed")  # "missing" is computed, never stored
+ORIGINS = ("downloaded", "created")  # PCD-1: catalog download, or a file the project's own code wrote
+CREATED_PATH_MAX = 1024  # same limit as datasets_store.PATH_MAX
+# A row is wholly one kind: a download linked to a pool entry, or a created file with its path and stat (PCD-1 §3.3)
+ORIGIN_SHAPE = (
+    "(origin = 'downloaded' AND pool_entry_pk IS NOT NULL AND path IS NULL)"
+    " OR (origin = 'created' AND pool_entry_pk IS NULL AND path IS NOT NULL"
+    f" AND size_bytes IS NOT NULL AND mtime_ns IS NOT NULL AND length(path) BETWEEN 1 AND {CREATED_PATH_MAX})"
+)
 
 metadata = MetaData(naming_convention=NAMING_CONVENTION)
 
@@ -83,16 +91,24 @@ project_datasets = Table(
     Column("pk", Integer, primary_key=True),
     Column("project_pk", Integer, ForeignKey("projects.pk", ondelete="CASCADE"), nullable=False),
     Column("slug", Text, nullable=False),  # the dataset id; folder under files/datasets/
-    # RESTRICT: a pool entry a project still uses can never be deleted (SEC4)
-    Column("pool_entry_pk", Integer, ForeignKey("pool_entries.pk", ondelete="RESTRICT"), nullable=False),
+    # RESTRICT: a pool entry a project still uses can never be deleted (SEC4); NULL for created files (PCD-1)
+    Column("pool_entry_pk", Integer, ForeignKey("pool_entries.pk", ondelete="RESTRICT"), nullable=True),
     Column("position", Integer, nullable=False),  # order of the project's dataset list
     Column("selection", JSON, nullable=True),  # file patterns asked for; None = all files, [] stays []
     Column("status", Text, nullable=False),
     Column("requested_at", Text, nullable=False, server_default=""),  # queue order
     Column("linked_at", Text, nullable=True),
     Column("error", Text, nullable=True),  # one-line reason when failed
+    Column("origin", Text, nullable=False, server_default="downloaded"),  # PCD-1: which kind of row
+    Column("path", Text, nullable=True),  # created only: relative to files/ (kernel: /work/<path>)
+    Column("size_bytes", BigInteger, nullable=True),  # created only: size at the last scan
+    Column("mtime_ns", BigInteger, nullable=True),  # created only: spots a re-save without reading the file
+    Column("inode", BigInteger, nullable=True),  # created only: a rename keeps it (rename match, AC12)
     UniqueConstraint("project_pk", "slug"),  # unique within a project; the pool is shared (D1)
+    UniqueConstraint("project_pk", "path"),  # one created card per path (AC4); NULLs (downloads) don't clash
     CheckConstraint(f"status IN {STORED_STATUSES}", name="status_known"),
+    CheckConstraint(f"origin IN {ORIGINS}", name="origin_known"),
+    CheckConstraint(ORIGIN_SHAPE, name="origin_shape"),
     Index(None, "pool_entry_pk"),  # projects_using / "used by" counts, and the RESTRICT check
 )
 

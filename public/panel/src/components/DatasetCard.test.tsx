@@ -2,7 +2,7 @@
 // Plan: docs/plans/done/panel-react-build-plan.md §7
 // Baseline: Given 3 datasets with one downloading at 10% · When props arrive with that dataset at 40%
 import { describe, it, expect } from "vitest";
-import { act, screen, within } from "@testing-library/react";
+import { act, fireEvent, screen, within } from "@testing-library/react";
 import { mountPanel } from "@/test/harness";
 import { dataset, props } from "@/test/fixtures";
 import { usePanel } from "@/store";
@@ -63,5 +63,87 @@ describe("Group 3 — Progress re-renders only one card", () => {
     expect(within(card("big")).getByText("0%")).toBeTruthy();
     expect(card("big").textContent).not.toContain("NaN");
     void screen;
+  });
+});
+
+// PCD-1 Group 8 — One list, two kinds (AC3 · component)
+// Plan: docs/plans/PCD-1-created-datasets-plan.md §7
+// Baseline: Given downloaded hf-scikit-learn--iris and created Iris.csv · When the cards render with details open
+const downloadedIris = () => dataset({ id: "hf-scikit-learn--iris", name: "iris", shared_with: 2 });
+const createdIris = (over = {}) =>
+  dataset({
+    id: "file-iris-csv", name: "Iris.csv", origin: "created", source: "created", license: null, url: null,
+    path: "/work/Iris.csv", files: [{ path: "Iris.csv", size: 4551 }], size_bytes: 4551, ...over,
+  });
+
+async function showBoth(created = createdIris()) {
+  const h = await showDatasets(props({ datasets_rev: 3, datasets: [downloadedIris(), created] }));
+  for (const name of ["iris", created.name]) {
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: `Show details of ${name}` })));
+  }
+  return h;
+}
+
+describe("PCD-1 Group 8 — One list, two kinds", () => {
+  it("created card shows Created by myself and no licence or source", async () => {
+    // ✅2 · edge · changed: —
+    // Then: label shown; no Licence, Source link or "Also used by" · Demonstrates: AC3
+    await showBoth();
+    const created = within(card("file-iris-csv"));
+    expect(created.getByText("Created by myself")).toBeTruthy();
+    expect(created.queryByText("Licence")).toBeNull();
+    expect(created.queryByText("Open source page")).toBeNull();
+    expect(created.queryByText(/Also used by/)).toBeNull();
+    expect(created.getByText("/work/Iris.csv")).toBeTruthy();
+  });
+
+  it("downloaded card looks as before", async () => {
+    // ✅3 · edge · changed: origin downloaded
+    // Then: same text and rows as today · Demonstrates: no regression
+    await showBoth();
+    const downloaded = within(card("hf-scikit-learn--iris"));
+    expect(downloaded.getByText("Hugging Face")).toBeTruthy();
+    expect(downloaded.getByText("Licence")).toBeTruthy();
+    expect(downloaded.getByText("Open source page")).toBeTruthy();
+    expect(downloaded.getByText("Also used by 2 other projects")).toBeTruthy();
+    expect(downloaded.getByText("/work/datasets/iris/")).toBeTruthy();
+  });
+});
+
+// PCD-1 Group 9 — Delete warns that it's the only copy (AC8 · component)
+// Baseline: Given created Iris.csv listed with details open · When the user presses Delete
+describe("PCD-1 Group 9 — Delete a created file", () => {
+  it("created delete confirm says the app keeps no copy", async () => {
+    // ✅2 · edge · changed: —
+    // Then: text says removed for good, no other copy, can be made again · Demonstrates: AC8 wording
+    await showBoth();
+    const created = within(card("file-iris-csv"));
+    await act(async () => fireEvent.click(created.getByTitle("Delete this dataset")));
+    expect(created.getByText(/removed from this project for good, and the app keeps no other copy/)).toBeTruthy();
+    expect(created.getByText(/make it again by re-running the code/)).toBeTruthy();
+  });
+
+  it("cancel keeps the card", async () => {
+    // ✅3 · edge · changed: Keep pressed
+    // Then: no ds_delete call; card still there · Demonstrates: AC8 Cancel
+    const h = await showBoth();
+    const created = within(card("file-iris-csv"));
+    await act(async () => fireEvent.click(created.getByTitle("Delete this dataset")));
+    await act(async () => fireEvent.click(created.getByRole("button", { name: "Keep" })));
+    expect(h.callAction.mock.calls.some(([a]) => a.name === "ds_delete")).toBe(false);
+    expect(card("file-iris-csv")).toBeTruthy();
+  });
+});
+
+// PCD-1 Group S3 — Names are shown as text (SEC6 · component)
+// Baseline: negatives only (injection payloads), no baseline row
+describe("PCD-1 Group S3 — Names are shown as text", () => {
+  it("file name with html renders as text", async () => {
+    // ❌1 · negative · changed: name <img src=x onerror=alert(1)>.csv
+    // Then: literal text, no element · Demonstrates: no XSS
+    const hostile = "<img src=x onerror=alert(1)>.csv";
+    await showBoth(createdIris({ name: hostile, path: `/work/${hostile}` }));
+    expect(card("file-iris-csv").querySelector("img")).toBeNull();
+    expect(within(card("file-iris-csv")).getAllByText(hostile).length).toBeGreaterThan(0);
   });
 });

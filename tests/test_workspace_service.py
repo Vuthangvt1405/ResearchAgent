@@ -300,3 +300,297 @@ def test_stream_output_strips_ansi_colours():
         )
     )
     assert out == {"kind": "stdout", "text": "notice installed\nnext\n", "image": ""}
+
+
+# ---- PCD-1 helpers: a kernel whose code writes files, a notebook wired like actions.py, a toast recorder
+
+
+class WritingKernels:
+    """FakeKernels whose code `write:<path>` saves that file in files/ (stands in for df.to_csv)."""
+
+    def __init__(self, fake_kernels, failing_codes: tuple[str, ...] = ()):
+        self.fake = fake_kernels
+        self.failing_codes = failing_codes
+
+    def __getattr__(self, name):
+        return getattr(self.fake, name)
+
+    async def execute(self, project_id, code, on_output, files_dir=None):
+        for line in code.splitlines():
+            if line.startswith("write:"):
+                (files_dir / line.removeprefix("write:")).write_text("a,b\n1,2\n")
+        result = await self.fake.execute(project_id, code, on_output, files_dir)
+        if code in self.failing_codes:
+            result.status = "error"
+        return result
+
+
+@pytest.fixture
+def project_p(root):
+    store.create_project("P", root, project_id="p")
+    return "p"
+
+
+@pytest.fixture
+def wired(root, project_p, fake_kernels):
+    """(NotebookService, DatasetService, pushed props) wired the way actions.py wires them."""
+    from researchchat.workspace.dataset_service import DatasetService
+    from researchchat.workspace.service import NotebookService
+
+    pushed = []
+
+    async def record_push(project_id, props):
+        pushed.append(props)
+
+    datasets = DatasetService(root=root)
+    service = NotebookService(WritingKernels(fake_kernels, failing_codes=("write:Iris.csv\nraise",)), root=root,
+                              notify=record_push, datasets=datasets.panel_state, after_run=datasets.sync_created)
+    datasets.created.run_lock = service.run_lock
+    return service, datasets, pushed
+
+
+class ToastRecorder:
+    """Stands in for cl.context.emitter.send_toast."""
+
+    def __init__(self):
+        self.toasts: list[tuple[str, str]] = []
+
+    async def __call__(self, message, toast_type):
+        self.toasts.append((message, toast_type))
+
+
+def created_ids(props) -> list[str]:
+    return [row["id"] for row in props["datasets"] if row["origin"] == "created"]
+
+
+# ---- PCD-1 Group 2 — Runs trigger the scan before the push (AC1, AC2, AC9) · unit (FakeKernels)
+# Baseline: Given project `p`, a fake kernel whose code writes `Iris.csv` · When `run_for_model(p, code)` runs
+
+
+def test_assistant_run_pushes_card_in_same_turn(wired):
+    # G2✅1 · baseline
+    # Changed: —
+    # Then: the final pushed props contain the `Iris.csv` card; `datasets_rev` bumped
+    # Demonstrates: AC1 without reload
+    service, datasets, pushed = wired
+    rev_before = datasets.rev
+
+    run(service.run_for_model("p", "write:Iris.csv"))
+
+    assert created_ids(pushed[-1]) == ["file-iris-csv"]
+    assert pushed[-1]["datasets_rev"] == rev_before + 1
+
+
+def test_user_cell_run_pushes_card(wired):
+    # G2✅2 · edge
+    # Changed: `run_cell` instead of `run_for_model`
+    # Then: same
+    # Demonstrates: user code counts
+    service, _datasets, pushed = wired
+    props = run(service.add_cell("p", run(service.props("p"))["version"], None, "code"))
+    cell_id = props["cells"][-1]["id"]
+
+    run(service.run_cell("p", props["version"], cell_id, "write:results.csv"))
+
+    assert created_ids(pushed[-1]) == ["file-results-csv"]
+
+
+def test_dataset_list_after_run_includes_file(wired):
+    # G2✅3 · edge
+    # Changed: then call `dataset_list`
+    # Then: result has `/work/Iris.csv`
+    # Demonstrates: the assistant sees it
+    from researchchat.tools import dataset_list
+
+    service, datasets, _pushed = wired
+    run(service.run_for_model("p", "write:Iris.csv"))
+
+    _shown, result = run(dataset_list.run({}, svc=datasets, project_id="p"))
+
+    assert "/work/Iris.csv" in result
+
+
+def test_failed_cell_still_lists_written_file(wired):
+    # G2✅4 · edge
+    # Changed: code writes then raises
+    # Then: card present
+    # Demonstrates: partial work isn't hidden
+    service, _datasets, pushed = wired
+
+    run(service.run_for_model("p", "write:Iris.csv\nraise"))
+
+    assert created_ids(pushed[-1]) == ["file-iris-csv"]
+
+
+def test_run_that_writes_nothing_does_not_bump_rev(wired):
+    # G2❌1 · negative
+    # Changed: no file written
+    # Then: `datasets_rev` unchanged
+    # Demonstrates: quiet runs don't re-render the tab
+    service, datasets, _pushed = wired
+    rev_before = datasets.rev
+
+    run(service.run_for_model("p", "print(1)"))
+
+    assert datasets.rev == rev_before
+
+
+def test_scan_error_does_not_fail_the_run(root, project_p, fake_kernels, caplog):
+    # G2❌2 · negative
+    # Changed: scan raises `OSError`
+    # Then: cell result returned, error logged
+    # Demonstrates: a scan problem never breaks the notebook
+    from researchchat.workspace.service import NotebookService
+
+    def broken_scan(project_id):
+        raise OSError("disk went away")
+
+    service = NotebookService(fake_kernels, root=root, after_run=broken_scan)
+
+    result = run(service.run_for_model("p", "1+1"))
+
+    assert result.startswith("[cell 1] out:")
+    assert "Scanning p for created datasets failed" in caplog.text
+
+
+# ---- PCD-1 Group 7 — Missing and the toast (AC7, AC11) · unit + session
+# Baseline: Given `Iris.csv` listed in project `p` · When the file is gone and the workspace is opened
+
+
+@pytest.fixture
+def iris_listed_then_gone(root, wired):
+    service, datasets, _pushed = wired
+    run(service.run_for_model("p", "write:Iris.csv"))
+    (store.project_dir("p", root) / store.FILES_DIR / "Iris.csv").unlink()
+    return datasets
+
+
+def open_workspace(datasets, project_id, toasts) -> None:
+    """What actions.open_for_session does for a project, minus the Chainlit panel."""
+    actions.list_created_datasets_now(datasets, project_id)
+    run(actions.toast_missing_created_files(datasets, project_id, toasts))
+
+
+def test_open_workspace_toasts_missing_files_once(iris_listed_then_gone):
+    # G7✅3 · edge
+    # Changed: `open_for_session`
+    # Then: one `send_toast(…, "warning")` naming `Iris.csv`
+    # Demonstrates: AC11
+    toasts = ToastRecorder()
+
+    open_workspace(iris_listed_then_gone, "p", toasts)
+
+    assert toasts.toasts == [(
+        "Iris.csv was deleted or renamed and can't be found. Its card in the Datasets tab shows missing until you delete it.",
+        "warning",
+    )]
+
+
+def test_switch_project_toasts_for_new_project(root, iris_listed_then_gone, service_factory):
+    # G7✅4 · edge
+    # Changed: `nb_switch_project` to a project with a missing file
+    # Then: one toast
+    # Demonstrates: AC11 on switch
+    store.create_project("Q", root, project_id="q")
+    session = FakeSession(project_id="q")
+    toasts = ToastRecorder()
+
+    props = run(actions.switch_project(service_factory(root), session, "p"))
+    run(actions.toast_missing_created_files(iris_listed_then_gone, props["project"]["id"], toasts))
+
+    assert session.get("project_id") == "p"
+    assert len(toasts.toasts) == 1 and "Iris.csv" in toasts.toasts[0][0]
+
+
+def test_several_missing_files_share_one_toast(root, wired):
+    # G7✅5 · edge
+    # Changed: 3 files gone
+    # Then: one toast naming all 3
+    # Demonstrates: no toast storm
+    service, datasets, _pushed = wired
+    run(service.run_for_model("p", "write:a.csv\nwrite:b.csv\nwrite:c.csv"))
+    for name in ("a.csv", "b.csv", "c.csv"):
+        (store.project_dir("p", root) / store.FILES_DIR / name).unlink()
+    toasts = ToastRecorder()
+
+    open_workspace(datasets, "p", toasts)
+
+    [(message, toast_type)] = toasts.toasts
+    assert toast_type == "warning" and message.startswith("3 created files were deleted or renamed")
+    assert all(name in message for name in ("a.csv", "b.csv", "c.csv"))
+
+
+def test_no_toast_when_nothing_missing(wired):
+    # G7❌1 · negative
+    # Changed: all files present
+    # Then: no toast
+    # Demonstrates: no noise
+    service, datasets, _pushed = wired
+    run(service.run_for_model("p", "write:Iris.csv"))
+    toasts = ToastRecorder()
+
+    open_workspace(datasets, "p", toasts)
+
+    assert toasts.toasts == []
+
+
+def test_toast_not_repeated_within_one_opening(wired, iris_listed_then_gone):
+    # G7❌2 · negative
+    # Changed: later runs/props in the same chat
+    # Then: no second toast
+    # Demonstrates: once per opening
+    service, _datasets, _pushed = wired
+    toasts = ToastRecorder()
+    open_workspace(iris_listed_then_gone, "p", toasts)
+
+    run(service.run_for_model("p", "print(1)"))
+    run(service.props("p"))
+
+    assert len(toasts.toasts) == 1
+
+
+# ---- PCD-1 Group S2 — Project isolation (SEC3) · unit (actions.dispatch)
+# Baseline: Given `Iris.csv` created in project `q`, the chat on project `p` · When `ds_delete` is sent
+
+
+@pytest.fixture
+def file_created_in_q(root, project_p, monkeypatch):
+    from researchchat.workspace.dataset_service import DatasetService
+
+    store.create_project("Q", root, project_id="q")
+    datasets = DatasetService(root=root)
+    monkeypatch.setattr(actions, "datasets", datasets)  # never the real workspaces/ (see tests/test_dataset_service.py)
+    created_file = store.project_dir("q", root) / store.FILES_DIR / "Iris.csv"
+    created_file.write_text("a,b\n")
+    datasets.sync_created("q")
+    return created_file
+
+
+def test_delete_other_projects_created_file_is_not_found(root, file_created_in_q, service_factory):
+    # S2❌1 · negative
+    # Changed: id of `q`'s file
+    # Then: `NOT_FOUND`; `q`'s file and row intact
+    # Demonstrates: ids can't cross projects
+    session = FakeSession(project_id="p")
+
+    with pytest.raises(WorkspaceError) as refused:
+        run(actions.dispatch(service_factory(root), session, "ds_delete", {"dataset_id": "file-iris-csv"}))
+
+    assert refused.value.code == ErrorCode.NOT_FOUND
+    assert file_created_in_q.exists()
+    assert [row["id"] for row in actions.datasets.created.panel_rows("q")] == ["file-iris-csv"]
+
+
+def test_payload_project_field_is_ignored(root, file_created_in_q, service_factory):
+    # S2❌2 · negative
+    # Changed: payload adds `project_id: "q"`
+    # Then: same as ❌1
+    # Demonstrates: project comes from the session
+    session = FakeSession(project_id="p")
+    payload = {"dataset_id": "file-iris-csv", "project_id": "q"}
+
+    with pytest.raises(WorkspaceError) as refused:
+        run(actions.dispatch(service_factory(root), session, "ds_delete", payload))
+
+    assert refused.value.code == ErrorCode.NOT_FOUND
+    assert file_created_in_q.exists()

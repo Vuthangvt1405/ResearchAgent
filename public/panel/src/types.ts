@@ -26,6 +26,8 @@ export interface ErrorProps {
 }
 
 export type DatasetStatus = "queued" | "downloading" | "ready" | "failed" | "missing";
+/** PCD-1: a catalog download, or a data file the project's own code wrote */
+export type DatasetOrigin = "downloaded" | "created";
 
 export interface DatasetFile {
   path: string;
@@ -51,6 +53,8 @@ export interface DatasetProps {
   error: string | null;
   /** Other projects using the same stored copy (NB-4); deleting here then frees nothing */
   shared_with: number;
+  /** PCD-1 AC3: card layout. The server always sends it; optional here so existing test fixtures still type-check (absent = "downloaded") */
+  origin?: DatasetOrigin;
 }
 
 export interface ProjectRef {

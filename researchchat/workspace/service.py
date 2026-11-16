@@ -9,6 +9,7 @@ cell runs, because a run only holds the edit lock at its start and end.
 """
 
 import asyncio
+import logging
 import re
 import time
 from collections.abc import Awaitable, Callable
@@ -29,6 +30,8 @@ OutputKind = Literal["stdout", "stderr", "result", "image", "error"]
 MODEL_OUTPUT_MAX_CHARS = 4000
 PUSH_INTERVAL = 0.25  # seconds between live output pushes
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+
+log = logging.getLogger(__name__)
 
 
 # ---- NotebookProps (server -> panel), plan §4.3 -------------------------------
@@ -60,6 +63,7 @@ class ErrorProps(TypedDict):
 
 
 DatasetPanelStatus = Literal["queued", "downloading", "ready", "failed", "missing"]
+DatasetOrigin = Literal["downloaded", "created"]  # PCD-1: catalog download, or a file the project's code wrote
 
 
 class DatasetFileProps(TypedDict):
@@ -86,6 +90,7 @@ class DatasetProps(TypedDict):
     files: list[DatasetFileProps]  # file list and "Copy load code" (first 200)
     error: str | None  # red line when failed
     shared_with: int  # other projects using the same pool entry; "Also used by N other projects" (NB-4)
+    origin: DatasetOrigin  # PCD-1 AC3: which card layout to use, catalog details or "Created by myself"
 
 
 class NotebookProps(TypedDict):
@@ -101,6 +106,7 @@ class NotebookProps(TypedDict):
 
 Notify = Callable[[str, NotebookProps], Awaitable[None]]
 DatasetState = Callable[[str], tuple[list[DatasetProps], int]]  # project_id -> (datasets, datasets_rev)
+AfterRun = Callable[[str], None]  # project_id -> scan its files/ for created datasets; called after every cell run (PCD-1 A2)
 
 
 # ---- output conversion ----------------------------------------------------------
@@ -174,11 +180,13 @@ class NotebookService:
         root: Path = WORKSPACES_DIR,
         notify: Notify | None = None,
         datasets: DatasetState | None = None,
+        after_run: AfterRun | None = None,
     ):
         self.kernels = kernels
         self.root = root
         self.notify = notify
         self.datasets = datasets  # set by actions.py after DatasetService is built (plan §2.1)
+        self.after_run = after_run  # PCD-1: DatasetService.sync_created, set by actions.py like `datasets`
         self._edit_locks: dict[str, asyncio.Lock] = {}
         self._run_locks: dict[str, asyncio.Lock] = {}
         self._running: dict[str, str] = {}  # project_id -> running cell id
@@ -192,6 +200,10 @@ class NotebookService:
 
     def _run_lock(self, pid: str) -> asyncio.Lock:
         return self._run_locks.setdefault(pid, asyncio.Lock())
+
+    def run_lock(self, project_id: str) -> asyncio.Lock:
+        """The project's run lock, for CreatedDatasets.delete: no cell runs between its check and unlink (PCD-1 SEC2)."""
+        return self._run_lock(project_id)
 
     def _props(self, pid: str, nb: NotebookNode, error: WorkspaceError | None = None) -> NotebookProps:
         project = store.get_project(pid, self.root)
@@ -332,6 +344,8 @@ class NotebookService:
                     self._running.pop(pid, None)
                     self._live.pop(cell_id, None)
 
+                self._scan_created_datasets(pid)  # before save_result's push, so that push shows the new card (AC1)
+
                 def save_result(nb: NotebookNode) -> None:
                     try:
                         cell = store.find_cell(nb, cell_id)
@@ -346,6 +360,15 @@ class NotebookService:
         finally:
             if cell_id in self._queued.get(pid, []):
                 self._queued[pid].remove(cell_id)
+
+    def _scan_created_datasets(self, pid: str) -> None:
+        """Let the after-run hook list files the cell wrote; a scan problem never fails the run (G2❌2)."""
+        if self.after_run is None:
+            return
+        try:
+            self.after_run(pid)
+        except Exception:
+            log.exception("Scanning %s for created datasets failed", pid)
 
     async def run_all(self, project_id: str, version: int) -> NotebookProps:
         """Run code cells top to bottom, skip notes, stop at the first error."""
