@@ -291,13 +291,13 @@ class DatasetService:
     def _lock(self) -> asyncio.Lock:
         return self.pool.lock
 
-    def _load(self, pid: str) -> list[ProjectDataset]:
-        if pid not in self._datasets:
-            self._datasets[pid] = ds.load_project_datasets(pid, self.root)
-        return self._datasets[pid]
+    def _load(self, project_id: str) -> list[ProjectDataset]:
+        if project_id not in self._datasets:
+            self._datasets[project_id] = ds.load_project_datasets(project_id, self.root)
+        return self._datasets[project_id]
 
-    def _save(self, pid: str) -> None:
-        ds.save_project_datasets(pid, self._load(pid), self.root)
+    def _save(self, project_id: str) -> None:
+        ds.save_project_datasets(project_id, self._load(project_id), self.root)
         self.rev += 1
 
     def _entry(self, dataset: ProjectDataset) -> PoolEntry:
@@ -308,15 +308,15 @@ class DatasetService:
                               name=dataset.id, url=None, license=None)
         return entry
 
-    def _find_dataset(self, pid: str, source: Source, source_id: str) -> ProjectDataset | None:
-        for dataset in self._load(pid):
+    def _find_dataset(self, project_id: str, source: Source, source_id: str) -> ProjectDataset | None:
+        for dataset in self._load(project_id):
             entry = self.pool.get_entry(dataset.pool_entry)
             if entry is not None and entry.source == source and entry.source_id == source_id:
                 return dataset
         return None
 
-    def _jobs_for(self, pid: str, dataset_id: str) -> list[Job]:
-        return [j for j in self._jobs if pid in j.waiters and j.waiters[pid].dataset_id == dataset_id]
+    def _jobs_for(self, project_id: str, dataset_id: str) -> list[Job]:
+        return [j for j in self._jobs if project_id in j.waiters and j.waiters[project_id].dataset_id == dataset_id]
 
     def _jobs_on_entry(self, entry_id: str) -> list[Job]:
         return [j for j in self._jobs if j.pool_entry == entry_id]
@@ -328,16 +328,16 @@ class DatasetService:
         waiting = [j for j in self._jobs if not j.running]
         return waiting.index(job) + 1
 
-    def _missing(self, pid: str, dataset: ProjectDataset) -> list[str]:
+    def _missing(self, project_id: str, dataset: ProjectDataset) -> list[str]:
         """Files the project should see but can't: link gone, or pooled bytes gone or changed (AC28)."""
         entry = self._entry(dataset)
-        return [p for p in dataset.files if not self.pool.is_linked(pid, dataset.id, entry, p)]
+        return [p for p in dataset.files if not self.pool.is_linked(project_id, dataset.id, entry, p)]
 
-    def _status(self, pid: str, dataset: ProjectDataset) -> DatasetStatus:
-        jobs = self._jobs_for(pid, dataset.id)
+    def _status(self, project_id: str, dataset: ProjectDataset) -> DatasetStatus:
+        jobs = self._jobs_for(project_id, dataset.id)
         if jobs:
             return "downloading" if any(j.running for j in jobs) else "queued"
-        if dataset.status == "ready" and self._missing(pid, dataset):
+        if dataset.status == "ready" and self._missing(project_id, dataset):
             return "missing"
         return dataset.status
 
@@ -345,10 +345,10 @@ class DatasetService:
         entry = self._entry(dataset)
         return sum(f.size for f in (entry.file(p) for p in dataset.files) if f is not None)
 
-    def _done_bytes(self, pid: str, dataset: ProjectDataset) -> int:
+    def _done_bytes(self, project_id: str, dataset: ProjectDataset) -> int:
         entry = self._entry(dataset)
-        jobs = self._jobs_for(pid, dataset.id)
-        if any(j.waiters[pid].switches_entry for j in jobs):
+        jobs = self._jobs_for(project_id, dataset.id)
+        if any(j.waiters[project_id].switches_entry for j in jobs):
             return sum(j.done_bytes for j in jobs)
         ready = sum(f.size for f in (entry.file(p) for p in dataset.files) if f is not None and f.ready)
         return ready + sum(j.done_bytes for j in jobs)
@@ -365,18 +365,18 @@ class DatasetService:
                 users.setdefault(dataset.pool_entry, set()).add(project.id)
         return users
 
-    async def _push(self, pid: str) -> None:
+    async def _push(self, project_id: str) -> None:
         """Send fresh props to every open panel of the project; errors only logged."""
         if not (self.props and self.notify):
             return
         try:
-            await self.notify(pid, await self.props(pid))
+            await self.notify(project_id, await self.props(project_id))
         except Exception:
-            log.exception("Dataset panel push failed for %s", pid)
+            log.exception("Dataset panel push failed for %s", project_id)
 
-    async def _push_all(self, pids: Iterable[str]) -> None:
-        for pid in sorted(set(pids)):
-            await self._push(pid)
+    async def _push_all(self, project_ids: Iterable[str]) -> None:
+        for project_id in sorted(set(project_ids)):
+            await self._push(project_id)
 
     async def _wait_ready(self) -> None:
         try:
@@ -393,16 +393,16 @@ class DatasetService:
             files=[PlannedFile(f.path, f.size, f.checksum, sources.file_url(entry.source, entry.source_id, entry.revision, f.path)) for f in files],
         )
 
-    def _started(self, pid: str, dataset: ProjectDataset, job: Job | None, files: list[PlannedFile], from_pool: bool) -> DownloadStarted:
+    def _started(self, project_id: str, dataset: ProjectDataset, job: Job | None, files: list[PlannedFile], from_pool: bool) -> DownloadStarted:
         status: DatasetStatus = "ready" if job is None else ("downloading" if job.running else "queued")
-        is_update = job is not None and job.waiters[pid].switches_entry
+        is_update = job is not None and job.waiters[project_id].switches_entry
         return {
             "dataset_id": dataset.id,
             "status": status,
             "already_downloaded": job is None,
             "position_in_queue": 0 if job is None else self._queue_position(job),
             "size_bytes": sum(f.size for f in files) if is_update else self._size(dataset),
-            "download_bytes": 0 if job is None else sum(j.total for j in self._jobs_for(pid, dataset.id)),
+            "download_bytes": 0 if job is None else sum(j.total for j in self._jobs_for(project_id, dataset.id)),
             "path": ds.kernel_path(dataset.id),
             "files": [{"path": ds.kernel_path(dataset.id, f.path), "size": f.size} for f in files[:VIEW_FILES_MAX]],
             "license": self._entry(dataset).license,
@@ -481,22 +481,22 @@ class DatasetService:
 
     async def _carry_out(self, request: DownloadRequest, dataset: ProjectDataset | None, fetch: FetchPlan) -> DownloadStarted:
         """Write it all: pool entry, the project's dataset, links, and the jobs it waits for."""
-        pid, entry = request.project_id, fetch.target.entry
+        project_id, entry = request.project_id, fetch.target.entry
         self._store_entry(fetch)
         dataset = dataset or self._new_dataset(request, entry)
-        newly_linked = self._show_ready_files(pid, dataset, fetch, request.files)
+        newly_linked = self._show_ready_files(project_id, dataset, fetch, request.files)
         job = self._queue_downloads(request, dataset, fetch)
         if fetch.has_downloads:
             dataset.status = dataset.status if dataset.status == "ready" else "queued"
             dataset.error = None
         self.pool.save_index()
-        self._save(pid)
+        self._save(project_id)
         self._schedule()
         shown_job = job or (fetch.joined[-1] if fetch.joined else None)
         shown_files = list(job.files if job and not fetch.joined else fetch.target.plan.files)
         from_pool = bool(newly_linked) and shown_job is None  # linked from the pool, nothing fetched
-        result = self._started(pid, dataset, shown_job, shown_files, from_pool)
-        await self._push(pid)
+        result = self._started(project_id, dataset, shown_job, shown_files, from_pool)
+        await self._push(project_id)
         return result
 
     def _store_entry(self, fetch: FetchPlan) -> None:
@@ -508,20 +508,20 @@ class DatasetService:
             if entry.file(f.path) is None:
                 entry.files.append(PoolFile(f.path, f.size, f.checksum))
 
-    def _show_ready_files(self, pid: str, dataset: ProjectDataset, fetch: FetchPlan, files: list[str] | None) -> list[str]:
+    def _show_ready_files(self, project_id: str, dataset: ProjectDataset, fetch: FetchPlan, files: list[str] | None) -> list[str]:
         """Link the ready pooled files now; switch versions now when nothing is left to fetch. Newly linked paths."""
         entry = fetch.target.entry
         if fetch.switches_entry and fetch.has_downloads:
             return []  # the old version stays until the new one is complete
         if fetch.switches_entry:
-            self._switch_entry(pid, dataset, entry, fetch.wanted)
+            self._switch_entry(project_id, dataset, entry, fetch.wanted)
         else:
             self._merge_selection(dataset, files)
             dataset.files = sorted(set(dataset.files) | set(fetch.wanted))
-        visible_before = set(fetch.wanted) - set(self._missing(pid, dataset))
-        self.pool.link_files(pid, dataset.id, entry, fetch.wanted)
+        visible_before = set(fetch.wanted) - set(self._missing(project_id, dataset))
+        self.pool.link_files(project_id, dataset.id, entry, fetch.wanted)
         newly_linked = [p for p in fetch.wanted if p not in visible_before and p in entry.ready_paths()]
-        if not fetch.has_downloads and not self._missing(pid, dataset):
+        if not fetch.has_downloads and not self._missing(project_id, dataset):
             dataset.status, dataset.error = "ready", None
             if newly_linked or dataset.linked_at is None:
                 dataset.linked_at = _now()
@@ -529,14 +529,14 @@ class DatasetService:
 
     def _queue_downloads(self, request: DownloadRequest, dataset: ProjectDataset, fetch: FetchPlan) -> Job | None:
         """Join the jobs that already fetch some of these files; queue one job for the rest (AC17)."""
-        pid = request.project_id
+        project_id = request.project_id
         waiter = Waiter(dataset.id, request.session_id, set(fetch.wanted), fetch.switches_entry)
         for job in fetch.joined:
-            job.waiters.setdefault(pid, waiter)
+            job.waiters.setdefault(project_id, waiter)
         if not fetch.to_fetch:
             return None
         self._job_ids += 1
-        job = Job(self._job_ids, fetch.target.entry.id, fetch.to_fetch, {pid: waiter})
+        job = Job(self._job_ids, fetch.target.entry.id, fetch.to_fetch, {project_id: waiter})
         self._jobs.append(job)
         return job
 
@@ -603,7 +603,7 @@ class DatasetService:
     def _pool_covers(self, entry: PoolEntry, files: list[str] | None) -> bool:
         """Some project asked for at least these patterns of this entry, so its file list is complete for them."""
         users = self._users_by_entry().get(entry.id, set())
-        selections = [d.selection for pid in users for d in self._load(pid) if d.pool_entry == entry.id]
+        selections = [d.selection for project_id in users for d in self._load(project_id) if d.pool_entry == entry.id]
         return any(self._selection_covers(s, files) for s in selections)
 
     def _new_dataset(self, request: DownloadRequest, entry: PoolEntry) -> ProjectDataset:
@@ -616,14 +616,14 @@ class DatasetService:
         datasets.append(dataset)
         return dataset
 
-    def _switch_entry(self, pid: str, dataset: ProjectDataset, entry: PoolEntry, wanted: list[str]) -> None:
+    def _switch_entry(self, project_id: str, dataset: ProjectDataset, entry: PoolEntry, wanted: list[str]) -> None:
         """update: true — move this project (only) to another pooled version, then drop the old one if unused."""
         old_entry = dataset.pool_entry
-        self.pool.unlink_dataset(pid, dataset.id)
+        self.pool.unlink_dataset(project_id, dataset.id)
         dataset.pool_entry, dataset.files = entry.id, sorted(wanted)
-        self.pool.link_files(pid, dataset.id, entry, wanted)
+        self.pool.link_files(project_id, dataset.id, entry, wanted)
         self.pool.save_index()  # the new version may be new to the index; the project row points to it (FK)
-        self._save(pid)
+        self._save(project_id)
         self._remove_entry_if_unused(old_entry)
 
     @staticmethod
@@ -654,16 +654,16 @@ class DatasetService:
 
     # ---- reading ----
 
-    def _view(self, pid: str, dataset: ProjectDataset, users: dict[str, set[str]]) -> DatasetRecordView:
-        status = self._status(pid, dataset)
+    def _view(self, project_id: str, dataset: ProjectDataset, users: dict[str, set[str]]) -> DatasetRecordView:
+        status = self._status(project_id, dataset)
         entry = self._entry(dataset)
-        jobs = self._jobs_for(pid, dataset.id)
+        jobs = self._jobs_for(project_id, dataset.id)
         waiting = [self._queue_position(j) for j in jobs if not j.running]
         return {
             "dataset_id": dataset.id,
             "name": entry.name,
             "status": status,
-            "done_bytes": self._done_bytes(pid, dataset) if status == "downloading" else None,
+            "done_bytes": self._done_bytes(project_id, dataset) if status == "downloading" else None,
             "position_in_queue": min(waiting) if status == "queued" and waiting else None,
             "size_bytes": self._size(dataset),
             "license": entry.license,
@@ -671,10 +671,10 @@ class DatasetService:
             "path": ds.kernel_path(dataset.id),
             "files": [ds.kernel_path(dataset.id, p) for p in dataset.files[:VIEW_FILES_MAX]],
             "file_count": len(dataset.files),
-            "missing_files": self._missing(pid, dataset) if status == "missing" else [],
+            "missing_files": self._missing(project_id, dataset) if status == "missing" else [],
             "downloaded_at": dataset.linked_at,
             "error": dataset.error,
-            "shared_with": len(users.get(dataset.pool_entry, set()) - {pid}),
+            "shared_with": len(users.get(dataset.pool_entry, set()) - {project_id}),
             "origin": "downloaded",
         }
 
@@ -759,20 +759,20 @@ class DatasetService:
             self._jobs.remove(job)
         self._remove_job_folder(job)
 
-    def _drop_unfinished(self, pid: str, dataset_id: str) -> None:
+    def _drop_unfinished(self, project_id: str, dataset_id: str) -> None:
         """After a cancel: keep what the project can already use (its current version); no files → no dataset."""
-        datasets = self._load(pid)
+        datasets = self._load(project_id)
         dataset = ds.find_project_dataset(datasets, dataset_id)
         if dataset is None:
             return
         ready = self._entry(dataset).ready_paths()
         dataset.files = [p for p in dataset.files if p in ready]
-        if dataset.files and not self._jobs_for(pid, dataset_id):
+        if dataset.files and not self._jobs_for(project_id, dataset_id):
             dataset.status = "ready"
         elif not dataset.files:
-            self.pool.unlink_dataset(pid, dataset_id)
+            self.pool.unlink_dataset(project_id, dataset_id)
             datasets.remove(dataset)
-        self._save(pid)
+        self._save(project_id)
 
     # ---- background side ----
 
@@ -787,16 +787,16 @@ class DatasetService:
         finally:
             self._ready.set()
 
-    def _fail_stale(self, pid: str) -> None:
+    def _fail_stale(self, project_id: str) -> None:
         try:
-            datasets = self._load(pid)
+            datasets = self._load(project_id)
             stale = [d for d in datasets if d.status in ("queued", "downloading")]
             for d in stale:
                 d.status, d.error = "failed", STOPPED_DURING_DOWNLOAD
             if stale:
-                self._save(pid)
+                self._save(project_id)
         except Exception:
-            log.exception("Dataset cleanup failed for project %s", pid)
+            log.exception("Dataset cleanup failed for project %s", project_id)
 
     def _schedule(self) -> None:
         """Start waiting jobs while slots are free; one job per pool entry at a time (G6✅6)."""
@@ -901,18 +901,18 @@ class DatasetService:
             pool_file.size, pool_file.checksum = f.size, f.checksum
             self.pool.store_file(entry, pool_file, downloaded)
             self.pool.save_index()
-            for pid, waiter in job.waiters.items():
-                dataset = ds.find_project_dataset(self._load(pid), waiter.dataset_id)
+            for project_id, waiter in job.waiters.items():
+                dataset = ds.find_project_dataset(self._load(project_id), waiter.dataset_id)
                 if dataset is not None and not waiter.switches_entry and f.path in waiter.paths:
-                    self.pool.link_files(pid, dataset.id, entry, [f.path])
+                    self.pool.link_files(project_id, dataset.id, entry, [f.path])
 
     async def _finish_ready(self, job: Job) -> None:
         async with self._lock:
             entry = self.pool.get_entry(job.pool_entry)
-            finished = [(pid, w) for pid, w in job.waiters.items() if self._finish_waiter(pid, w, entry)]
+            finished = [(project_id, w) for project_id, w in job.waiters.items() if self._finish_waiter(project_id, w, entry)]
         await self._push_all(job.waiters)
-        for pid, waiter in finished:
-            dataset = ds.find_project_dataset(self._load(pid), waiter.dataset_id)
+        for project_id, waiter in finished:
+            dataset = ds.find_project_dataset(self._load(project_id), waiter.dataset_id)
             if dataset is None:
                 continue
             size, did = human_size(self._size(dataset)), dataset.id
@@ -922,30 +922,30 @@ class DatasetService:
                 f"- {did}: ready, {size}, files at {ds.kernel_path(did)}/",
             )
 
-    def _finish_waiter(self, pid: str, waiter: Waiter, entry: PoolEntry | None) -> bool:
+    def _finish_waiter(self, project_id: str, waiter: Waiter, entry: PoolEntry | None) -> bool:
         """Under the lock: one project's part of a finished job. True when its dataset is now ready."""
-        dataset = ds.find_project_dataset(self._load(pid), waiter.dataset_id)
-        if dataset is None or entry is None or self._jobs_for(pid, waiter.dataset_id):
+        dataset = ds.find_project_dataset(self._load(project_id), waiter.dataset_id)
+        if dataset is None or entry is None or self._jobs_for(project_id, waiter.dataset_id):
             return False
         if waiter.switches_entry:
             if not waiter.paths <= entry.ready_paths():
                 return False
-            self._switch_entry(pid, dataset, entry, sorted(waiter.paths))
+            self._switch_entry(project_id, dataset, entry, sorted(waiter.paths))
         dataset.status, dataset.error, dataset.linked_at = "ready", None, _now()
-        self._save(pid)
+        self._save(project_id)
         return True
 
     async def _finish_failed(self, job: Job, reason: str) -> None:
         async with self._lock:
             failed = []
-            for pid, waiter in job.waiters.items():
-                dataset = ds.find_project_dataset(self._load(pid), waiter.dataset_id)
+            for project_id, waiter in job.waiters.items():
+                dataset = ds.find_project_dataset(self._load(project_id), waiter.dataset_id)
                 if dataset is None:
                     continue
                 # A failed update keeps the version the project already has (A15); asking again shows it ready
                 dataset.status = "failed"
                 dataset.error = reason[:200]
-                self._save(pid)
+                self._save(project_id)
                 failed.append((waiter, self._entry(dataset).name))
             if job.waiters and all(w.switches_entry for w in job.waiters.values()):
                 self._remove_entry_if_unused(job.pool_entry)
