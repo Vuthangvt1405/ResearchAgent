@@ -43,6 +43,7 @@ DRIVE_RE = re.compile(r"^[A-Za-z]:")
 
 Source = Literal["huggingface", "zenodo"]
 StoredStatus = Literal["queued", "downloading", "ready", "failed"]
+ORIGIN_DOWNLOADED = "downloaded"  # project_datasets.origin of a catalog download (PCD-1)
 DatasetStatus = Literal["queued", "downloading", "ready", "failed", "missing"]  # missing is computed on read
 
 
@@ -187,7 +188,10 @@ def save_project_datasets(project_id: str, datasets: list[ProjectDataset], root:
     with database_for(root).begin() as connection:
         project_pk = _project_pk(connection, project_id)
         entry_pks = _pool_entry_pks(connection, {dataset.pool_entry for dataset in datasets})
-        connection.execute(delete(project_datasets).where(project_datasets.c.project_pk == project_pk))
+        # Created rows share this table (PCD-1); a replace-all of every row would wipe them
+        connection.execute(delete(project_datasets).where(
+            project_datasets.c.project_pk == project_pk, project_datasets.c.origin == ORIGIN_DOWNLOADED
+        ))
         for position, dataset in enumerate(datasets):
             _insert_project_dataset(connection, project_pk, entry_pks[dataset.pool_entry], position, dataset)
 
@@ -205,7 +209,7 @@ def _project_datasets_query(project_id: str) -> Select:
         )
         .join(projects, projects.c.pk == project_datasets.c.project_pk)
         .join(pool_entries, pool_entries.c.pk == project_datasets.c.pool_entry_pk)
-        .where(projects.c.slug == project_id)
+        .where(projects.c.slug == project_id, project_datasets.c.origin == ORIGIN_DOWNLOADED)
         .order_by(project_datasets.c.position)
     )
 

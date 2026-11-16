@@ -6,6 +6,7 @@ Each callback returns NotebookProps, with `error` set when rejected.
 
 import asyncio
 import logging
+from collections.abc import Awaitable, Callable
 
 import chainlit as cl
 from chainlit.context import init_ws_context
@@ -19,12 +20,15 @@ from researchchat.config import (
 )
 from researchchat.workspace import ErrorCode, WorkspaceError
 from researchchat.workspace import store
+from researchchat.workspace.created_datasets import missing_notice
 from researchchat.workspace.dataset_service import DatasetService, DatasetsSettings
 from researchchat.workspace.kernels import KernelRegistry
 from researchchat.workspace.panel import PanelRegistry, skip_session
 from researchchat.workspace.service import NotebookService
 
 log = logging.getLogger(__name__)
+
+SendToast = Callable[[str, str], Awaitable[None]]  # (message, type) -> shown; Chainlit's emitter.send_toast
 
 kernels = KernelRegistry()
 panels = PanelRegistry()
@@ -78,6 +82,8 @@ datasets = DatasetService(
     send=chats.send,
 )
 service.datasets = datasets.panel_state  # panel props include the datasets (plan §2.1)
+service.after_run = datasets.sync_created  # every cell run lists the data files it wrote (PCD-1 A2)
+datasets.created.run_lock = service.run_lock  # a created-file delete waits for the running cell (PCD-1 SEC2)
 
 SESSION_KEY = "project_id"
 
@@ -223,6 +229,8 @@ async def _callback(action: cl.Action):
     if action.name in ("nb_switch_project", "nb_create_project") and "project" in result and not result.get("error"):
         # Move this chat's panel to the new project
         await panels.open(result["project"]["id"], result)
+        if action.name == "nb_switch_project":
+            await toast_missing_created_files(datasets, result["project"]["id"], cl.context.emitter.send_toast)
     return result
 
 
@@ -230,11 +238,31 @@ for _name in FIELDS:
     cl.action_callback(_name)(_callback)
 
 
+async def toast_missing_created_files(dataset_service: DatasetService, project_id: str, send_toast: SendToast) -> None:
+    """One warning toast naming the project's created files that can't be found (PCD-1 AC11, D5).
+
+    Called once when a chat opens a workspace (start or switch), so it shows once per opening.
+    """
+    missing_names = dataset_service.created.missing_names(project_id)
+    if missing_names:
+        await send_toast(missing_notice(missing_names), "warning")
+
+
+def list_created_datasets_now(dataset_service: DatasetService, project_id: str) -> None:
+    """Scan once on opening, so files made before this feature existed show without running a cell (PCD-1 A6)."""
+    try:
+        dataset_service.sync_created(project_id)
+    except Exception:
+        log.exception("Scanning %s for created datasets failed", project_id)
+
+
 async def open_for_session() -> None:
     """Open this chat's panel on its project (called at chat start)."""
     pid = session_project(cl.user_session)
+    list_created_datasets_now(datasets, pid)
     await panels.open(pid, await service.props(pid))
     chats.register(cl.context.session)
+    await toast_missing_created_files(datasets, pid, cl.context.emitter.send_toast)
 
 
 def close_for_session() -> None:

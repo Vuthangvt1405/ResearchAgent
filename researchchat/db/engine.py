@@ -8,6 +8,8 @@ Plan: docs/plans/sqlite-alembic-storage-plan.md §3.3, §4.1, §6
 """
 
 import threading
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 from alembic import command
@@ -115,10 +117,38 @@ def check_database_readable(engine: Engine) -> None:
 def upgrade_to_latest(engine: Engine) -> None:
     """Run Alembic `upgrade head` on this engine; refuse a revision this code doesn't know."""
     config = alembic_config()
-    with engine.begin() as connection:
+    with engine.connect() as connection, foreign_keys_off(connection), connection.begin():
         refuse_unknown_revision(connection, ScriptDirectory.from_config(config), str(engine.url.database))
         config.attributes["connection"] = connection
         command.upgrade(config, "head")
+        refuse_broken_foreign_keys(connection, str(engine.url.database))
+
+
+@contextmanager
+def foreign_keys_off(connection: Connection) -> Iterator[None]:
+    """Foreign keys off while migrations run, back on after.
+
+    Batch migrations drop and recreate a table; with foreign keys on, that DROP
+    cascades into child tables (0002 would empty project_dataset_files). SQLite
+    ignores this PRAGMA inside a transaction, so it is set before Alembic's.
+    """
+    connection.exec_driver_sql("PRAGMA foreign_keys=OFF")
+    connection.commit()
+    try:
+        yield
+    finally:
+        connection.exec_driver_sql("PRAGMA foreign_keys=ON")
+        connection.commit()
+
+
+def refuse_broken_foreign_keys(connection: Connection, database_name: str) -> None:
+    """Roll the upgrade back when a migration left a row pointing at nothing."""
+    broken_references = connection.exec_driver_sql("PRAGMA foreign_key_check").all()
+    if broken_references:
+        raise DatabaseUnusable(
+            f"Upgrading {database_name} would break {len(broken_references)} links between rows, "
+            "so it was not changed. Please report this, with the app log."
+        )
 
 
 def alembic_config() -> Config:

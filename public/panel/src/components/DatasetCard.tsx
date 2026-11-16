@@ -13,7 +13,30 @@ import { safeHref } from "@/lib/safeHref";
 import type { DatasetProps } from "@/types";
 
 const DS_BADGE: Record<string, string> = { queued: "Queued", downloading: "Downloading", failed: "Failed", missing: "Files missing" };
-const SOURCES: Record<string, string> = { huggingface: "Hugging Face", zenodo: "Zenodo", kaggle: "Kaggle" };
+const SOURCES: Record<string, string> = { huggingface: "Hugging Face", zenodo: "Zenodo", kaggle: "Kaggle", created: "Created by myself" };
+
+/** PCD-1: a file the project's own code wrote (AC3) */
+export function isCreated(d: DatasetProps): boolean {
+  return d.origin === "created";
+}
+
+/** PCD-1 AC8: the Delete confirmation for a created file: permanent, no other copy, can be made again */
+export function createdDeleteText(d: DatasetProps): string {
+  return `Delete ${d.name}? The file is removed from this project for good, and the app keeps no other copy. You can make it again by re-running the code or asking the assistant.`;
+}
+
+/** PCD-1 AC7: the red line on a missing created card (the download text doesn't fit: nothing to re-download) */
+export function createdMissingText(d: DatasetProps): string {
+  return `${d.name} was deleted or renamed outside the Datasets tab and can't be found.`;
+}
+
+const DOWNLOAD_MISSING_TEXT = "Some files were deleted. Ask the assistant to download it again; only the missing files are fetched.";
+
+/** The Delete confirmation of a downloaded dataset: what it frees, or who else still uses it */
+const downloadDeleteText = (d: DatasetProps) =>
+  d.shared_with > 0
+    ? `Delete ${d.name} from this project? ${alsoUsedBy(d.shared_with)}: frees 0 MB here.`
+    : `Delete ${d.name} and free ${fmtBytes(d.size_bytes)}?`;
 
 /** Renders per card id, for the "only the changed card re-renders" test (G3✅2) */
 export const cardRenders: Record<string, number> = {};
@@ -49,6 +72,8 @@ function DatasetCardView({ d, inserting, onCancel, onDelete, onInsert }: Dataset
   const setOpen = (on: boolean) => usePanel.setState({ dsOpen: { ...usePanel.getState().dsOpen, [d.id]: on } });
   const files = d.files || [];
   const detailsId = `rcds-details-${d.id}`;
+  const created = isCreated(d);
+  const shownPath = created ? d.path : `${d.path}/`; // a created dataset is one file, not a folder (AC1)
   return (
     <Card className={`rcds-card ${d.status}${open ? " open" : ""}`} data-dataset-id={d.id}>
       <div className="rcds-row">
@@ -87,16 +112,20 @@ function DatasetCardView({ d, inserting, onCancel, onDelete, onInsert }: Dataset
 
       {active && <Progress className="rcds-progress" value={d.status === "queued" ? 0 : pct} aria-label="Download progress" />}
       {d.status === "failed" && d.error && <div className="rcds-error">{d.error}</div>}
-      {d.status === "missing" && <div className="rcds-error">Some files were deleted. Ask the assistant to download it again; only the missing files are fetched.</div>}
+      {d.status === "missing" && <div className="rcds-error">{created ? createdMissingText(d) : DOWNLOAD_MISSING_TEXT}</div>}
 
       {open && (
         <div className="rcds-details" id={detailsId}>
           <dl className="rcds-facts">
-            <dt>Licence</dt>
-            <dd>{d.license || "Not stated"}</dd>
+            {!created && (
+              <>
+                <dt>Licence</dt>
+                <dd>{d.license || "Not stated"}</dd>
+              </>
+            )}
             <dt>Files</dt>
             <dd>{d.file_count}</dd>
-            {d.shared_with > 0 && (
+            {!created && d.shared_with > 0 && (
               <>
                 <dt>Shared</dt>
                 <dd>{alsoUsedBy(d.shared_with)}</dd>
@@ -108,7 +137,7 @@ function DatasetCardView({ d, inserting, onCancel, onDelete, onInsert }: Dataset
                 <dd>{new Date(d.downloaded_at).toLocaleString()}</dd>
               </>
             )}
-            {href && (
+            {!created && href && (
               <>
                 <dt>Source</dt>
                 <dd><a href={href} target="_blank" rel="noopener noreferrer">Open source page</a></dd>
@@ -118,8 +147,8 @@ function DatasetCardView({ d, inserting, onCancel, onDelete, onInsert }: Dataset
 
           {!active && (
             <div className="rcds-path" title="Path in notebook code">
-              <span>{d.path}/</span>
-              <Button variant="ghost" size="sm" className="rcds-iconbtn" title="Copy path" aria-label="Copy dataset path" onClick={() => copy("path", `${d.path}/`)}>
+              <span>{shownPath}</span>
+              <Button variant="ghost" size="sm" className="rcds-iconbtn" title="Copy path" aria-label="Copy dataset path" onClick={() => copy("path", shownPath)}>
                 {copied === "path" ? <Check size={13} /> : <Copy size={13} />}
               </Button>
             </div>
@@ -154,9 +183,7 @@ function DatasetCardView({ d, inserting, onCancel, onDelete, onInsert }: Dataset
           {confirming && (
             <div className="rcds-confirm">
               <span style={{ flex: 1 }}>
-                {d.shared_with > 0
-                  ? `Delete ${d.name} from this project? ${alsoUsedBy(d.shared_with)}: frees 0 MB here.`
-                  : `Delete ${d.name} and free ${fmtBytes(d.size_bytes)}?`}
+                {created ? createdDeleteText(d) : downloadDeleteText(d)}
               </span>
               <Button variant="destructive" size="sm" className="rcds-btn" onClick={() => { setConfirming(false); onDelete(d.id); }}>Delete</Button>
               <Button variant="outline" size="sm" className="rcds-btn" onClick={() => setConfirming(false)}>Keep</Button>

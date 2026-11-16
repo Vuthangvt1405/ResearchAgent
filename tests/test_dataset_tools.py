@@ -35,6 +35,7 @@ def view(id, status, done=None, position=None, size=1000):
         "dataset_id": id, "name": id, "status": status, "done_bytes": done, "position_in_queue": position,
         "size_bytes": size, "license": "mit", "url": None, "path": f"/work/datasets/{id}", "files": [],
         "file_count": 1, "missing_files": [], "downloaded_at": None, "error": None, "shared_with": 0,
+        "origin": "downloaded",
     }
 
 
@@ -162,3 +163,26 @@ def test_model_cannot_skip_approval_with_arguments(tmp_path):
         assert asked == [300_000_000] and svc._jobs == []
 
     run(scenario())
+
+
+# ---- PCD-1 Group 8 — One list, two kinds (AC3, AC9) · unit
+# Baseline: Given the tool's service lists a downloaded dataset and a created `Iris.csv` · When `dataset_list` runs
+
+
+def test_dataset_list_line_says_created_in_this_project(tmp_path):
+    # G8✅4 · edge
+    # Changed: a created view in the list
+    # Then: line `- Iris.csv · ready · 4.6 KB · created in this project · `/work/Iris.csv``
+    # Demonstrates: the model knows the file's origin
+    svc = FakeDatasetService()
+    created_view = view("file-iris-csv", "ready", size=4551) | {
+        "name": "Iris.csv", "path": "/work/Iris.csv", "license": None, "origin": "created",
+    }
+    svc.records = [view("hf-x", "ready"), created_view]
+
+    shown, result = run(dataset_list.run({}, svc=svc, project_id="p1"))
+
+    assert shown.splitlines()[1] == "- Iris.csv · ready · 4.6 KB · created in this project · `/work/Iris.csv`"
+    assert shown.splitlines()[0].startswith("- hf-x · ready")
+    assert [d["origin"] for d in json.loads(result)] == ["downloaded", "created"]
+    assert "created in this project" in dataset_list.DEFINITION["function"]["description"]

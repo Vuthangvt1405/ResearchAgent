@@ -271,3 +271,41 @@ def test_delete_ignores_tampered_rows(root, pool):
     assert not folder.exists()
     assert other.is_dir()
     assert pool_file.read_text() == "abc"
+
+
+# ---- PCD-1 Group 10 — Storage: both kinds in one table (D2, §3.3) · integration (real SQLite)
+# Baseline: Given project `p1` with a downloaded dataset `hf-x` and a created row `file-iris-csv` · When downloaded datasets are saved or loaded
+
+
+@pytest.fixture
+def project_with_both_kinds(root):
+    from researchchat.workspace import created_datasets_store as cds
+
+    pool = DatasetPool(root)
+    pool.add_entry(PoolEntry("hf-x@1", "huggingface", "o/x", None, "X", None, None, [PoolFile("a.csv", 1, None, True)]))
+    pool.save_index()
+    ds.save_project_datasets("p1", [ds.ProjectDataset("hf-x", "hf-x@1", None, "ready", ["a.csv"])], root)
+    snapshot = cds.FileSnapshot(path="Iris.csv", size_bytes=4551, mtime_ns=1, inode=1)
+    cds.insert_created_dataset("p1", cds.CreatedDataset("file-iris-csv", snapshot, "t", "t"), root)
+    return root
+
+
+def test_saving_downloaded_datasets_keeps_created_rows(project_with_both_kinds):
+    # G10❌1 · negative
+    # Changed: `save_project_datasets(p, [...])`
+    # Then: `file-iris-csv` row still there
+    # Demonstrates: a download can't wipe created cards
+    from researchchat.workspace import created_datasets_store as cds
+
+    root = project_with_both_kinds
+    ds.save_project_datasets("p1", [], root)
+
+    assert [d.id for d in cds.load_created_datasets("p1", root)] == ["file-iris-csv"]
+
+
+def test_load_project_datasets_returns_no_created_rows(project_with_both_kinds):
+    # G10❌5 · negative
+    # Changed: load downloaded datasets
+    # Then: only `hf-x`
+    # Demonstrates: download code never sees created rows
+    assert [d.id for d in ds.load_project_datasets("p1", project_with_both_kinds)] == ["hf-x"]

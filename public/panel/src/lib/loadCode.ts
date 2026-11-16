@@ -36,7 +36,17 @@ const READERS: [RegExp, (p: string) => string][] = [
   [/\.feather$/i, (p) => `pd.read_feather(${p})`],
 ];
 
+/** PCD-1 AC6: load a created file straight from its /work path (d.path is the file, not a folder) */
+export function createdLoadCode(d: DatasetProps): string {
+  const reader = READERS.find(([re]) => re.test(d.path));
+  // JSON.stringify gives a valid Python string literal, so a file name can never become code (SEC5)
+  const quotedPath = JSON.stringify(d.path);
+  if (!reader) return `print(open(${quotedPath}).read(2000))\n`;
+  return ["import pandas as pd", "", `df = ${reader[1](quotedPath)}`, "df.head()"].join("\n") + "\n";
+}
+
 export function loadCode(d: DatasetProps): string {
+  if (d.origin === "created") return createdLoadCode(d);
   const tables: [string, (p: string) => string][] = [];
   for (const f of d.files || []) {
     const reader = READERS.find(([re]) => re.test(f.path));

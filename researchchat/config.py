@@ -63,6 +63,11 @@ DATASETS_MAX_FILES: int = _datasets.get("max_files", 500)
 DATASETS_PARALLEL_DOWNLOADS: int = _datasets.get("parallel_downloads", 2)
 DATASETS_STALL_TIMEOUT_SECONDS: int = _datasets.get("stall_timeout_seconds", 120)
 
+# Files the project's own code writes that count as datasets (PCD-1 A4): each has a load-code reader in the panel
+CREATED_DATA_EXTENSIONS: tuple[str, ...] = (
+    ".csv", ".tsv", ".json", ".jsonl", ".parquet", ".xlsx", ".xls", ".csv.gz", ".tsv.gz",
+)
+
 # Notebook workspaces (one notebook, Docker kernel and files folder per project)
 _notebook = CONFIG.get("notebook", {})
 WORKSPACES_DIR: Path = ROOT / _notebook.get("workspaces_dir", "workspaces")
