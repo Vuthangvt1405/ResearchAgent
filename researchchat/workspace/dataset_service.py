@@ -220,6 +220,35 @@ class FetchPlan:
         return bool(self.to_fetch or self.joined)
 
 
+
+class ChatNotes:
+    """Finish messages for the chat that started a download, plus notes for that chat's next model turn."""
+
+    def __init__(self, send: Send | None):
+        self.send = send
+        self.pending_lines: dict[str, list[str]] = {}  # session_id -> pending finish lines
+
+    async def tell(self, session_id: str, message: str, note: str) -> None:
+        """Message the starting chat; leave a note for its next turn only if the chat is still open (A13)."""
+        was_sent = False
+        if self.send:
+            try:
+                was_sent = await self.send(session_id, message)
+            except Exception:
+                log.exception("Couldn't message chat %s", session_id)
+        if was_sent:
+            self.pending_lines.setdefault(session_id, []).append(note)
+
+    def take(self, session_id: str) -> str | None:
+        lines = self.pending_lines.pop(session_id, None)
+        if not lines:
+            return None
+        return "\n".join([NOTE_HEADER, *lines])
+
+    def drop(self, session_id: str) -> None:
+        self.pending_lines.pop(session_id, None)
+
+
 class DatasetService:
     """The only place that downloads, lists or deletes datasets."""
 
@@ -243,14 +272,13 @@ class DatasetService:
         self.root = root
         self.props = props
         self.notify = notify
-        self.send = send
+        self.chat_notes = ChatNotes(send)
         self.free_bytes = free_bytes
         self.client_factory = client_factory or (lambda: httpx.AsyncClient(timeout=sources.API_TIMEOUT))
         self.resolve = resolve
         self.progress_interval = progress_interval
         self.pool = pool or DatasetPool(root)  # index, links, and the one lock for both (SEC9)
         self.created = created or CreatedDatasets(root)  # PCD-1: files the project's own code wrote
-        self.notes: dict[str, list[str]] = {}  # session_id -> pending finish lines
         self.rev = 0  # datasets_rev for NotebookProps (SEC16)
         self._datasets: dict[str, list[ProjectDataset]] = {}  # project_id -> datasets (cache of its database rows)
         self._jobs: list[Job] = []  # app-wide, in queue order (running ones included)
@@ -888,7 +916,7 @@ class DatasetService:
             if dataset is None:
                 continue
             size, did = human_size(self._size(dataset)), dataset.id
-            await self._tell(
+            await self.chat_notes.tell(
                 waiter.session_id,
                 f"Dataset **{self._entry(dataset).name}** is ready ({size}) at `{ds.kernel_path(did)}/`.",
                 f"- {did}: ready, {size}, files at {ds.kernel_path(did)}/",
@@ -923,18 +951,7 @@ class DatasetService:
                 self._remove_entry_if_unused(job.pool_entry)
         await self._push_all(job.waiters)
         for waiter, name in failed:
-            await self._tell(waiter.session_id, f"Download of **{name}** failed: {reason}", f"- {waiter.dataset_id}: failed ({reason[:200]})")
-
-    async def _tell(self, session_id: str, message: str, note: str) -> None:
-        """Message the starting chat; leave a note for its next turn only if the chat is still open (A13)."""
-        sent = False
-        if self.send:
-            try:
-                sent = await self.send(session_id, message)
-            except Exception:
-                log.exception("Couldn't message chat %s", session_id)
-        if sent:
-            self.notes.setdefault(session_id, []).append(note)
+            await self.chat_notes.tell(waiter.session_id, f"Download of **{name}** failed: {reason}", f"- {waiter.dataset_id}: failed ({reason[:200]})")
 
     # ---- panel and chat ----
 
@@ -975,11 +992,8 @@ class DatasetService:
 
     def take_notes(self, session_id: str) -> str | None:
         """The pending finish note for this chat's next turn, once; None if nothing finished."""
-        lines = self.notes.pop(session_id, None)
-        if not lines:
-            return None
-        return "\n".join([NOTE_HEADER, *lines])
+        return self.chat_notes.take(session_id)
 
     def drop_notes(self, session_id: str) -> None:
         """Forget a closed chat's notes (SEC11, A13)."""
-        self.notes.pop(session_id, None)
+        self.chat_notes.drop(session_id)
