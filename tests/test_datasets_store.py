@@ -1,4 +1,4 @@
-"""Tests for project datasets in the database, dataset ids and safe paths (NB-3 plan §7: S❌2, make_id; SQLite plan G3)."""
+"""Tests for project datasets in the database, dataset ids and safe paths."""
 
 from dataclasses import fields
 
@@ -20,11 +20,10 @@ def root(tmp_path):
     return root
 
 
-# ---- Group 6 — Dataset ids · unit
+# ---- Dataset ids · unit
 
 
 def test_make_id_suffixes_clashes():
-    # G6 (added in implementation; NB-4: the same dataset is found through its pool entry, not by id)
     # Changed: ids that collide · Then: readable slug; -2 for a different dataset with the same slug
     # Demonstrates: two datasets never share a folder
     assert ds.make_id("huggingface", "David-Egea/Creditcard-fraud-detection", set()) == "hf-david-egea--creditcard-fraud-detection"
@@ -35,14 +34,14 @@ def test_make_id_suffixes_clashes():
     assert len(long_id) <= 80 and ds.DATASET_ID_RE.match(long_id)
 
 
-# ---- Group S — Security (§5 #2, #8) · unit
+# ---- Security · unit
 # Baseline: negatives only; Given a project on tmp_path
 
 
 def test_dataset_paths_stay_inside_dataset_folder(root):
-    # S❌2 · Changed: crafted id / file path
+    # Changed: crafted id / file path
     # Then: refused; nothing written outside
-    # Demonstrates: traversal (#2)
+    # Demonstrates: traversal
     for bad_id in ("../p1", "a/b", "", "UPPER", "x" * 81, None):
         with pytest.raises(WorkspaceError):
             ds.dataset_dir("p1", bad_id, root)
@@ -55,9 +54,8 @@ def test_dataset_paths_stay_inside_dataset_folder(root):
     assert sorted(p.name for p in root.iterdir() if not p.name.startswith(DATABASE_FILE)) == ["p1"]
 
 
-# ---- SQLite plan G3 — Project datasets in the database (AC3, SEC3, SEC4, SEC5) · integration
+# ---- Project datasets in the database · integration
 # Baseline: Given project `p1` and pool entry `hf-org--name@r1` · When `save_project_datasets("p1", [dataset])` then `load_project_datasets("p1")`
-# Plan: docs/plans/sqlite-alembic-storage-plan.md §7
 
 ENTRY = "hf-org--name@r1"
 
@@ -80,7 +78,7 @@ def dataset(id="hf-org--name", files=("a.csv",), selection=None, status="ready")
 
 
 def test_project_datasets_round_trip(root, pool):
-    # G3✅1 · baseline
+    # baseline
     # Changed: —
     # Then: an equal ProjectDataset (every field), same list order
     # Demonstrates: nothing is lost between dataclass and rows
@@ -93,7 +91,7 @@ def test_project_datasets_round_trip(root, pool):
 
 
 def test_selection_none_and_empty_list_stay_distinct(root, pool):
-    # G3✅2 · edge
+    # edge
     # Changed: selection=None and selection=[] on two datasets
     # Then: read back as None and []
     # Demonstrates: "all files" never turns into "no files"
@@ -103,7 +101,7 @@ def test_selection_none_and_empty_list_stay_distinct(root, pool):
 
 
 def test_file_order_is_kept(root, pool):
-    # G3✅3 · edge
+    # edge
     # Changed: files=["b.csv", "a.csv", "dir/c.csv"]
     # Then: same order
     # Demonstrates: the panel lists files as before
@@ -113,7 +111,7 @@ def test_file_order_is_kept(root, pool):
 
 
 def test_saving_a_shorter_list_removes_dropped_datasets(root, pool):
-    # G3✅4 · edge
+    # edge
     # Changed: save 2, then save 1
     # Then: 1 row and its files only
     # Demonstrates: delete still works through "save the list"
@@ -126,10 +124,10 @@ def test_saving_a_shorter_list_removes_dropped_datasets(root, pool):
 
 
 def test_same_dataset_slug_in_two_projects_is_allowed(root, pool):
-    # G3✅5 · edge
+    # edge
     # Changed: p1 and p2 both save zenodo-10117394 → the same pool entry
     # Then: two rows, same pool_entry_pk; each project loads its own
-    # Demonstrates: the shared pool works with per-project unique slugs (D1, D2)
+    # Demonstrates: the shared pool works with per-project unique slugs
     store.create_project("P2", root, project_id="p2")
     ds.save_project_datasets("p1", [dataset("zenodo-10117394", files=("a.csv",))], root)
     ds.save_project_datasets("p2", [dataset("zenodo-10117394", files=())], root)
@@ -143,7 +141,7 @@ def test_same_dataset_slug_in_two_projects_is_allowed(root, pool):
 
 
 def test_integer_keys_never_reach_the_dataclasses(root, pool):
-    # G3✅6 · edge
+    # edge
     # Changed: —
     # Then: the loaded ProjectDataset has exactly today's fields; pool_entry is the slug string
     # Demonstrates: the integer keys stay inside the storage layer
@@ -158,7 +156,7 @@ def test_integer_keys_never_reach_the_dataclasses(root, pool):
 
 
 def test_failed_save_keeps_previous_datasets(root, pool, monkeypatch):
-    # G3❌1 · negative
+    # negative
     # Changed: the second insert raises mid-transaction
     # Then: previous rows unchanged
     # Demonstrates: a crash never leaves half a list
@@ -181,7 +179,7 @@ def test_failed_save_keeps_previous_datasets(root, pool, monkeypatch):
 
 
 def test_tampered_dataset_row_is_skipped(root, pool, caplog):
-    # G3❌2 · negative · replaces test_corrupt_manifest_is_set_aside
+    # replaces test_corrupt_manifest_is_set_aside
     # Changed: rows with slug ../x and status "hacked" inserted by hand
     # Then: skipped with a warning; good rows still returned
     # Demonstrates: tampered data never becomes a path or a status
@@ -199,7 +197,7 @@ def test_tampered_dataset_row_is_skipped(root, pool, caplog):
 
 
 def test_other_projects_datasets_are_not_returned(root, pool):
-    # G3❌3 · negative
+    # negative
     # Changed: p2 has a dataset too
     # Then: load("p1") returns only p1's
     # Demonstrates: projects only read their own datasets
@@ -211,7 +209,7 @@ def test_other_projects_datasets_are_not_returned(root, pool):
 
 
 def test_dataset_pointing_to_unknown_pool_entry_is_refused(root, pool):
-    # G3❌4 · negative
+    # negative
     # Changed: pool_entry="nope" (no pool_entries row has that slug)
     # Then: refused before any write; previous rows unchanged
     # Demonstrates: the slug → pk lookup can't create a dangling reference
@@ -226,7 +224,7 @@ def test_dataset_pointing_to_unknown_pool_entry_is_refused(root, pool):
 
 
 def test_duplicate_dataset_slug_in_one_project_is_refused(root, pool):
-    # G3❌5 · negative
+    # negative
     # Changed: two datasets with slug hf-org--name in one save
     # Then: IntegrityError (UNIQUE); previous rows unchanged
     # Demonstrates: two datasets never share a folder
@@ -239,7 +237,7 @@ def test_duplicate_dataset_slug_in_one_project_is_refused(root, pool):
 
 
 def test_delete_ignores_tampered_rows(root, pool):
-    # G3❌6 · negative · rewrite of test_delete_ignores_tampered_manifests
+    # rewrite of test_delete_ignores_tampered_manifests
     # Changed: a dataset row whose file paths point outside files/datasets/<id>/
     # Then: delete removes only files/datasets/<id>/; nothing else
     # Demonstrates: delete never follows data it reads back
@@ -268,7 +266,7 @@ def test_delete_ignores_tampered_rows(root, pool):
     assert pool_file.read_text() == "abc"
 
 
-# ---- PCD-1 Group 10 — Storage: both kinds in one table (D2, §3.3) · integration (real SQLite)
+# ---- Storage: both kinds in one table · integration (real SQLite)
 # Baseline: Given project `p1` with a downloaded dataset `hf-x` and a created row `file-iris-csv` · When downloaded datasets are saved or loaded
 
 
@@ -286,7 +284,7 @@ def project_with_both_kinds(root):
 
 
 def test_saving_downloaded_datasets_keeps_created_rows(project_with_both_kinds):
-    # G10❌1 · negative
+    # negative
     # Changed: `save_project_datasets(p, [...])`
     # Then: `file-iris-csv` row still there
     # Demonstrates: a download can't wipe created cards
@@ -299,7 +297,7 @@ def test_saving_downloaded_datasets_keeps_created_rows(project_with_both_kinds):
 
 
 def test_load_project_datasets_returns_no_created_rows(project_with_both_kinds):
-    # G10❌5 · negative
+    # negative
     # Changed: load downloaded datasets
     # Then: only `hf-x`
     # Demonstrates: download code never sees created rows

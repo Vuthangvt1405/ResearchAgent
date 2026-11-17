@@ -5,9 +5,6 @@ through the thin shim public/elements/Notebook.jsx. Behaviour is tested with Vit
 public/panel; these tests read the sources as text and check rules that must hold:
 theme colours only, Chainlit's fonts, Tailwind classes that exist in Chainlit's
 pre-built CSS, imports the shim can resolve, pinned dependencies, and the security rules.
-
-Plans: docs/plans/done/analyst-panel-shadcn-refresh-plan.md (§7, rules A-E) and
-docs/plans/done/panel-react-build-plan.md (§7 Group S2; D1 moved A-E onto the new code).
 """
 
 import re
@@ -26,8 +23,8 @@ BUILD = ROOT / "public" / "build"
 # Tailwind classes the panel relies on from Chainlit's shadcn recipes (cards, menus,
 # selects, hover and animation states). Each must exist in Chainlit's built CSS; classes
 # written in the panel's own className attributes are checked too (_panel_tailwind_classes).
-# Never list ring-2 / ring-ring / ring-offset-2: they are purged (§2.3), so the focus
-# ring (AC12) is hand-written CSS.
+# Never list ring-2 / ring-ring / ring-offset-2: they are purged, so the focus
+# ring is hand-written CSS.
 TAILWIND_ALLOWLIST: list[str] = [
     "bg-card", "text-card-foreground", "shadow-sm", "rounded-lg", "border",
     "bg-popover", "text-popover-foreground", "shadow-md", "rounded-md", "z-50",
@@ -171,7 +168,7 @@ def _rule_body(css: str, selector: str) -> str:
     return m.group(1) if m else ""
 
 
-# ---- Group A: theme tokens and colours (AC1, AC5, AC8, AC9) ------------------
+# ---- theme tokens and colours ------------------
 # Baseline: Given the panel CSS (public/panel/src/styles.css) · When the colour rules are inspected
 
 
@@ -216,11 +213,11 @@ def test_semantic_colours_are_defined_for_both_themes():
 
 def test_semantic_colours_are_not_taken_from_chart_tokens():
     # A❌3 negative: a status colour uses var(--chart-N) -> fails.
-    # Demonstrates: chart tokens change meaning between themes (D5).
+    # Demonstrates: chart tokens change meaning between themes.
     assert "--chart-" not in _css_blocks()
 
 
-# ---- Group B: fonts (AC1, D7) --------------------------------------------------
+# ---- fonts --------------------------------------------------
 # Baseline: Given the panel CSS · When font-family declarations are inspected
 
 
@@ -241,11 +238,11 @@ def test_no_font_family_is_declared_outside_the_panel():
 
 def test_no_theme_json_is_added():
     # B❌2 negative: a public/theme.json appears -> fails.
-    # Demonstrates: the panel cannot change the app-wide font (D7).
+    # Demonstrates: the panel cannot change the app-wide font.
     assert not (ROOT / "public" / "theme.json").exists()
 
 
-# ---- Group C: Tailwind classes exist in Chainlit's build (AC2-AC4, AC7) --------
+# ---- Tailwind classes exist in Chainlit's build --------
 # Baseline: Given TAILWIND_ALLOWLIST · When Chainlit's pre-built stylesheet is searched
 
 
@@ -272,7 +269,7 @@ def test_the_chainlit_css_file_is_found():
     assert ".bg-card" in _chainlit_css()
 
 
-# ---- Group D: imports resolvable by Chainlit's custom-element scope (AC4, AC5) --
+# ---- imports resolvable by Chainlit's custom-element scope --
 # Baseline: Given the import statements in the shim Notebook.jsx (the only file Chainlit
 # compiles; the bundle resolves its own imports at build time) · When checked against Chainlit's map
 
@@ -297,14 +294,14 @@ def test_the_helper_cn_is_not_imported():
 
 def test_no_new_dependencies_are_added():
     # D❌2 negative: a package.json appears at the repo root or in public/ -> fails.
-    # npm packages are allowed only inside public/panel, pinned (panel React build D1, S2).
+    # npm packages are allowed only inside public/panel, pinned.
     # Demonstrates: dependencies stay in one reviewed place.
     assert not (ROOT / "package.json").exists()
     assert not (ROOT / "public" / "package.json").exists()
     assert not (ROOT / "node_modules").exists()
 
 
-# ---- Group E: security invariants (Security #1-#3, #6, #9) ---------------------
+# ---- security invariants ---------------------------------------------
 # Baseline: Given the shim, the panel sources and custom.js · When they are inspected for unsafe patterns
 
 
@@ -332,7 +329,7 @@ def test_project_names_are_rendered_as_react_text():
     # E✅3 baseline, E❌4 negative (the picker builds HTML from a name).
     # Then: no innerHTML / dangerouslySetInnerHTML near p.name; custom.js no longer
     # renders project names at all.
-    # Demonstrates: the moved picker cannot inject HTML (D6).
+    # Demonstrates: the moved picker cannot inject HTML.
     src = _panel()
     assert re.search(r">\{p\.name\}<", src), "the picker should render p.name as a React child"
     assert "innerHTML" not in src
@@ -360,8 +357,7 @@ def test_the_rc_event_bridge_is_gone():
     assert RC_EVENT.search('const EVENT_SWITCH = "rc:switch-project";')
 
 
-# ---- Group S2: bundled panel dependencies and scripts (panel React build, SEC2, SEC3, AC9) --
-# Plan: docs/plans/done/panel-react-build-plan.md §7 (D1: these checks move to public/panel/src/).
+# ---- bundled panel dependencies and scripts (panel React build) --
 # Baseline: none (negatives only)
 PANEL_PKG = PANEL_DIR / "package.json"
 EXACT = re.compile(r"^\d+\.\d+\.\d+$")
@@ -377,22 +373,22 @@ def _remote_imports(js: str) -> list[str]:
 
 
 def test_no_external_script_or_stylesheet():
-    # S2❌1 negative: custom.js or the build references a non-/public URL -> fails.
+    # custom.js or the build references a non-/public URL -> fails.
     # Then: only same-origin /public/build/... is loaded.
-    # Demonstrates: no third-party script surface (SEC3).
+    # Demonstrates: no third-party script surface.
     urls = _loaded_urls(CUSTOM_JS.read_text(encoding="utf-8"))
     assert sorted(urls) == ["/public/build/notebook-panel.css", "/public/build/notebook-panel.js"]
     built = (BUILD / "notebook-panel.js").read_text(encoding="utf-8")
     assert _remote_imports(built) == []
-    # S2❌1: a CDN script or a remote import would be caught
+    # a CDN script or a remote import would be caught
     assert _loaded_urls('const PANEL_JS = "https://cdn.example.com/x.js";') != ["/public/build/notebook-panel.js"]
     assert _remote_imports('import("https://cdn.example.com/x.js")')
 
 
 def test_lockfile_present_and_versions_pinned():
-    # S2❌2 negative: a ^ or ~ range in public/panel/package.json -> fails.
+    # a ^ or ~ range in public/panel/package.json -> fails.
     # Then: package-lock.json exists and every version is exact.
-    # Demonstrates: reproducible builds (SEC2).
+    # Demonstrates: reproducible builds.
     import json
 
     pkg = json.loads(PANEL_PKG.read_text(encoding="utf-8"))
@@ -406,9 +402,9 @@ def test_lockfile_present_and_versions_pinned():
 
 
 def test_colours_and_fonts_rules_on_new_css():
-    # S2❌3 negative: a hex colour in public/panel/src/styles.css -> fails.
+    # a hex colour in public/panel/src/styles.css -> fails.
     # Then: the colour and font rules hold for the new CSS, and the built CSS is the same rules.
-    # Demonstrates: the look is kept (AC9).
+    # Demonstrates: the look is kept.
     css = PANEL_CSS.read_text(encoding="utf-8")
     assert HEX.findall(_without_allowed(css)) == []
     assert [f for f in _font_families(css) if not FONT_OK.match(f)] == []
@@ -419,7 +415,7 @@ def test_colours_and_fonts_rules_on_new_css():
 
 def test_shim_matches_the_tested_connect_logic():
     # Extra: Notebook.jsx carries a plain-JS copy of connectShim (public/panel/src/shim.ts,
-    # tested by Vitest G6). Same window names, timeout and fallback text in both.
+    # tested by Vitest). Same window names, timeout and fallback text in both.
     shim = SHIM.read_text(encoding="utf-8")
     ts = (PANEL_SRC / "shim.ts").read_text(encoding="utf-8")
     for name in ("__rcPanelReady", "__rcPanelResolve", "setCallAction", "setProps", "attach", "detach"):

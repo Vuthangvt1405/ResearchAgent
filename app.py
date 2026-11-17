@@ -4,19 +4,27 @@ Run with: chainlit run app.py
 
 import asyncio
 import os
+import subprocess
 
 import chainlit as cl
 from chainlit.config import FILES_DIRECTORY
 
-from researchchat.config import GREETING, SYSTEM_PROMPT, TOOL_MAX_ROUNDS, WORKSPACES_DIR, check_local_host, check_setup
+from researchchat.config import (
+    GREETING,
+    SYSTEM_PROMPT,
+    TOOL_MAX_ROUNDS,
+    WORKSPACES_DIR,
+    check_local_host,
+    check_setup,
+)
 from researchchat.db.engine import database_for
 
 # Wrong Python or no API key: say how to fix it before anything else fails
 check_setup()
-# Create or upgrade workspaces/researchchat.db now; a damaged or newer file stops here with steps (AC4)
+# Create or upgrade workspaces/researchchat.db now; a damaged or newer file stops here with steps
 database_for(WORKSPACES_DIR)
 
-from researchchat.llm import model_params, stream_round  # noqa: E402 (needs the key checked first)
+from researchchat.llm import model_params, stream_round  # imported after check_setup: it needs the key checked first
 from researchchat.progress import Progress
 from researchchat.settings import build_widgets, reasoning_body
 from researchchat.tools import chosen_tools, run_tool_call
@@ -54,7 +62,7 @@ async def on_chat_start():
         # Kernel containers left by an earlier run of the app
         _cleaned = True
         asyncio.create_task(notebook.kernels.cleanup_leftovers())
-        # Downloads cut off by an earlier run; dataset_download waits for this (NB-3)
+        # Downloads cut off by an earlier run; dataset_download waits for this
         asyncio.create_task(notebook.datasets.startup_cleanup())
 
     cl.user_session.set(
@@ -65,6 +73,15 @@ async def on_chat_start():
     cl.user_session.set("settings", settings)
     await notebook.open_for_session()
     await cl.Message(content=GREETING).send()
+
+
+@cl.on_app_shutdown
+async def on_app_shutdown() -> None:
+    # Kernels hold memory until stopped; without this they run on after the app exits
+    try:
+        await notebook.kernels.stop_all()
+    except (OSError, subprocess.TimeoutExpired):
+        pass  # Docker is gone or stuck: cleanup_leftovers removes them on the next start
 
 
 @cl.on_chat_end
@@ -87,7 +104,7 @@ async def on_message(message: cl.Message):
     settings = cl.user_session.get("settings") or {}
     tools = chosen_tools(settings)
     # Background downloads that finished since the last turn: told to the model
-    # once, for this turn only, never kept in history (NB-3)
+    # once, for this turn only, never kept in history
     note = notebook.datasets.take_notes(cl.context.session.id)
     turn_notes = [{"role": "system", "content": note}] if note else []
     # Create the reply before the progress group so it isn't nested inside it

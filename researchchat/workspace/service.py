@@ -1,7 +1,7 @@
 """Edit and run notebooks under a per-project lock, and build panel props.
 
 Every edit carries the version the panel last saw; a mismatch is STALE and
-the latest notebook comes back instead (plan §4.2).
+the latest notebook comes back instead.
 
 Two locks per project: `edit` (short, guards the .ipynb file) and `run`
 (one run at a time, later runs wait in order). Typing still saves while a
@@ -19,8 +19,7 @@ from typing import Literal, TypedDict
 from nbformat import NotebookNode
 
 from researchchat.config import NOTEBOOK_READ_MAX_CHARS, WORKSPACES_DIR
-from researchchat.workspace import ErrorCode, WorkspaceError
-from researchchat.workspace import store
+from researchchat.workspace import ErrorCode, WorkspaceError, store
 from researchchat.workspace.kernels import KernelRegistry, KernelStatus, RunResult
 from researchchat.workspace.store import CellType, Direction
 
@@ -34,7 +33,7 @@ ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 log = logging.getLogger(__name__)
 
 
-# ---- NotebookProps (server -> panel), plan §4.3 -------------------------------
+# ---- NotebookProps (server -> panel) --------------------------------------
 
 
 class ProjectRef(TypedDict):
@@ -63,7 +62,7 @@ class ErrorProps(TypedDict):
 
 
 DatasetPanelStatus = Literal["queued", "downloading", "ready", "failed", "missing"]
-DatasetOrigin = Literal["downloaded", "created"]  # PCD-1: catalog download, or a file the project's code wrote
+DatasetOrigin = Literal["downloaded", "created"]  # catalog download, or a file the project's code wrote
 
 
 class DatasetFileProps(TypedDict):
@@ -72,12 +71,12 @@ class DatasetFileProps(TypedDict):
 
 
 class DatasetProps(TypedDict):
-    """One card in the panel's Datasets tab (NB-3 plan §4.3)."""
+    """One card in the panel's Datasets tab."""
 
     id: str  # sent back in ds_delete / ds_cancel
     name: str  # row title
     source: str  # source badge (huggingface / zenodo)
-    status: DatasetPanelStatus  # badge while not ready; a ready row has no badge (AC21)
+    status: DatasetPanelStatus  # badge while not ready; a ready row has no badge
     done_bytes: int | None  # progress bar while downloading
     position_in_queue: int | None  # "2nd in queue" while queued
     license: str | None  # chip while downloading, and in the details
@@ -89,8 +88,8 @@ class DatasetProps(TypedDict):
     requested_at: str  # sort by newest
     files: list[DatasetFileProps]  # file list and "Copy load code" (first 200)
     error: str | None  # red line when failed
-    shared_with: int  # other projects using the same pool entry; "Also used by N other projects" (NB-4)
-    origin: DatasetOrigin  # PCD-1 AC3: which card layout to use, catalog details or "Created by myself"
+    shared_with: int  # other projects using the same pool entry; "Also used by N other projects"
+    origin: DatasetOrigin  # which card layout to use, catalog details or "Created by myself"
 
 
 class NotebookProps(TypedDict):
@@ -100,13 +99,13 @@ class NotebookProps(TypedDict):
     running_cell_id: str | None  # which cell shows the spinner
     cells: list[CellProps]
     error: ErrorProps | None  # set when the action was rejected
-    datasets: list[DatasetProps]  # NB-3: the project's datasets
-    datasets_rev: int  # NB-3: bumps on every dataset change, so the panel keeps the newest list (SEC16)
+    datasets: list[DatasetProps]  # the project's datasets
+    datasets_rev: int  # bumps on every dataset change, so the panel keeps the newest list
 
 
 Notify = Callable[[str, NotebookProps], Awaitable[None]]
 DatasetState = Callable[[str], tuple[list[DatasetProps], int]]  # project_id -> (datasets, datasets_rev)
-AfterRun = Callable[[str], None]  # project_id -> scan its files/ for created datasets; called after every cell run (PCD-1 A2)
+AfterRun = Callable[[str], None]  # project_id -> scan its files/ for created datasets; called after every cell run
 
 
 # ---- output conversion ----------------------------------------------------------
@@ -185,8 +184,8 @@ class NotebookService:
         self.kernels = kernels
         self.root = root
         self.notify = notify
-        self.datasets = datasets  # set by actions.py after DatasetService is built (plan §2.1)
-        self.after_run = after_run  # PCD-1: DatasetService.sync_created, set by actions.py like `datasets`
+        self.datasets = datasets  # set by actions.py after DatasetService is built
+        self.after_run = after_run  # DatasetService.sync_created, set by actions.py like `datasets`
         self._edit_locks: dict[str, asyncio.Lock] = {}
         self._run_locks: dict[str, asyncio.Lock] = {}
         self._running: dict[str, str] = {}  # project_id -> running cell id
@@ -202,7 +201,7 @@ class NotebookService:
         return self._run_locks.setdefault(pid, asyncio.Lock())
 
     def run_lock(self, project_id: str) -> asyncio.Lock:
-        """The project's run lock, for CreatedDatasets.delete: no cell runs between its check and unlink (PCD-1 SEC2)."""
+        """The project's run lock, for CreatedDatasets.delete: no cell runs between its check and unlink."""
         return self._run_lock(project_id)
 
     def _props(self, pid: str, nb: NotebookNode, error: WorkspaceError | None = None) -> NotebookProps:
@@ -344,7 +343,7 @@ class NotebookService:
                     self._running.pop(pid, None)
                     self._live.pop(cell_id, None)
 
-                self._scan_created_datasets(pid)  # before save_result's push, so that push shows the new card (AC1)
+                self._scan_created_datasets(pid)  # before save_result's push, so that push shows the new card
 
                 def save_result(nb: NotebookNode) -> None:
                     try:
@@ -362,7 +361,7 @@ class NotebookService:
                 self._queued[pid].remove(cell_id)
 
     def _scan_created_datasets(self, pid: str) -> None:
-        """Let the after-run hook list files the cell wrote; a scan problem never fails the run (G2❌2)."""
+        """Let the after-run hook list files the cell wrote; a scan problem never fails the run."""
         if self.after_run is None:
             return
         try:

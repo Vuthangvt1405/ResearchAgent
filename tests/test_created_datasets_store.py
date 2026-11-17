@@ -1,6 +1,4 @@
-"""Created-dataset rows in project_datasets: storage and constraints (PCD-1 plan §3.3, §7).
-
-Plan: docs/plans/PCD-1-created-datasets-plan.md §7
+"""Created-dataset rows in project_datasets: storage and constraints.
 """
 
 import pytest
@@ -40,12 +38,12 @@ def insert_pool_entry(root) -> None:
         ))
 
 
-# ---- PCD-1 Group 3 — Saving again updates, never duplicates (AC4) · integration
+# ---- Saving again updates, never duplicates · integration
 # Baseline: Given `Iris.csv` stored as a created row · When the same path is stored again
 
 
 def test_same_path_twice_is_rejected_by_unique_constraint(root):
-    # G3❌1 · negative
+    # negative
     # Changed: insert the same (`project_pk`, `path`) directly
     # Then: `IntegrityError`
     # Demonstrates: the DB itself guards against duplicates
@@ -57,12 +55,12 @@ def test_same_path_twice_is_rejected_by_unique_constraint(root):
     assert [d.id for d in cds.load_created_datasets("p", root)] == ["file-iris-csv"]
 
 
-# ---- PCD-1 Group 10 — Storage: both kinds in one table (D2, §3.3) · integration (real SQLite)
+# ---- Storage: both kinds in one table · integration (real SQLite)
 # Baseline: Given a migrated database with project `p` · When created rows are stored and read
 
 
 def test_created_row_round_trips(root):
-    # G10✅1 · baseline
+    # baseline
     # Changed: —
     # Then: load returns path, size, mtime, inode, id as saved
     # Demonstrates: created rows are stored faithfully
@@ -72,7 +70,7 @@ def test_created_row_round_trips(root):
 
 
 def test_created_row_with_pool_entry_is_rejected(root):
-    # G10❌2 · negative
+    # negative
     # Changed: created row with `pool_entry_pk` set
     # Then: `IntegrityError` (`origin_shape`)
     # Demonstrates: a row is one kind only
@@ -83,7 +81,7 @@ def test_created_row_with_pool_entry_is_rejected(root):
 
 
 def test_downloaded_row_without_pool_entry_is_rejected(root):
-    # G10❌3 · negative
+    # negative
     # Changed: downloaded row, NULL pool entry
     # Then: `IntegrityError`
     # Demonstrates: downloads keep their pool link
@@ -92,7 +90,7 @@ def test_downloaded_row_without_pool_entry_is_rejected(root):
 
 
 def test_created_row_without_path_is_rejected(root):
-    # G10❌4 · negative
+    # negative
     # Changed: created row, NULL path
     # Then: `IntegrityError`
     # Demonstrates: a created card always has a file path
@@ -101,7 +99,7 @@ def test_created_row_without_path_is_rejected(root):
 
 
 def test_unknown_origin_is_rejected(root):
-    # G10❌6 · negative
+    # negative
     # Changed: `origin = 'uploaded'`
     # Then: `IntegrityError` (`origin_known`)
     # Demonstrates: only the two known kinds exist
@@ -109,12 +107,12 @@ def test_unknown_origin_is_rejected(root):
         insert_raw_row(root, "origin, path, size_bytes, mtime_ns", "'uploaded', 'x.csv', 1, 1")
 
 
-# ---- PCD-1 Group S1 — Delete never follows links (SEC4) · integration
+# ---- Delete never follows links · integration
 # Baseline: Given a created row whose path was hand-edited in the database
 
 
 def test_tampered_row_path_is_skipped(root, caplog):
-    # S1❌5 · negative
+    # negative
     # Changed: row path `../../q/files/x.csv`
     # Then: row ignored + logged; delete → `NOT_FOUND`
     # Demonstrates: DB rows aren't trusted blindly

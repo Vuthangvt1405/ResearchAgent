@@ -1,4 +1,4 @@
-"""Tests for the shared dataset pool and its index in the database (NB-4 plan §7: G11; SQLite plan G4).
+"""Tests for the shared dataset pool and its index in the database.
 
 Same fakes as test_dataset_service.py (no network, fake disk, tmp_path), reused from there.
 """
@@ -47,7 +47,7 @@ def root(tmp_path):
     return root
 
 
-# ---- Group 11: Shared pool (AC15–AC18, AC30, SEC9, SEC12, SEC16, SEC23) · unit + 1 docker
+# ---- Shared pool · unit + 1 docker
 # Baseline: Given project p1 has dataset X ready in the pool · When project p2 requests X
 
 
@@ -59,7 +59,7 @@ async def pooled_for_p1(root, catalog=None, files=None):
 
 
 def test_second_project_links_pool_files_without_download(root):
-    # G11✅1 · Changed: —
+    # Changed: —
     # Then: p2 gets links into the pool + record ready, from_pool: true; no HTTP request
     # Demonstrates: the pool saves the download
     async def scenario():
@@ -77,7 +77,7 @@ def test_second_project_links_pool_files_without_download(root):
 
 
 def test_second_project_downloads_only_files_pool_lacks(root):
-    # G11✅2 · Changed: p2 asks ["*.csv", "*.json"], pool has only csv
+    # Changed: p2 asks ["*.csv", "*.json"], pool has only csv
     # Then: job fetches only json; p2 sees both; p1 still sees only csv
     # Demonstrates: each project sees what it asked for
     async def scenario():
@@ -95,7 +95,7 @@ def test_second_project_downloads_only_files_pool_lacks(root):
 
 
 def test_two_projects_requesting_same_files_share_one_job(root):
-    # G11✅3 · Changed: p1 and p2 request X (not pooled) at once
+    # Changed: p1 and p2 request X (not pooled) at once
     # Then: one job; each file fetched once; both ready
     # Demonstrates: no duplicate downloads
     async def scenario():
@@ -116,9 +116,9 @@ def test_two_projects_requesting_same_files_share_one_job(root):
 
 
 def test_older_pooled_revision_is_reused_without_update(root):
-    # G11✅5 · Changed: pool has r1, catalog at r2, p2 asks without update
+    # Changed: pool has r1, catalog at r2, p2 asks without update
     # Then: p2 linked to r1; no catalog call; with update: true a new entry r2 is made and only p2 switches
-    # Demonstrates: no silent version changes across projects (AC30)
+    # Demonstrates: no silent version changes across projects
     async def scenario():
         env = await pooled_for_p1(root)
         env.catalog.new_revision("org/name", R2, {"a.csv": b"new-a", "b.csv": b"new-b"})
@@ -137,7 +137,7 @@ def test_older_pooled_revision_is_reused_without_update(root):
 
 
 def test_changed_pool_file_is_rechecked_before_linking(root):
-    # G11❌1 · Changed: pooled file's size or mtime_ns differs
+    # Changed: pooled file's size or mtime_ns differs
     # Then: checksum re-checked; bad file downloaded again before p2 is linked
     # Demonstrates: changed data is never reused blindly
     async def scenario():
@@ -159,7 +159,7 @@ def test_changed_pool_file_is_rechecked_before_linking(root):
 
 
 def test_links_never_point_outside_pool(root):
-    # G11❌2 · Changed: crafted entry id / path
+    # Changed: crafted entry id / path
     # Then: refused; no symlink created
     # Demonstrates: links can't expose host files
     pool = DatasetPool(root)
@@ -188,9 +188,9 @@ def test_links_never_point_outside_pool(root):
 
 @pytest.mark.docker
 def test_kernel_cannot_write_pooled_files(root):
-    # G11❌3 · Changed: in the kernel, write to /work/datasets/<id>/a.csv, and delete it through the pool mount
+    # Changed: in the kernel, write to /work/datasets/<id>/a.csv, and delete it through the pool mount
     # Then: both fail (read-only file system); pool file unchanged. Removing the link itself only makes
-    # the dataset missing in this project (AC18)
+    # the dataset missing in this project
     # Demonstrates: one project can't corrupt another's data
     async def scenario():
         env = await pooled_for_p1(root)
@@ -219,7 +219,7 @@ async def _ignore(_output):
 
 
 def test_cleanup_waits_for_a_project_linking_at_the_same_time(root):
-    # G11❌5 · Changed: p1 deletes its last use while p2 links the same entry
+    # Changed: p1 deletes its last use while p2 links the same entry
     # Then: entry kept, p2 linked
     # Demonstrates: cleanup can't delete data someone just started using
     async def scenario():
@@ -251,9 +251,8 @@ def test_cleanup_waits_for_a_project_linking_at_the_same_time(root):
     run(scenario())
 
 
-# ---- SQLite plan G4 — Pool index in the database (AC3, SEC3, SEC4, SEC5) · integration
+# ---- Pool index in the database · integration
 # Baseline: Given a workspace at head · When `pool.add_entry(entry)`; `pool.save_index()`; a new `DatasetPool(root).entries()`
-# Plan: docs/plans/sqlite-alembic-storage-plan.md §7
 
 MTIME_NS = 1794468807764441482  # a real value from the workspace's pool index
 
@@ -285,7 +284,7 @@ def entry_pk(root, slug=ENTRY_R1):
 
 
 def test_pool_entries_round_trip_with_files_in_order(root):
-    # G4✅1 · baseline
+    # baseline
     # Changed: —
     # Then: equal PoolEntry with files in the same order
     # Demonstrates: the index survives a restart
@@ -295,17 +294,17 @@ def test_pool_entries_round_trip_with_files_in_order(root):
 
 
 def test_large_mtime_ns_round_trips(root):
-    # G4✅2 · edge
+    # edge
     # Changed: mtime_ns=1794468807764441482
     # Then: the same int
-    # Demonstrates: change detection (SEC16 of NB-4) still works
+    # Demonstrates: change detection still works
     saved_pool(root)
 
     assert DatasetPool(root).get_entry(ENTRY_R1).file("b.csv").mtime_ns == MTIME_NS
 
 
 def test_projects_using_reads_from_database(root):
-    # G4✅3 · edge
+    # edge
     # Changed: entry used by p1 and p2, not p3
     # Then: ["p1", "p2"]
     # Demonstrates: "used by" counts come from one query
@@ -318,7 +317,7 @@ def test_projects_using_reads_from_database(root):
 
 
 def test_find_entries_newest_first(root):
-    # G4✅4 · edge
+    # edge
     # Changed: two revisions of one dataset
     # Then: newest created_at first
     # Demonstrates: reuse picks the same version as today
@@ -332,7 +331,7 @@ def test_find_entries_newest_first(root):
 
 
 def test_saving_the_index_again_keeps_entry_keys(root):
-    # G4✅5 · edge
+    # edge
     # Changed: entry used by p1; change its files; save_index() again
     # Then: same pool_entries.pk; p1's row still points to it; files replaced
     # Demonstrates: an upsert on slug never breaks a project's reference
@@ -349,7 +348,7 @@ def test_saving_the_index_again_keeps_entry_keys(root):
 
 
 def test_entry_in_use_cannot_be_deleted(root):
-    # G4❌1 · negative
+    # negative
     # Changed: delete the entry row while p1 uses it
     # Then: IntegrityError; entry and files still there
     # Demonstrates: cleanup can never orphan a project
@@ -364,7 +363,7 @@ def test_entry_in_use_cannot_be_deleted(root):
 
 
 def test_tampered_pool_row_is_skipped(root, caplog):
-    # G4❌2 · negative · replaces test_corrupt_pool_index_is_rebuilt
+    # replaces test_corrupt_pool_index_is_rebuilt
     # Changed: rows with entry slug ../x and file path ../../etc/passwd
     # Then: skipped with a warning; good entries returned
     # Demonstrates: a tampered row can't make a link target outside the pool
@@ -378,7 +377,7 @@ def test_tampered_pool_row_is_skipped(root, caplog):
 
 
 def test_failed_index_save_keeps_previous_index(root, monkeypatch):
-    # G4❌3 · negative
+    # negative
     # Changed: an insert raises mid-save
     # Then: previous entries and files unchanged
     # Demonstrates: the index is all-or-nothing
@@ -400,7 +399,7 @@ def test_failed_index_save_keeps_previous_index(root, monkeypatch):
 
 
 def test_duplicate_pool_slug_is_refused_by_the_database(root):
-    # G4❌4 · negative
+    # negative
     # Changed: insert a second row with an existing entry slug directly
     # Then: IntegrityError (UNIQUE); one row
     # Demonstrates: one folder is never two entries

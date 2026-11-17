@@ -1,6 +1,4 @@
 """The notebook_run and notebook_read model tools.
-
-Plan: docs/plans/done/notebook-workspace-plan.md section 7.
 """
 
 import asyncio
@@ -56,12 +54,12 @@ class Approver:
         return self.answer
 
 
-# ---- Group 6: Model tool `notebook_run` (AC10, AC11) · unit (risk check real, approval and kernel faked)
+# ---- Model tool `notebook_run` · unit (risk check real, approval and kernel faked)
 # Baseline: Given the Notebook switch is on · When the model calls `notebook_run({"code": "2+2"})`
 
 
 def test_safe_code_runs_without_asking(project, fake_kernels):
-    # G6✅1 (baseline) · Demonstrates: safe code is automatic (AC10)
+    # Demonstrates: safe code is automatic
     svc, pid, root, pushes = project
     fake_kernels.results["2+2"] = ("done", [nbformat.v4.new_output("execute_result", {"text/plain": "4"}, execution_count=1)])
     approve = Approver(True)
@@ -74,7 +72,7 @@ def test_safe_code_runs_without_asking(project, fake_kernels):
 
 
 def test_long_output_is_trimmed_for_model(project, fake_kernels):
-    # G6✅2 (edge) · Demonstrates: model context stays small
+    # Demonstrates: model context stays small
     svc, pid, _, _ = project
     fake_kernels.results["big()"] = ("done", [stream("x" * 10_000)])
     _, result = run(notebook_run.run({"code": "big()"}, svc=svc, project_id=pid, approve=Approver(True)))
@@ -82,7 +80,6 @@ def test_long_output_is_trimmed_for_model(project, fake_kernels):
 
 
 def test_image_output_is_described_not_sent(project, fake_kernels):
-    # G6✅3 (edge)
     svc, pid, _, _ = project
     fake_kernels.results["plot()"] = ("done", [image(640, 480)])
     _, result = run(notebook_run.run({"code": "plot()"}, svc=svc, project_id=pid, approve=Approver(True)))
@@ -90,7 +87,7 @@ def test_image_output_is_described_not_sent(project, fake_kernels):
 
 
 def test_risky_code_runs_after_click(project, fake_kernels):
-    # G6✅4 (edge) · Demonstrates: you can allow it (AC11)
+    # Demonstrates: you can allow it
     svc, pid, _, _ = project
     approve = Approver(True)
     run(notebook_run.run({"code": "!ls"}, svc=svc, project_id=pid, approve=approve))
@@ -99,7 +96,7 @@ def test_risky_code_runs_after_click(project, fake_kernels):
 
 
 def test_risky_code_skip_runs_nothing(project, fake_kernels):
-    # G6❌1 (negative) · Demonstrates: you stay in control
+    # Demonstrates: you stay in control
     svc, pid, root, _ = project
     _, result = run(notebook_run.run({"code": "!ls"}, svc=svc, project_id=pid, approve=Approver(False)))
     assert result == notebook_run.DECLINED
@@ -107,7 +104,7 @@ def test_risky_code_skip_runs_nothing(project, fake_kernels):
 
 
 def test_risky_code_timeout_runs_nothing(project, fake_kernels, monkeypatch):
-    # G6❌2 (negative): no answer = AskActionMessage returns None
+    # no answer = AskActionMessage returns None
     svc, pid, root, _ = project
 
     class NoAnswer:
@@ -125,7 +122,6 @@ def test_risky_code_timeout_runs_nothing(project, fake_kernels, monkeypatch):
 
 
 def test_empty_code_is_rejected_without_asking(project, fake_kernels):
-    # G6❌3 (negative)
     svc, pid, _, _ = project
     approve = Approver(True)
     with pytest.raises(ValueError, match="No code"):
@@ -134,7 +130,7 @@ def test_empty_code_is_rejected_without_asking(project, fake_kernels):
 
 
 def test_docker_down_runs_nothing(project, fake_kernels):
-    # G6❌4 (negative) · Demonstrates: never runs on the host (AC20)
+    # Demonstrates: never runs on the host
     svc, pid, _, _ = project
 
     async def unavailable(*args, **kwargs):
@@ -145,7 +141,7 @@ def test_docker_down_runs_nothing(project, fake_kernels):
         run(notebook_run.run({"code": "2+2"}, svc=svc, project_id=pid, approve=Approver(True)))
 
 
-# ---- Group 8: Model tool `notebook_read` (AC17) · unit (kernel faked)
+# ---- Model tool `notebook_read` · unit (kernel faked)
 # Baseline: Given a notebook with a note, a code cell with output and a code cell never run · When the model calls `notebook_read`
 
 
@@ -170,7 +166,7 @@ def read(svc, pid):
 
 
 def test_read_returns_cells_in_order_with_outputs(read_project):
-    # G8✅1 (baseline) · Demonstrates: the model sees your work
+    # Demonstrates: the model sees your work
     svc, pid, _ = read_project
     text = read(svc, pid)
     assert text.index("[note]") < text.index("[cell, run 1]") < text.index("[cell, not run]")
@@ -178,14 +174,13 @@ def test_read_returns_cells_in_order_with_outputs(read_project):
 
 
 def test_read_includes_variable_names(read_project, fake_kernels):
-    # G8✅2 (edge)
     svc, pid, _ = read_project
     fake_kernels.vars = ["df", "x"]
     assert read(svc, pid).endswith("variables: df, x")
 
 
 def test_read_does_not_run_cells_or_change_counts(read_project, fake_kernels):
-    # G8✅3 (edge) · Demonstrates: reading is side-effect free
+    # Demonstrates: reading is side-effect free
     svc, pid, root = read_project
     before = store.load_notebook(pid, root)
     read(svc, pid)
@@ -194,7 +189,6 @@ def test_read_does_not_run_cells_or_change_counts(read_project, fake_kernels):
 
 
 def test_read_with_kernel_off_still_returns_cells(read_project, fake_kernels):
-    # G8✅4 (edge)
     svc, pid, _ = read_project
     fake_kernels.state = "off"
     text = read(svc, pid)
@@ -202,7 +196,7 @@ def test_read_with_kernel_off_still_returns_cells(read_project, fake_kernels):
 
 
 def test_read_trims_big_notebook(read_project):
-    # G8❌1 (negative) · Demonstrates: model context stays small
+    # Demonstrates: model context stays small
     svc, pid, root = read_project
     nb = store.load_notebook(pid, root)
     for i in range(50):
@@ -216,7 +210,6 @@ def test_read_trims_big_notebook(read_project):
 
 
 def test_read_describes_images_not_sends(read_project):
-    # G8❌2 (negative)
     svc, pid, root = read_project
     nb = store.load_notebook(pid, root)
     cell = store.add_cell(nb, "code", None)

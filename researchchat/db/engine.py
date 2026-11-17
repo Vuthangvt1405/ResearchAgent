@@ -2,9 +2,7 @@
 
 `database_for(root)` is the one way in. It caches one Engine per workspace
 root, so the ~60 existing `root=` call sites and every tmp_path test get their
-own database without passing an Engine around (plan A2).
-
-Plan: docs/plans/sqlite-alembic-storage-plan.md §3.3, §4.1, §6
+own database without passing an Engine around.
 """
 
 import threading
@@ -30,7 +28,7 @@ _engines_lock = threading.Lock()  # download jobs may open a workspace from a wo
 
 
 class DatabaseUnusable(SystemExit):
-    """The database file can't be used: damaged, or made by a newer app (AC4).
+    """The database file can't be used: damaged, or made by a newer app.
 
     A SystemExit, like config.check_setup: at startup it stops the app with
     `message` (what happened and what to do) instead of a stack trace.

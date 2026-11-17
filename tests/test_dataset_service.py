@@ -1,5 +1,5 @@
 """Tests for DatasetService: disk check, approval, background jobs, idempotency,
-delete/cancel, panel props and chat notes (NB-3 plan §7: G4–G7, G9, G10, S❌4, S❌6).
+delete/cancel, panel props and chat notes.
 
 No network (MockTransport), fake host lookups, fake free disk, fake chat send,
 tmp_path disk. Each test runs one asyncio.run(scenario()); background jobs are
@@ -178,7 +178,7 @@ class Env:
 
 
 def records(root, pid):
-    """A project's datasets joined with their pool entries: what NB-3 tests read from datasets.json."""
+    """A project's datasets joined with their pool entries: what the older tests read from datasets.json."""
     entries = {e.id: e for e in DatasetPool(root).load_index()}
     joined = []
     for d in ds.load_project_datasets(pid, root):
@@ -230,13 +230,13 @@ class Approver:
         return self.answer
 
 
-# ---- Group 4 — Disk check and approval (AC5, AC6, AC7, SEC3, SEC4) · unit
+# ---- Disk check and approval · unit
 # Baseline: Given a 50 MB plan, an empty project and 100 GB free · When request(pid, ref, approve=fake)
 # (parallel_downloads = 0 keeps queued jobs from starting, so nothing big is streamed)
 
 
 def test_small_download_starts_without_asking(root):
-    # G4✅1 · Then: approve not called; job queued · Demonstrates: small downloads just start
+    # Then: approve not called; job queued · Demonstrates: small downloads just start
     async def scenario():
         env = Env(root, parallel_downloads=0)
         svc = await env.start(fake_resolver(fake_plan(50 * MB)))
@@ -250,7 +250,7 @@ def test_small_download_starts_without_asking(root):
 
 
 def test_big_download_asks_and_starts_on_yes(root):
-    # G4✅2 · Changed: 300 MB, approve → True · Then: approve called once with name, size, licence; job queued
+    # Changed: 300 MB, approve → True · Then: approve called once with name, size, licence; job queued
     # Demonstrates: you decide on big downloads
     async def scenario():
         env = Env(root, parallel_downloads=0)
@@ -264,7 +264,7 @@ def test_big_download_asks_and_starts_on_yes(root):
 
 
 def test_no_size_cap_when_disk_has_room(root):
-    # G4✅3 · Changed: 50 GB plan, 100 GB free · Then: job queued (after approval) · Demonstrates: only the disk limits size
+    # Changed: 50 GB plan, 100 GB free · Then: job queued (after approval) · Demonstrates: only the disk limits size
     async def scenario():
         env = Env(root, parallel_downloads=0)
         svc = await env.start(fake_resolver(fake_plan(50 * GB)))
@@ -275,7 +275,7 @@ def test_no_size_cap_when_disk_has_room(root):
 
 
 def test_declined_download_writes_nothing(root):
-    # G4❌1 · Changed: 300 MB, approve → False · Then: DECLINED; no record, no job, nothing on disk
+    # Changed: 300 MB, approve → False · Then: DECLINED; no record, no job, nothing on disk
     # Demonstrates: Skip means nothing happens
     async def scenario():
         env = Env(root, parallel_downloads=0)
@@ -291,7 +291,7 @@ def test_declined_download_writes_nothing(root):
 
 
 def test_not_enough_disk_is_refused_before_asking(root):
-    # G4❌2 · Changed: 50 GB plan, 40 GB free · Then: NO_SPACE with sizes + available_files; approve not called
+    # Changed: 50 GB plan, 40 GB free · Then: NO_SPACE with sizes + available_files; approve not called
     # Demonstrates: a download that can't fit never starts
     async def scenario():
         env = Env(root, free=40 * GB, parallel_downloads=0)
@@ -308,7 +308,7 @@ def test_not_enough_disk_is_refused_before_asking(root):
 
 
 def test_queued_jobs_reserve_disk(root):
-    # G4❌3 · Changed: 60 GB free, a 30 GB job queued, new 31 GB plan · Then: NO_SPACE (30 GB reserved shown)
+    # Changed: 60 GB free, a 30 GB job queued, new 31 GB plan · Then: NO_SPACE (30 GB reserved shown)
     # Demonstrates: two downloads can't claim the same space
     async def scenario():
         env = Env(root, free=60 * GB, parallel_downloads=0)
@@ -323,7 +323,7 @@ def test_queued_jobs_reserve_disk(root):
 
 
 def test_disk_filling_during_download_fails_and_cleans_up(root):
-    # G4❌4 · Changed: free disk hits 0 after chunk 1 · Then: failed ("disk full"); partial removed; message sent
+    # Changed: free disk hits 0 after chunk 1 · Then: failed ("disk full"); partial removed; message sent
     # Demonstrates: the disk is never filled to the end
     async def scenario():
         env = Env(root)
@@ -348,7 +348,7 @@ def test_disk_filling_during_download_fails_and_cleans_up(root):
     run(scenario())
 
 
-# ---- Group 5 — Download and verify (AC3, AC8, AC9, SEC1, SEC5) · integration
+# ---- Download and verify · integration
 # Baseline: Given a queued job of 2 files with correct checksums · When the job runs (wait_idle)
 
 
@@ -359,7 +359,7 @@ async def download(env, files=None, update=False, session="s1", pid="p1"):
 
 
 def test_job_writes_files_and_marks_ready(root):
-    # G5✅1 · Then: files in files/datasets/<id>/, record ready, .dataset-partial empty
+    # Then: files in files/datasets/<id>/, record ready, .dataset-partial empty
     # Demonstrates: files end up where the tool said
     async def scenario():
         env = Env(root)
@@ -376,7 +376,7 @@ def test_job_writes_files_and_marks_ready(root):
 
 
 def test_job_pushes_progress_to_panels(root):
-    # G5✅2 · Then: downloading with rising done_bytes, then ready · Demonstrates: the panel shows live progress
+    # Then: downloading with rising done_bytes, then ready · Demonstrates: the panel shows live progress
     async def scenario():
         env = Env(root)
         await env.start()
@@ -392,7 +392,7 @@ def test_job_pushes_progress_to_panels(root):
 
 
 def test_redirect_to_public_https_cdn_is_followed(root):
-    # G5✅3 · Changed: 307 → https://cas-bridge… · Then: ready · Demonstrates: real HF downloads work
+    # Changed: 307 → https://cas-bridge… · Then: ready · Demonstrates: real HF downloads work
     async def scenario():
         env = Env(root)
         env.catalog.behaviours["a.csv"] = "redirect"
@@ -405,7 +405,7 @@ def test_redirect_to_public_https_cdn_is_followed(root):
 
 
 def test_checksum_mismatch_fails_and_cleans_up(root):
-    # G5❌1 · Changed: wrong bytes · Then: failed (checksum); no files left · Demonstrates: corrupted data is never used
+    # Changed: wrong bytes · Then: failed (checksum); no files left · Demonstrates: corrupted data is never used
     async def scenario():
         env = Env(root)
         env.catalog.behaviours["a.csv"] = "wrong"
@@ -420,7 +420,7 @@ def test_checksum_mismatch_fails_and_cleans_up(root):
 
 
 def test_network_error_midway_cleans_up(root):
-    # G5❌2 · Changed: transport raises on file 2 · Then: failed; no partial files
+    # Changed: transport raises on file 2 · Then: failed; no partial files
     # Demonstrates: broken downloads leave nothing half-done
     async def scenario():
         env = Env(root)
@@ -436,7 +436,7 @@ def test_network_error_midway_cleans_up(root):
 
 
 def test_redirect_to_private_address_is_blocked(root):
-    # G5❌3 · Changed: 307 → http://127.0.0.1/, → https://10.0.0.1/ · Then: failed; never requested
+    # Changed: 307 → http://127.0.0.1/, → https://10.0.0.1/ · Then: failed; never requested
     # Demonstrates: redirects can't reach your network
     for target in ("http://127.0.0.1/x", "https://10.0.0.1/x"):
         async def scenario():
@@ -454,7 +454,7 @@ def test_redirect_to_private_address_is_blocked(root):
 
 
 def test_more_bytes_than_declared_aborts(root):
-    # G5❌4 · Changed: 2× declared size · Then: failed; stream stopped · Demonstrates: a lying server can't fill the disk
+    # Changed: 2× declared size · Then: failed; stream stopped · Demonstrates: a lying server can't fill the disk
     async def scenario():
         env = Env(root)
         env.catalog.behaviours["b.csv"] = "extra"
@@ -468,7 +468,7 @@ def test_more_bytes_than_declared_aborts(root):
 
 
 def test_stalled_download_fails(root):
-    # G5❌5 · Changed: no bytes for stall_timeout_seconds · Then: failed (stalled) · Demonstrates: stuck downloads end
+    # Changed: no bytes for stall_timeout_seconds · Then: failed (stalled) · Demonstrates: stuck downloads end
     async def scenario():
         env = Env(root, stall_timeout_seconds=0.05)
         env.catalog.behaviours["a.csv"] = "stall"
@@ -481,7 +481,7 @@ def test_stalled_download_fails(root):
 
 
 def test_too_many_redirects(root):
-    # G5❌6 · Changed: 6 redirects · Then: failed · Demonstrates: no redirect loops
+    # Changed: 6 redirects · Then: failed · Demonstrates: no redirect loops
     async def scenario():
         env = Env(root)
         env.catalog.behaviours["a.csv"] = "loop"
@@ -494,7 +494,7 @@ def test_too_many_redirects(root):
     run(scenario())
 
 
-# ---- Group 6 — Idempotency and versions (AC11, AC12, AC28, SEC9) · unit
+# ---- Idempotency and versions · unit
 # Baseline: Given the project has a ready dataset (revision r1, files=["*.csv"]) · When requesting or reading again
 
 
@@ -503,7 +503,7 @@ def csv_parquet_catalog():
 
 
 def test_same_download_returns_existing(root):
-    # G6✅1 · Changed: same request · Then: already_downloaded: true; no catalog or file request
+    # Changed: same request · Then: already_downloaded: true; no catalog or file request
     # Demonstrates: no wasted work
     async def scenario():
         env = Env(root, catalog=csv_parquet_catalog())
@@ -519,7 +519,7 @@ def test_same_download_returns_existing(root):
 
 
 def test_newer_revision_is_not_used_without_update(root):
-    # G6✅2 · Changed: catalog now at r2, no update · Then: r1 kept; no catalog call
+    # Changed: catalog now at r2, no update · Then: r1 kept; no catalog call
     # Demonstrates: your data never changes unless you ask
     async def scenario():
         env = Env(root, catalog=csv_parquet_catalog())
@@ -537,7 +537,7 @@ def test_newer_revision_is_not_used_without_update(root):
 
 
 def test_update_true_downloads_current_revision(root):
-    # G6✅3 · Changed: catalog at r2, update: true · Then: job for the *.csv selection at r2;
+    # Changed: catalog at r2, update: true · Then: job for the *.csv selection at r2;
     # old folder replaced only when complete; same /work path · Demonstrates: updating works and keeps paths
     async def scenario():
         env = Env(root, catalog=csv_parquet_catalog())
@@ -563,7 +563,7 @@ def test_update_true_downloads_current_revision(root):
 
 
 def test_missing_files_show_missing_status(root):
-    # G6✅4 · Changed: one file deleted from disk · Then: missing with that file · Demonstrates: the list tells the truth
+    # Changed: one file deleted from disk · Then: missing with that file · Demonstrates: the list tells the truth
     async def scenario():
         env = Env(root)
         await env.start()
@@ -576,7 +576,7 @@ def test_missing_files_show_missing_status(root):
 
 
 def test_new_selection_adds_only_new_files(root):
-    # G6✅5 · Changed: files=["*.parquet"] · Then: same id and folder; job fetches only parquet; csv untouched;
+    # Changed: files=["*.parquet"] · Then: same id and folder; job fetches only parquet; csv untouched;
     # selection = both · Demonstrates: selections never clash
     async def scenario():
         env = Env(root, catalog=csv_parquet_catalog())
@@ -594,7 +594,7 @@ def test_new_selection_adds_only_new_files(root):
 
 
 def test_new_selection_while_downloading_queues_after_it(root):
-    # G6✅6 · Changed: first job running, then *.parquet · Then: second job waits for the first; folder ends with both
+    # Changed: first job running, then *.parquet · Then: second job waits for the first; folder ends with both
     # Demonstrates: no two jobs write one folder at once
     async def scenario():
         env = Env(root, catalog=csv_parquet_catalog())
@@ -614,7 +614,7 @@ def test_new_selection_while_downloading_queues_after_it(root):
 
 
 def test_failed_dataset_can_be_downloaded_again(root):
-    # G6✅7 · Changed: failed on file 2 of 2 · Then: job fetches only file 2; ready · Demonstrates: retry without starting over
+    # Changed: failed on file 2 of 2 · Then: job fetches only file 2; ready · Demonstrates: retry without starting over
     async def scenario():
         env = Env(root)
         env.catalog.fail_once.add("b.csv")
@@ -631,7 +631,7 @@ def test_failed_dataset_can_be_downloaded_again(root):
 
 
 def test_missing_files_are_downloaded_again_only(root):
-    # G6✅8 (NB-4: the pooled bytes are gone, not just the link) · Changed: 1 of 3 files deleted from the pool,
+    # Changed: 1 of 3 files deleted from the pool,
     # same request · Then: job fetches only that file
     # Demonstrates: re-downloading after cleanup is cheap
     async def scenario():
@@ -648,7 +648,7 @@ def test_missing_files_are_downloaded_again_only(root):
 
 
 def test_same_dataset_while_running_returns_running_job(root):
-    # G6❌2 · Changed: record downloading · Then: same id, downloading; no second job · Demonstrates: no double downloads
+    # Changed: record downloading · Then: same id, downloading; no second job · Demonstrates: no double downloads
     async def scenario():
         env = Env(root)
         env.catalog.behaviours["b.csv"] = "block"
@@ -664,7 +664,7 @@ def test_same_dataset_while_running_returns_running_job(root):
 
 
 def test_startup_marks_stale_jobs_failed(root):
-    # G6❌3 (SQLite plan G5✅1: rows instead of NB-3 records) · Changed: rows queued/downloading, files in .dataset-partial/
+    # Changed: rows queued/downloading, files in .dataset-partial/
     # Then: failed; partial cleared · Demonstrates: a crash leaves no half files
     pool = DatasetPool(root)
     for entry_id in ("zenodo-1", "zenodo-2"):
@@ -692,12 +692,12 @@ def test_startup_marks_stale_jobs_failed(root):
     assert [d.status for d in ds.load_project_datasets("p1", root)] == ["failed", "failed"]
 
 
-# ---- Group 7 — Delete and cancel (AC25, AC26, AC27, SEC4, SEC9) · unit
+# ---- Delete and cancel · unit
 # Baseline: Given a ready dataset · When delete(pid, dataset_id)
 
 
 def test_delete_removes_folder_and_record(root):
-    # G7✅1 · Then: folder and record gone; freed_bytes = size; panels pushed · Demonstrates: delete frees the space
+    # Then: folder and record gone; freed_bytes = size; panels pushed · Demonstrates: delete frees the space
     async def scenario():
         env = Env(root)
         await env.start()
@@ -713,7 +713,7 @@ def test_delete_removes_folder_and_record(root):
 
 
 def test_cancel_running_or_queued_job_removes_it(root):
-    # G7✅3 · Changed: own job downloading, then another queued · Then: stopped / never started; partial removed;
+    # Changed: own job downloading, then another queued · Then: stopped / never started; partial removed;
     # records removed · Demonstrates: you can stop a download at any point
     async def scenario():
         catalog = Catalog({"a.csv": b"aaa"})
@@ -739,7 +739,7 @@ def test_cancel_running_or_queued_job_removes_it(root):
 
 
 def test_delete_unknown_id_is_not_found(root):
-    # G7❌1 · Changed: id not in the project · Then: NOT_FOUND; nothing removed
+    # Changed: id not in the project · Then: NOT_FOUND; nothing removed
     async def scenario():
         env = Env(root)
         await env.start()
@@ -753,7 +753,7 @@ def test_delete_unknown_id_is_not_found(root):
 
 
 def test_delete_while_downloading_is_busy(root):
-    # G7❌2 · Changed: record downloading · Then: BUSY; download continues · Demonstrates: no delete under a running download
+    # Changed: record downloading · Then: BUSY; download continues · Demonstrates: no delete under a running download
     async def scenario():
         env = Env(root)
         env.catalog.behaviours["b.csv"] = "block"
@@ -770,7 +770,7 @@ def test_delete_while_downloading_is_busy(root):
 
 
 def test_model_delete_declined_keeps_dataset(root):
-    # G7❌3 · Changed: tool, approve → False · Then: DECLINED; everything kept · Demonstrates: the model can't delete without you
+    # Changed: tool, approve → False · Then: DECLINED; everything kept · Demonstrates: the model can't delete without you
     from researchchat.tools import dataset_delete
 
     async def scenario():
@@ -792,7 +792,7 @@ def test_model_delete_declined_keeps_dataset(root):
 
 
 def test_cancel_when_not_downloading(root):
-    # G7❌4 · Changed: record ready · Then: NOT_FOUND; dataset kept · Demonstrates: cancel never deletes finished data
+    # Changed: record ready · Then: NOT_FOUND; dataset kept · Demonstrates: cancel never deletes finished data
     async def scenario():
         env = Env(root)
         await env.start()
@@ -805,7 +805,7 @@ def test_cancel_when_not_downloading(root):
     run(scenario())
 
 
-# ---- Group 9 — Panel actions and props (AC8, AC21, AC25, AC27) · unit
+# ---- Panel actions and props · unit
 # Baseline: Given a session on project p1 with one ready dataset · When dispatch(svc, session, "ds_delete", {"dataset_id": id})
 
 
@@ -829,7 +829,7 @@ async def panel_env(root, monkeypatch, catalog=None):
 
 
 def test_ds_delete_returns_props_without_dataset(root, monkeypatch):
-    # G9✅1 · Then: NotebookProps with datasets: [] · Demonstrates: the panel updates after delete
+    # Then: NotebookProps with datasets: [] · Demonstrates: the panel updates after delete
     async def scenario():
         env, svc, nb, session = await panel_env(root, monkeypatch)
         await download(env)
@@ -841,7 +841,7 @@ def test_ds_delete_returns_props_without_dataset(root, monkeypatch):
 
 
 def test_props_show_status_and_licence_only_while_not_ready(root, monkeypatch):
-    # G9✅2 · Changed: one downloading, one ready · Then: downloading row has status, done_bytes, license;
+    # Changed: one downloading, one ready · Then: downloading row has status, done_bytes, license;
     # ready row has size_bytes, file_count; datasets_rev is higher · Demonstrates: the panel shows what matters at each stage
     async def scenario():
         catalog = Catalog({"a.csv": b"aaa"})
@@ -867,7 +867,7 @@ def test_props_show_status_and_licence_only_while_not_ready(root, monkeypatch):
 
 
 def test_ds_actions_bad_payload(root, monkeypatch):
-    # G9❌1 · Changed: missing dataset_id, int id, extra project_id · Then: BAD_PAYLOAD for the first two; extra ignored
+    # Changed: missing dataset_id, int id, extra project_id · Then: BAD_PAYLOAD for the first two; extra ignored
     # Demonstrates: the payload can't pick the project
     async def scenario():
         env, svc, nb, session = await panel_env(root, monkeypatch)
@@ -886,7 +886,7 @@ def test_ds_actions_bad_payload(root, monkeypatch):
 
 
 def test_ds_delete_other_projects_dataset_is_not_found(root, monkeypatch):
-    # G9❌2 · Changed: id only in p2 · Then: NOT_FOUND; p2 untouched · Demonstrates: no cross-project delete
+    # Changed: id only in p2 · Then: NOT_FOUND; p2 untouched · Demonstrates: no cross-project delete
     async def scenario():
         env, svc, nb, session = await panel_env(root, monkeypatch)
         await download(env, pid="p2")
@@ -898,12 +898,12 @@ def test_ds_delete_other_projects_dataset_is_not_found(root, monkeypatch):
     run(scenario())
 
 
-# ---- Group 10 — Background jobs and chat (AC2, AC3, AC9, AC10, AC14, SEC10, SEC11) · unit
+# ---- Background jobs and chat · unit
 # Baseline: Given chat s1 on project p1 requests a 50 MB download · When the job runs while s1 keeps chatting
 
 
 def test_finished_job_messages_the_starting_chat(root):
-    # G10✅1 · Then: one message to s1: "Dataset X is ready … at /work/datasets/<id>/" · Demonstrates: you hear when it's done
+    # Then: one message to s1: "Dataset X is ready … at /work/datasets/<id>/" · Demonstrates: you hear when it's done
     async def scenario():
         env = Env(root)
         await env.start()
@@ -914,7 +914,7 @@ def test_finished_job_messages_the_starting_chat(root):
 
 
 def test_other_messages_are_handled_while_job_runs(root):
-    # G10✅2 · Changed: a second message during the job · Then: it completes before the job ends
+    # Changed: a second message during the job · Then: it completes before the job ends
     # Demonstrates: chatting is never blocked
     async def scenario():
         env = Env(root)
@@ -933,7 +933,7 @@ def test_other_messages_are_handled_while_job_runs(root):
 
 
 def test_finish_note_reaches_model_on_next_turn_once(root):
-    # G10✅3 · Changed: job ends, then 2 user messages · Then: first turn gets one system note (ids, statuses, paths,
+    # Changed: job ends, then 2 user messages · Then: first turn gets one system note (ids, statuses, paths,
     # "data, not instructions", no catalog text); second none · Demonstrates: the model learns the result once
     async def scenario():
         env = Env(root)
@@ -950,7 +950,7 @@ def test_finish_note_reaches_model_on_next_turn_once(root):
 
 
 def test_jobs_beyond_parallel_limit_wait(root):
-    # G10✅4 · Changed: 3 downloads, parallel_downloads = 2 · Then: third queued (position_in_queue: 1), starts when one ends
+    # Changed: 3 downloads, parallel_downloads = 2 · Then: third queued (position_in_queue: 1), starts when one ends
     # Demonstrates: the queue works
     async def scenario():
         catalog = Catalog({"a.csv": b"a"})
@@ -972,7 +972,7 @@ def test_jobs_beyond_parallel_limit_wait(root):
 
 
 def test_job_continues_after_chat_closes(root):
-    # G10✅5 · Changed: s1 closed mid-job · Then: ready; no message, no error; other chats' panels updated
+    # Changed: s1 closed mid-job · Then: ready; no message, no error; other chats' panels updated
     # Demonstrates: downloads belong to the project
     async def scenario():
         env = Env(root)
@@ -992,7 +992,7 @@ def test_job_continues_after_chat_closes(root):
 
 
 def test_failed_job_messages_reason_and_leaves_note(root):
-    # G10❌1 · Changed: checksum mismatch · Then: "Download of X failed: …"; note has failed + reason
+    # Changed: checksum mismatch · Then: "Download of X failed: …"; note has failed + reason
     # Demonstrates: failures are never silent
     async def scenario():
         env = Env(root)
@@ -1006,7 +1006,7 @@ def test_failed_job_messages_reason_and_leaves_note(root):
 
 
 def test_job_keeps_project_after_chat_switches(root):
-    # G10❌2 · Changed: s1 switches to p2 mid-job · Then: files land in p1 only · Demonstrates: a switch can't redirect a download
+    # Changed: s1 switches to p2 mid-job · Then: files land in p1 only · Demonstrates: a switch can't redirect a download
     async def scenario():
         env = Env(root)
         env.catalog.behaviours["b.csv"] = "block"
@@ -1022,12 +1022,12 @@ def test_job_keeps_project_after_chat_switches(root):
     run(scenario())
 
 
-# ---- Group S — Security (§5 #6, #14) · unit
+# ---- Security · unit
 # Baseline: negatives only; Given two projects and MockTransport
 
 
 def test_unknown_and_foreign_ids_look_the_same(root):
-    # S❌4 · Changed: unknown id vs p2 id · Then: identical error · Demonstrates: no id probing (#6)
+    # Changed: unknown id vs p2 id · Then: identical error · Demonstrates: no id probing
     async def scenario():
         env = Env(root)
         await env.start()
@@ -1046,8 +1046,8 @@ def test_unknown_and_foreign_ids_look_the_same(root):
 
 
 def test_no_tokens_or_host_paths_in_requests_or_results(root):
-    # S❌6 · Changed: inspect requests, tool results, notes · Then: no Authorization; no workspace host path
-    # Demonstrates: secrets & paths don't leak (#14)
+    # Changed: inspect requests, tool results, notes · Then: no Authorization; no workspace host path
+    # Demonstrates: secrets & paths don't leak
     async def scenario():
         env = Env(root)
         env.catalog.behaviours["b.csv"] = "wrong"
@@ -1066,13 +1066,13 @@ def test_no_tokens_or_host_paths_in_requests_or_results(root):
     run(scenario())
 
 
-# ---- Added while implementing (plan revisions, scaffold report §11)
+# ---- Linked folders and other edge cases
 
 
 def test_linked_dataset_folders_are_never_followed(root, tmp_path):
-    # S (added) · Changed: kernel code makes files/datasets, or files/datasets/<id>, a symlink to outside the project
+    # Changed: kernel code makes files/datasets, or files/datasets/<id>, a symlink to outside the project
     # Then: the path is refused; a download fails without writing outside; delete leaves the outside dir untouched
-    # Demonstrates: /work is writable, but it can't steer where the app writes or deletes (#2, #8)
+    # Demonstrates: /work is writable, but it can't steer where the app writes or deletes
     import os
 
     outside = tmp_path / "outside"
@@ -1106,7 +1106,7 @@ def test_linked_dataset_folders_are_never_followed(root, tmp_path):
 
 
 def test_update_while_downloading_is_busy(root):
-    # G6 (added in NB-4) · Changed: update: true while the first download still runs
+    # Changed: update: true while the first download still runs
     # Then: BUSY; the running download finishes and the project keeps one version
     # Demonstrates: two versions are never fetched for one project at once
     async def scenario():
@@ -1127,7 +1127,7 @@ def test_update_while_downloading_is_busy(root):
 
 
 def test_failed_update_keeps_old_version_ready(root):
-    # G6 (added) · Changed: update: true fails (checksum), then the same request without update
+    # Changed: update: true fails (checksum), then the same request without update
     # Then: old files untouched; the dataset shows ready again, with no error
     # Demonstrates: a failed update never leaves your data marked broken
     async def scenario():
@@ -1148,14 +1148,14 @@ def test_failed_update_keeps_old_version_ready(root):
     run(scenario())
 
 
-# ---- NB-4: tests moved from the epic into NB-4 (they need the pool) · unit
-# Baseline: as the NB-3 groups above, plus a shared dataset pool (NB-4 plan §7)
+# ---- Shared pool · unit
+# Baseline: as the groups above, plus a shared dataset pool
 
 
 def test_pooled_files_need_no_space_and_no_prompt(root):
-    # G4✅4 · Changed: all files already in the pool, 0 bytes free
+    # Changed: all files already in the pool, 0 bytes free
     # Then: linked, ready, from_pool: true; approve and free-disk not called
-    # Demonstrates: reuse is instant and free (AC15)
+    # Demonstrates: reuse is instant and free
     async def scenario():
         env = Env(root)
         await env.start()
@@ -1173,9 +1173,9 @@ def test_pooled_files_need_no_space_and_no_prompt(root):
 
 
 def test_missing_files_are_relinked_from_pool(root):
-    # G6✅9 · Changed: 1 of 3 links deleted, same request
+    # Changed: 1 of 3 links deleted, same request
     # Then: re-linked; no download
-    # Demonstrates: cleanup in the notebook is cheap to undo (AC28)
+    # Demonstrates: cleanup in the notebook is cheap to undo
     async def scenario():
         env = Env(root, catalog=csv_parquet_catalog())
         await env.start()
@@ -1193,9 +1193,9 @@ def test_missing_files_are_relinked_from_pool(root):
 
 
 def test_delete_keeps_pool_data_used_by_other_project(root):
-    # G7✅2 · Changed: p2 uses the same entry
+    # Changed: p2 uses the same entry
     # Then: p1 links and record gone; entry kept; freed_bytes: 0, still_used_by: 1; p2 unchanged
-    # Demonstrates: deleting in one project never breaks another (AC25)
+    # Demonstrates: deleting in one project never breaks another
     async def scenario():
         env = Env(root)
         await env.start()
@@ -1213,9 +1213,9 @@ def test_delete_keeps_pool_data_used_by_other_project(root):
 
 
 def test_cancel_shared_job_keeps_it_for_other_project(root):
-    # G7✅4 · Changed: p2 waits for the same job
+    # Changed: p2 waits for the same job
     # Then: p1 record removed; job continues; p2 gets ready
-    # Demonstrates: cancel is per project (AC27)
+    # Demonstrates: cancel is per project
     async def scenario():
         env = Env(root)
         env.catalog.behaviours["a.csv"] = "block"
@@ -1235,9 +1235,9 @@ def test_cancel_shared_job_keeps_it_for_other_project(root):
 
 
 def test_delete_last_user_removes_pool_data(root):
-    # G7✅5 · Changed: only p1 uses the entry
+    # Changed: only p1 uses the entry
     # Then: links, record and pool entry gone; freed_bytes = size
-    # Demonstrates: the pool cleans itself up (AC25)
+    # Demonstrates: the pool cleans itself up
     async def scenario():
         env = Env(root)
         await env.start()
@@ -1250,14 +1250,13 @@ def test_delete_last_user_removes_pool_data(root):
     run(scenario())
 
 
-# ---- SQLite plan G5 — Startup without NB-3 (AC3, AC7) · integration
+# ---- Startup without the old JSON dataset files · integration
 # Baseline: Given a workspace at head with project `p1` · When `DatasetService.startup_cleanup()`
-# TODO(AC3,AC7): shared baseline setup (a workspace at head) once database_for exists
-# Plan: docs/plans/sqlite-alembic-storage-plan.md §7
+# TODO: shared baseline setup (a workspace at head) once database_for exists
 
 
 def test_startup_ignores_old_json_files(root):
-    # G5❌1 · negative
+    # negative
     # Changed: a leftover datasets.json (format 1) and .dataset-pool.json in the workspace
     # Then: no rows created from them; files untouched; no error
     # Demonstrates: the old formats are really gone, not half-supported
@@ -1285,10 +1284,10 @@ REMOVED_FORMAT_NAMES = (
 
 
 def test_no_code_references_removed_formats():
-    # G5❌2 · negative
+    # negative
     # Changed: grep the package for datasets.json, .dataset-pool.json, load_records, migrate_project (vulture runs separately)
     # Then: no hits
-    # Demonstrates: AC7: the removal is complete
+    # Demonstrates: the removal is complete
     package = Path(__file__).resolve().parent.parent / "researchchat"
     hits = [
         f"{path.relative_to(package)}: {name}"

@@ -1,4 +1,4 @@
-"""notebook_read tool: let the model see the project's notebook (AC17).
+"""notebook_read tool: let the model see the project's notebook.
 
 Read-only: it never runs the user's cells.
 """

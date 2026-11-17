@@ -1,8 +1,8 @@
-"""dataset_download tool: start a background download into the project (NB-3 AC1).
+"""dataset_download tool: start a background download into the project.
 
 Quick checks happen here; the transfer runs in the background and the tool
-returns at once. Downloads above ask_above_mb show Download / Skip (AC7).
-Unknown arguments are ignored, so {"approved": true} can't skip the prompt (A19).
+returns at once. Downloads above ask_above_mb show Download / Skip.
+Unknown arguments are ignored, so {"approved": true} can't skip the prompt.
 """
 
 import json
@@ -62,9 +62,9 @@ def step_title(args: dict) -> str:
 
 
 def read_args(args: dict) -> tuple[str, list[str] | None, bool]:
-    """(ref, files, update), or ValueError before the service is called (G8❌1–2).
+    """(ref, files, update), or ValueError before the service is called.
 
-    Unknown keys are ignored, so {"approved": true} changes nothing (A19).
+    Unknown keys are ignored, so {"approved": true} changes nothing.
     """
     ref = args.get("ref")
     if not isinstance(ref, str) or not ref.strip():
@@ -115,7 +115,7 @@ async def ask_approval(plan: DatasetPlan, download_bytes: int) -> bool:
 
 
 def error_json(err: WorkspaceError) -> str:
-    """A WorkspaceError as JSON for the model, with its structured details (A12)."""
+    """A WorkspaceError as JSON for the model, with its structured details."""
     return json.dumps({"error": err.code, "message": err.message, **(err.details or {})})
 
 

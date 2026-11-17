@@ -1,6 +1,6 @@
-"""Action callbacks the Notebook panel calls with callAction (plan §4.2).
+"""Action callbacks the Notebook panel calls with callAction.
 
-The project always comes from the chat session, never from the payload (SEC2).
+The project always comes from the chat session, never from the payload.
 Each callback returns NotebookProps, with `error` set when rejected.
 """
 
@@ -18,8 +18,7 @@ from researchchat.config import (
     DATASETS_PARALLEL_DOWNLOADS,
     DATASETS_STALL_TIMEOUT_SECONDS,
 )
-from researchchat.workspace import ErrorCode, WorkspaceError
-from researchchat.workspace import store
+from researchchat.workspace import ErrorCode, WorkspaceError, store
 from researchchat.workspace.datasets.created import missing_notice
 from researchchat.workspace.datasets.service import DatasetService, DatasetsSettings
 from researchchat.workspace.kernels import KernelRegistry
@@ -36,7 +35,7 @@ service = NotebookService(kernels, notify=panels.push)
 
 
 class ChatRegistry:
-    """Live Chainlit sessions by chat id, so a background job can message the chat that started it (NB-3)."""
+    """Live Chainlit sessions by chat id, so a background job can message the chat that started it."""
 
     def __init__(self):
         self._sessions: dict[str, object] = {}  # session_id -> chainlit WebsocketSession
@@ -81,9 +80,9 @@ datasets = DatasetService(
     notify=panels.push,
     send=chats.send,
 )
-service.datasets = datasets.panel_state  # panel props include the datasets (plan §2.1)
-service.after_run = datasets.sync_created  # every cell run lists the data files it wrote (PCD-1 A2)
-datasets.created.run_lock = service.run_lock  # a created-file delete waits for the running cell (PCD-1 SEC2)
+service.datasets = datasets.panel_state  # panel props include the datasets
+service.after_run = datasets.sync_created  # every cell run lists the data files it wrote
+datasets.created.run_lock = service.run_lock  # a created-file delete waits for the running cell
 
 SESSION_KEY = "project_id"
 
@@ -104,8 +103,8 @@ FIELDS: dict[str, dict[str, type | tuple[type, ...]]] = {
     "nb_list_projects": {},
     "nb_switch_project": {"project_id": str},
     "nb_create_project": {"name": str},
-    "ds_delete": {"dataset_id": str},  # NB-3: confirmed in the panel first (A7)
-    "ds_cancel": {"dataset_id": str},  # NB-3: stop a running or queued download
+    "ds_delete": {"dataset_id": str},  # confirmed in the panel first
+    "ds_cancel": {"dataset_id": str},  # stop a running or queued download
 }
 OPTIONAL = {("nb_add_cell", "after_id"), ("nb_add_cell", "type"), ("nb_reorder_cell", "before_id")}
 
@@ -247,7 +246,7 @@ for _name in FIELDS:
 
 
 async def toast_missing_created_files(dataset_service: DatasetService, project_id: str, send_toast: SendToast) -> None:
-    """One warning toast naming the project's created files that can't be found (PCD-1 AC11, D5).
+    """One warning toast naming the project's created files that can't be found.
 
     Called once when a chat opens a workspace (start or switch), so it shows once per opening.
     """
@@ -257,7 +256,7 @@ async def toast_missing_created_files(dataset_service: DatasetService, project_i
 
 
 def list_created_datasets_now(dataset_service: DatasetService, project_id: str) -> None:
-    """Scan once on opening, so files made before this feature existed show without running a cell (PCD-1 A6)."""
+    """Scan once on opening, so files made before this feature existed show without running a cell."""
     try:
         dataset_service.sync_created(project_id)
     except Exception:

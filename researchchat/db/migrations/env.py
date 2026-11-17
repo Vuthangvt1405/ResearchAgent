@@ -1,6 +1,4 @@
 """Alembic environment: the app passes its open connection; the CLI opens config.toml's database.
-
-Plan: docs/plans/sqlite-alembic-storage-plan.md §4.1
 """
 
 from logging.config import fileConfig

@@ -3,10 +3,8 @@
 A created dataset is a data file the project's own notebook code wrote into
 files/ (seen by the kernel as /work/<path>). It has no pool entry and no
 project_dataset_files rows; its path, size, mtime and inode live on the row
-itself (PCD-1 plan §3.3). This module only reads and writes those rows; the
+itself. This module only reads and writes those rows; the
 rules (what counts, renames, safe delete) live in created.py.
-
-Plan: docs/plans/PCD-1-created-datasets-plan.md
 """
 
 import logging
@@ -24,28 +22,28 @@ from researchchat.workspace.datasets import store as ds
 log = logging.getLogger(__name__)
 
 ORIGIN_CREATED = "created"
-CREATED_ID_PREFIX = "file-"  # can't clash with catalog ids (hf-, zenodo-), so ds_delete routes by lookup (A3)
+CREATED_ID_PREFIX = "file-"  # can't clash with catalog ids (hf-, zenodo-), so ds_delete routes by lookup
 KERNEL_FILES_ROOT = "/work"  # how the kernel sees the project's files/
 STORED_STATUS = "ready"  # created rows are always stored ready; missing is computed on read
 
 
 @dataclass(frozen=True)
 class FileSnapshot:
-    """What one scan saw of a data file: enough to spot a re-save (AC4) or a rename (AC12)."""
+    """What one scan saw of a data file: enough to spot a re-save or a rename."""
 
     path: str  # POSIX, relative to files/
     size_bytes: int
     mtime_ns: int  # changes on every save; part of the rename match
-    inode: int  # kept by a rename; with size and mtime it finds the card of a renamed file (SEC10)
+    inode: int  # kept by a rename; with size and mtime it finds the card of a renamed file
 
 
 @dataclass
 class CreatedDataset:
     """One created card, as stored."""
 
-    id: str  # stored slug (file-iris-csv); kept on rename (A3, D7)
+    id: str  # stored slug (file-iris-csv); kept on rename
     snapshot: FileSnapshot  # path, size, mtime, inode at the last scan that changed it
-    first_seen_at: str  # ISO 8601 UTC, project_datasets.requested_at; sort order (A8)
+    first_seen_at: str  # ISO 8601 UTC, project_datasets.requested_at; sort order
     changed_at: str  # ISO 8601 UTC, project_datasets.linked_at; "added 2 h ago"
 
 
@@ -62,7 +60,7 @@ def make_created_id(path: str, taken_ids: set[str]) -> str:
 
 
 def kernel_file_path(path: str) -> str:
-    """/work/<path>: the path the model, the card and the load code use (AC1, AC6)."""
+    """/work/<path>: the path the model, the card and the load code use."""
     return f"{KERNEL_FILES_ROOT}/{path}"
 
 
@@ -97,7 +95,7 @@ def insert_created_dataset(project_id: str, dataset: CreatedDataset, root: Path 
 
 
 def update_created_dataset(project_id: str, dataset: CreatedDataset, root: Path = WORKSPACES_DIR) -> None:
-    """Store a new snapshot for an existing id: a re-save (AC4) or a rename/move (AC12)."""
+    """Store a new snapshot for an existing id: a re-save or a rename/move."""
     with database_for(root).begin() as connection:
         connection.execute(
             update(project_datasets)
@@ -140,7 +138,7 @@ def _next_position(connection: Connection, project_pk: int) -> int:
 
 
 def _created_dataset_from_row(row: Row) -> CreatedDataset | None:
-    """A CreatedDataset, or None (logged) when the row was edited into something unsafe (SEC4)."""
+    """A CreatedDataset, or None (logged) when the row was edited into something unsafe."""
     has_valid_id = bool(ds.DATASET_ID_RE.match(row.slug)) and row.slug.startswith(CREATED_ID_PREFIX)
     if not has_valid_id or not _is_safe_path(row.path):
         log.warning("Ignored a created dataset row that isn't valid: %r", str(row.slug)[:80])

@@ -1,4 +1,4 @@
-"""The shared dataset pool (NB-4 plan §3.3).
+"""The shared dataset pool.
 
 workspaces/
     .dataset-pool/<entry>/<path>   the bytes, stored once; mounted read-only in every kernel
@@ -10,14 +10,12 @@ The links are relative so they point at the same bytes on the host and in the
 kernel: on the host they climb to workspaces/, in the kernel (/work/datasets/…)
 they climb to / where the pool is mounted read-only at /.dataset-pool. The app
 never trusts a link it finds: it compares the link text with the one it would
-write and reads sizes from the pool folder itself (SEC23).
+write and reads sizes from the pool folder itself.
 
 This module owns the pool index, linking files into projects, "used by"
 counts and cleanup. It never downloads and holds no lock of its own:
 DatasetService calls it only while holding `lock` (one app-wide lock, so
-cleanup and linking can't race, SEC9).
-
-Plans: docs/plans/done/NB-4-dataset-pool-plan.md, docs/plans/sqlite-alembic-storage-plan.md
+cleanup and linking can't race).
 """
 
 import asyncio
@@ -56,7 +54,7 @@ class PoolFile:
     size: int  # bytes, as the catalog declared it
     checksum: str | None  # "md5:…" / "sha256:…", or None when the catalog gives none
     ready: bool = False  # downloaded, verified and moved into the entry folder
-    mtime_ns: int | None = None  # lets the app notice a file changed on disk (SEC16)
+    mtime_ns: int | None = None  # lets the app notice a file changed on disk
 
 
 @dataclass
@@ -97,7 +95,7 @@ class DatasetPool:
 
     def __init__(self, root: Path = WORKSPACES_DIR):
         self.root = Path(root)
-        self.lock = asyncio.Lock()  # index, linking and cleanup share it (SEC9)
+        self.lock = asyncio.Lock()  # index, linking and cleanup share it
         self._entries: dict[str, PoolEntry] | None = None  # cache of the index
 
     # ---- paths ----
@@ -121,7 +119,7 @@ class DatasetPool:
 
     @staticmethod
     def make_entry_id(dataset_slug: str, revision: str | None) -> str:
-        """<dataset-slug>@<first 7 of revision>, or the slug when there's no revision (AC30)."""
+        """<dataset-slug>@<first 7 of revision>, or the slug when there's no revision."""
         if not revision:
             return dataset_slug
         revision_prefix = re.sub(r"[^a-z0-9]", "", revision.lower())[:REVISION_PREFIX_LENGTH]
@@ -144,7 +142,7 @@ class DatasetPool:
         return self._entries
 
     def load_index(self) -> list[PoolEntry]:
-        """Read the pool index from the database; a tampered row is skipped and logged (SEC23)."""
+        """Read the pool index from the database; a tampered row is skipped and logged."""
         with database_for(self.root).connect() as connection:
             entry_rows = connection.execute(select(pool_entries).order_by(pool_entries.c.pk)).all()
             files_by_entry = _pool_files_by_entry(connection)
@@ -153,7 +151,7 @@ class DatasetPool:
 
     def save_index(self, entries: list[PoolEntry] | None = None) -> None:
         """Write the index in one transaction: upsert entries on slug (keeps their pk), replace their files,
-        delete entries no longer listed (a used one is refused by the RESTRICT foreign key, SEC4)."""
+        delete entries no longer listed (a used one is refused by the RESTRICT foreign key)."""
         listed = list(self.entries().values()) if entries is None else entries
         with database_for(self.root).begin() as connection:
             for entry in listed:
@@ -192,7 +190,7 @@ class DatasetPool:
         return stat.st_size == pool_file.size and stat.st_mtime_ns == pool_file.mtime_ns
 
     def recheck_file(self, entry: PoolEntry, pool_file: PoolFile) -> bool:
-        """Re-verify a changed file; a bad one is marked not ready and must be downloaded again (SEC16)."""
+        """Re-verify a changed file; a bad one is marked not ready and must be downloaded again."""
         path = self.pool_file_path(entry.id, pool_file.path)
         is_good = path.is_file() and not path.is_symlink() and path.stat().st_size == pool_file.size
         is_good = is_good and checksum_matches(path, pool_file.checksum)
@@ -292,7 +290,7 @@ class DatasetPool:
         return freed
 
 def check_entry_id(entry_id: object) -> None:
-    """Only generated entry ids name a pool folder (SEC23)."""
+    """Only generated entry ids name a pool folder."""
     if not isinstance(entry_id, str) or not ENTRY_ID_RE.match(entry_id):
         raise WorkspaceError(ErrorCode.NOT_FOUND, "Unknown dataset.")
 

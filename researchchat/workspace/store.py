@@ -5,8 +5,6 @@ workspaces/
     <project_id>/
         notebook.ipynb      nbformat 4.5; metadata.researchchat.version = int
         files/              mounted into the kernel container as /work
-
-Plan: docs/plans/sqlite-alembic-storage-plan.md (projects moved from project.json)
 """
 
 import logging
@@ -106,7 +104,7 @@ def create_project(name: str, root: Path = WORKSPACES_DIR, project_id: str | Non
     if not name or len(name) > PROJECT_NAME_MAX:
         raise WorkspaceError(ErrorCode.BAD_NAME, f"Project names must be 1-{PROJECT_NAME_MAX} characters.")
     Path(root).mkdir(parents=True, exist_ok=True)
-    with database_for(root).begin() as connection:  # a failed folder rolls the row back (G2❌2)
+    with database_for(root).begin() as connection:  # a failed folder rolls the row back
         pid = project_id or _unique_id(slugify(name), root, connection)
         folder = project_dir(pid, root)
         project = Project(pid, name, utc_now())
@@ -149,7 +147,7 @@ def get_project(project_id: str, root: Path = WORKSPACES_DIR) -> Project:
 
 
 def _project_from_row(row: Row) -> Project | None:
-    """A Project, or None (logged) when the row was edited into something unsafe (SEC3)."""
+    """A Project, or None (logged) when the row was edited into something unsafe."""
     if not PROJECT_ID_RE.match(row.slug):
         log.warning("Ignored a project row with an unsafe id: %r", row.slug[:80])
         return None

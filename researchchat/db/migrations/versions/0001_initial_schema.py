@@ -3,8 +3,6 @@
 Revision ID: 0001
 Revises:
 Create Date: 2026-11-15
-
-Plan: docs/plans/sqlite-alembic-storage-plan.md §3.3
 """
 
 from collections.abc import Sequence

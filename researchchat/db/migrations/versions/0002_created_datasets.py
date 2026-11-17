@@ -7,9 +7,7 @@ Create Date: 2026-11-16
 Foreign keys: batch mode drops and recreates project_datasets, which would
 cascade-delete every project_dataset_files row with foreign keys on.
 engine.upgrade_to_latest runs every migration with them off and checks them
-afterwards (G10✅2, G10✅3).
-
-Plan: docs/plans/PCD-1-created-datasets-plan.md §3.3
+afterwards.
 """
 
 from collections.abc import Sequence

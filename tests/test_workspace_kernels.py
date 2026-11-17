@@ -1,6 +1,4 @@
 """Running code in the Docker kernel (needs Docker).
-
-Plan: docs/plans/done/notebook-workspace-plan.md section 7.
 These start real kernel containers; they skip when Docker or the image is missing.
 """
 
@@ -67,12 +65,12 @@ def kernel_test(fn):
     return wrapper
 
 
-# ---- Group 3: Running code (AC2, AC3, AC4, AC12, AC13, AC14, AC16) · integration (kernel)
+# ---- Running code · integration (kernel)
 # Baseline: Given project P with a running kernel · When a cell is executed
 
 
 def test_run_shows_last_value_and_execution_count(root):
-    # G3✅1 (baseline) · Demonstrates: basic Jupyter behaviour
+    # Demonstrates: basic Jupyter behaviour
     @kernel_test
     async def go(reg, root, pid):
         result = await exec_(reg, root, pid, "1+1")
@@ -83,7 +81,6 @@ def test_run_shows_last_value_and_execution_count(root):
 
 
 def test_print_goes_to_stdout_output(root):
-    # G3✅2 (edge)
     @kernel_test
     async def go(reg, root, pid):
         result = await exec_(reg, root, pid, 'print("hi")')
@@ -93,7 +90,7 @@ def test_print_goes_to_stdout_output(root):
 
 
 def test_variables_persist_between_cells(root):
-    # G3✅3 (edge) · Demonstrates: one session per project
+    # Demonstrates: one session per project
     @kernel_test
     async def go(reg, root, pid):
         await exec_(reg, root, pid, "x = 5")
@@ -104,7 +101,7 @@ def test_variables_persist_between_cells(root):
 
 
 def test_matplotlib_chart_becomes_png_output(root):
-    # G3✅4 (edge) · Demonstrates: charts work
+    # Demonstrates: charts work
     @kernel_test
     async def go(reg, root, pid):
         result = await exec_(reg, root, pid, "import matplotlib.pyplot as plt\nplt.plot([1, 3, 2])\nplt.show()")
@@ -116,7 +113,6 @@ def test_matplotlib_chart_becomes_png_output(root):
 
 
 def test_relative_paths_use_project_files_dir(root):
-    # G3✅5 (edge)
     @kernel_test
     async def go(reg, root, pid):
         await exec_(reg, root, pid, 'open("a.txt", "w").write("hello")')
@@ -145,7 +141,7 @@ def service_with_cells(root, sources):
 
 
 def test_run_all_stops_at_first_error(root):
-    # G3✅6 (edge) · Demonstrates: Jupyter's run-all behaviour
+    # Demonstrates: Jupyter's run-all behaviour
     svc, reg, pid, ids, _ = service_with_cells(root, ["a = 1", "1/0", "c = 3"])
 
     async def go():
@@ -160,7 +156,6 @@ def test_run_all_stops_at_first_error(root):
 
 
 def test_run_all_skips_notes(root):
-    # G3✅7 (edge)
     svc, reg, pid, ids, _ = service_with_cells(root, ["a = 1", "# note: why", "a + 1"])
 
     async def go():
@@ -176,7 +171,7 @@ def test_run_all_skips_notes(root):
 
 
 def test_long_line_output_is_not_wrapped(root):
-    # G3✅8 (edge) · Demonstrates: the panel can scroll it sideways (AC14)
+    # Demonstrates: the panel can scroll it sideways
     @kernel_test
     async def go(reg, root, pid):
         result = await exec_(reg, root, pid, 'print("x" * 2000)')
@@ -186,7 +181,7 @@ def test_long_line_output_is_not_wrapped(root):
 
 
 def test_exception_shows_traceback_and_error_status(root):
-    # G3❌1 (negative) · Demonstrates: errors don't kill the session
+    # Demonstrates: errors don't kill the session
     @kernel_test
     async def go(reg, root, pid):
         result = await exec_(reg, root, pid, "1/0")
@@ -199,7 +194,6 @@ def test_exception_shows_traceback_and_error_status(root):
 
 
 def test_long_output_is_truncated(root):
-    # G3❌2 (negative)
     pid = store.create_project("P", root).id
     reg = make_registry(root, max_output_chars=5000)
 
@@ -215,7 +209,6 @@ def test_long_output_is_truncated(root):
 
 
 def test_html_output_is_returned_as_text(root):
-    # G3❌3 (negative) · (S6)
     @kernel_test
     async def go(reg, root, pid):
         result = await exec_(reg, root, pid, 'from IPython.display import HTML, display\ndisplay(HTML("<script>alert(1)</script>"))')
@@ -226,8 +219,25 @@ def test_html_output_is_returned_as_text(root):
     go(root)
 
 
+def test_broken_kernel_channel_is_reported_at_once(root):
+    @kernel_test
+    async def go(reg, root, pid):
+        await exec_(reg, root, pid, "x = 1")
+
+        async def broken_channel(*args, **kwargs):
+            raise RuntimeError("channel closed")
+
+        reg._kernels[pid].client.get_iopub_msg = broken_channel
+        started = time.monotonic()
+        with pytest.raises(WorkspaceError) as err:
+            await exec_(reg, root, pid, "x")
+        assert err.value.code == ErrorCode.KERNEL_DEAD and reg.status(pid) == "dead"
+        assert time.monotonic() - started < reg.timeout_seconds
+
+    go(root)
+
+
 def test_dead_kernel_is_reported_and_restartable(root):
-    # G3❌4 (negative)
     @kernel_test
     async def go(reg, root, pid):
         await exec_(reg, root, pid, "x = 1")
@@ -241,12 +251,12 @@ def test_dead_kernel_is_reported_and_restartable(root):
     go(root)
 
 
-# ---- Group 4: Interrupt, timeout, restart (AC8, AC9) · integration (kernel)
+# ---- Interrupt, timeout, restart · integration (kernel)
 # Baseline: Given `x = 1` ran in P · When a long cell `while True: pass` runs
 
 
 def test_interrupt_stops_run_and_keeps_variables(root):
-    # G4✅1 (baseline) · Demonstrates: Stop doesn't lose work
+    # Demonstrates: Stop doesn't lose work
     @kernel_test
     async def go(reg, root, pid):
         await exec_(reg, root, pid, "x = 1")
@@ -261,7 +271,7 @@ def test_interrupt_stops_run_and_keeps_variables(root):
 
 
 def test_timeout_interrupts_long_cell(root):
-    # G4❌1 (negative) · Demonstrates: runaway code is stopped
+    # Demonstrates: runaway code is stopped
     pid = store.create_project("P", root).id
     reg = make_registry(root, timeout_seconds=2)
 
@@ -278,7 +288,6 @@ def test_timeout_interrupts_long_cell(root):
 
 
 def test_restart_clears_variables_keeps_cells(root):
-    # G4✅2 (edge)
     svc, reg, pid, ids, _ = service_with_cells(root, ["x = 1", "x"])
 
     async def go():
@@ -295,7 +304,7 @@ def test_restart_clears_variables_keeps_cells(root):
 
 
 def test_second_run_waits_for_first(root):
-    # G4✅3 (edge) · Demonstrates: one run at a time per project
+    # Demonstrates: one run at a time per project
     svc, reg, pid, ids, pushes = service_with_cells(root, ["import time; time.sleep(2); a = 1", "b = a + 1"])
 
     async def go():
@@ -315,7 +324,7 @@ def test_second_run_waits_for_first(root):
 
 
 def test_idle_kernel_is_stopped(root):
-    # G4✅4 (edge) · Demonstrates: no forgotten processes
+    # Demonstrates: no forgotten processes
     @kernel_test
     async def go(reg, root, pid):
         await exec_(reg, root, pid, "x = 1")
@@ -328,12 +337,12 @@ def test_idle_kernel_is_stopped(root):
     go(root)
 
 
-# ---- Group 5: One workspace per project (AC6, AC7) · integration (kernel)
+# ---- One workspace per project · integration (kernel)
 # Baseline: Given projects P and Q · When code runs in P
 
 
 def test_projects_have_separate_variables(root):
-    # G5✅1 (baseline) · Demonstrates: no mixing between projects
+    # Demonstrates: no mixing between projects
     @kernel_test
     async def go(reg, root, pid):
         qid = store.create_project("Q", root).id
@@ -345,7 +354,7 @@ def test_projects_have_separate_variables(root):
 
 
 def test_two_sessions_share_one_project_workspace(root):
-    # G5✅2 (edge) · Demonstrates: one workspace per project
+    # Demonstrates: one workspace per project
     svc, reg, pid, ids, pushes = service_with_cells(root, ["x = 41"])
 
     async def go():
@@ -365,7 +374,6 @@ def test_two_sessions_share_one_project_workspace(root):
 
 
 def test_projects_have_separate_files_dirs(root):
-    # G5✅3 (edge)
     @kernel_test
     async def go(reg, root, pid):
         qid = store.create_project("Q", root).id
@@ -377,12 +385,12 @@ def test_projects_have_separate_files_dirs(root):
     go(root)
 
 
-# ---- Group 9: Docker sandbox (AC19, AC20) · integration (`@pytest.mark.docker`)
+# ---- Docker sandbox · integration (`@pytest.mark.docker`)
 # Baseline: Given project P's kernel container is running · When a cell runs
 
 
 def test_code_runs_in_container_in_work_dir(root):
-    # G9✅1 (baseline) · Demonstrates: code never runs on the host
+    # Demonstrates: code never runs on the host
     @kernel_test
     async def go(reg, root, pid):
         result = await exec_(reg, root, pid, 'import os; (os.getcwd(), os.path.exists("/.dockerenv"))')
@@ -392,7 +400,6 @@ def test_code_runs_in_container_in_work_dir(root):
 
 
 def test_file_written_in_cell_appears_in_project_files(root):
-    # G9✅2 (edge)
     @kernel_test
     async def go(reg, root, pid):
         await exec_(reg, root, pid, 'import pandas as pd; pd.DataFrame({"a": [1]}).to_csv("t.csv", index=False)')
@@ -413,7 +420,6 @@ def _exists(name):
 
 
 def test_leftover_containers_removed_on_startup(root):
-    # G9✅3 (edge)
     reg = make_registry(root)
     name = _sleeper(reg, "leftover")
     try:
@@ -424,7 +430,7 @@ def test_leftover_containers_removed_on_startup(root):
 
 
 def test_cleanup_leaves_other_apps_kernels_alone(tmp_path):
-    # G9✅4 (edge) · Demonstrates: cleanup only touches its own workspaces folder
+    # Demonstrates: cleanup only touches its own workspaces folder
     # (found in testing: the cleanup test removed the running app's kernel)
     mine = make_registry(tmp_path / "mine")
     other = make_registry(tmp_path / "other")
@@ -439,7 +445,6 @@ def test_cleanup_leaves_other_apps_kernels_alone(tmp_path):
 
 
 def test_host_files_are_not_visible(root):
-    # G9❌1 (negative) · (#10)
     @kernel_test
     async def go(reg, root, pid):
         code = (
@@ -453,7 +458,7 @@ def test_host_files_are_not_visible(root):
 
 
 def test_container_has_no_host_env(root, monkeypatch):
-    # G9❌2 (negative) · Demonstrates: key can't leak (#4)
+    # Demonstrates: key can't leak
     monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-test-secret")
     monkeypatch.setenv("MY_TOKEN", "tok")
 
@@ -468,7 +473,7 @@ def test_container_has_no_host_env(root, monkeypatch):
 
 
 def test_write_outside_work_fails(root):
-    # G9❌3 (negative) · read-only root (#10)
+    # read-only root
     @kernel_test
     async def go(reg, root, pid):
         result = await exec_(reg, root, pid, 'open("/etc/evil", "w")')
@@ -479,7 +484,6 @@ def test_write_outside_work_fails(root):
 
 
 def test_memory_hog_kills_kernel_not_app(root):
-    # G9❌4 (negative) · (#7)
     pid = store.create_project("P", root).id
     reg = KernelRegistry(root=root, timeout_seconds=30, docker=DockerSettings(memory="256m"))
 
@@ -497,7 +501,7 @@ def test_memory_hog_kills_kernel_not_app(root):
 
 
 def test_docker_down_reports_unavailable(root, monkeypatch):
-    # G9❌5 (negative) · Demonstrates: no host fallback (AC20)
+    # Demonstrates: no host fallback
     from researchchat.workspace import kernels
 
     async def no_docker(*args, **kwargs):
@@ -514,7 +518,6 @@ def test_docker_down_reports_unavailable(root, monkeypatch):
 
 
 def test_kernel_ports_bound_to_localhost(root):
-    # G9❌6 (negative) · (#11)
     @kernel_test
     async def go(reg, root, pid):
         await exec_(reg, root, pid, "1")
@@ -525,11 +528,11 @@ def test_kernel_ports_bound_to_localhost(root):
     go(root)
 
 
-# ---- NB-4 Group 11: Shared pool · kernel arguments
+# ---- Shared pool · kernel arguments
 
 
 def test_kernel_mounts_pool_read_only(root):
-    # G11✅4 · Changed: build the docker run arguments
+    # Changed: build the docker run arguments
     # Then: the pool is mounted read-only (at /.dataset-pool, where the relative links land); still only files/ at /work
     # Demonstrates: the pool can't be changed from a kernel
     reg = make_registry(root)

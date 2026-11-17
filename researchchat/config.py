@@ -55,7 +55,7 @@ TOOL_MAX_ROUNDS: int = _search.get("max_rounds", 4)
 READ_PAGE_MAX_CHARS: int = _search.get("read_page_max_chars", 8000)
 DATASET_MAX_RESULTS: int = CONFIG.get("dataset_search", {}).get("max_results", 8)
 
-# Background dataset downloads (NB-3)
+# Background dataset downloads
 _datasets = CONFIG.get("datasets", {})
 DATASETS_MIN_FREE_DISK_MB: int = _datasets.get("min_free_disk_mb", 0)
 DATASETS_ASK_ABOVE_MB: int = _datasets.get("ask_above_mb", 200)
@@ -63,7 +63,7 @@ DATASETS_MAX_FILES: int = _datasets.get("max_files", 500)
 DATASETS_PARALLEL_DOWNLOADS: int = _datasets.get("parallel_downloads", 2)
 DATASETS_STALL_TIMEOUT_SECONDS: int = _datasets.get("stall_timeout_seconds", 120)
 
-# Files the project's own code writes that count as datasets (PCD-1 A4): each has a load-code reader in the panel
+# Files the project's own code writes that count as datasets: each has a load-code reader in the panel
 CREATED_DATA_EXTENSIONS: tuple[str, ...] = (
     ".csv", ".tsv", ".json", ".jsonl", ".parquet", ".xlsx", ".xls", ".csv.gz", ".tsv.gz",
 )

@@ -3,3 +3,7 @@ paths = ["app.py", "researchchat", "tests", "vulture_whitelist.py"]
 exclude = [".venv/", "researchchat/db/migrations/"]
 min_confidence = 80
 sort_by_size = true
+
+[tool.ruff]
+# The whitelist is bare names by design, so undefined-name and useless-expression are expected there
+extend-exclude = ["vulture_whitelist.py"]

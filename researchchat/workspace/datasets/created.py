@@ -1,16 +1,14 @@
-"""Data files the project's own notebook code wrote, shown as datasets (PCD-1).
+"""Data files the project's own notebook code wrote, shown as datasets.
 
-After every cell run the project's files/ folder is scanned (A2): data files
-(CREATED_DATA_EXTENSIONS) get a card, a re-save updates it (AC4), a rename
-keeps it (AC12), and a file that's gone shows `missing` (AC7). The scan never
+After every cell run the project's files/ folder is scanned: data files
+(CREATED_DATA_EXTENSIONS) get a card, a re-save updates it, a rename
+keeps it, and a file that's gone shows `missing`. The scan never
 follows a symlink and skips hidden entries and the top-level datasets/ folder,
-where the pool links live (A5, AC10, SEC1, SEC8). Delete removes the file
-itself, never a link target (A7, SEC1, SEC2).
+where the pool links live. Delete removes the file
+itself, never a link target.
 
 Storage goes through created_store.py. Nothing here imports actions.py
-or reads the Chainlit session; the run lock and the clock are injected (CLAUDE.md §2, DIP).
-
-Plan: docs/plans/PCD-1-created-datasets-plan.md
+or reads the Chainlit session; the run lock and the clock are injected (DIP).
 """
 
 import asyncio
@@ -31,12 +29,12 @@ from researchchat.workspace.service import DatasetPanelStatus, DatasetProps
 if TYPE_CHECKING:
     from researchchat.workspace.datasets.service import DatasetRecordView
 
-RunLockFor = Callable[[str], asyncio.Lock]  # project_id -> its notebook run lock (SEC2)
+RunLockFor = Callable[[str], asyncio.Lock]  # project_id -> its notebook run lock
 Clock = Callable[[], str]  # ISO 8601 UTC now
 
-POOL_LINKS_DIR = "datasets"  # files/datasets/: pool links, listed as downloaded datasets only (AC10)
-NOTICE_NAME_MAX_CHARS = 80  # per file name in the toast (SEC6)
-CREATED_SOURCE = "created"  # DatasetProps.source; the panel shows "Created by myself" (AC3)
+POOL_LINKS_DIR = "datasets"  # files/datasets/: pool links, listed as downloaded datasets only
+NOTICE_NAME_MAX_CHARS = 80  # per file name in the toast
+CREATED_SOURCE = "created"  # DatasetProps.source; the panel shows "Created by myself"
 ELLIPSIS = "…"
 
 
@@ -44,13 +42,13 @@ ELLIPSIS = "…"
 class ScanChanges:
     """What one scan found compared with the stored rows; computed without touching storage."""
 
-    new_files: list[FileSnapshot] = field(default_factory=list)  # insert (AC1, AC13)
-    resaved: list[CreatedDataset] = field(default_factory=list)  # same id, new size/mtime (AC4)
-    renamed: list[CreatedDataset] = field(default_factory=list)  # same id, new path (AC12)
+    new_files: list[FileSnapshot] = field(default_factory=list)  # insert
+    resaved: list[CreatedDataset] = field(default_factory=list)  # same id, new size/mtime
+    renamed: list[CreatedDataset] = field(default_factory=list)  # same id, new path
 
     @property
     def has_changes(self) -> bool:
-        """False when the scan wrote nothing, so datasets_rev stays put (G2❌1, G3✅3)."""
+        """False when the scan wrote nothing, so datasets_rev stays put."""
         return bool(self.new_files or self.resaved or self.renamed)
 
 
@@ -58,13 +56,13 @@ class ScanChanges:
 
 
 def is_data_file(name: str, extensions: tuple[str, ...] = CREATED_DATA_EXTENSIONS) -> bool:
-    """True for Iris.csv, IRIS.CSV, a.csv.gz; False for plot.png, model.pkl, data (AC5, A4)."""
+    """True for Iris.csv, IRIS.CSV, a.csv.gz; False for plot.png, model.pkl, data."""
     lowered_name = name.lower()
     return any(lowered_name.endswith(extension) for extension in extensions)
 
 
 def scan_data_files(files_dir: Path, extensions: tuple[str, ...] = CREATED_DATA_EXTENSIONS) -> list[FileSnapshot]:
-    """Every data file under files/, by stat only (never reads contents, A9), in path order."""
+    """Every data file under files/, by stat only (never reads contents), in path order."""
     found: list[FileSnapshot] = []
     folders_to_visit: list[tuple[Path, str]] = [(files_dir, "")]
     while folders_to_visit:
@@ -79,7 +77,7 @@ def scan_data_files(files_dir: Path, extensions: tuple[str, ...] = CREATED_DATA_
 
 
 def _listable_entries(folder: Path, is_top_level: bool) -> list[os.DirEntry]:
-    """Entries the scan may look at: no symlinks (SEC1), no hidden names (A5), not the pool links (SEC8)."""
+    """Entries the scan may look at: no symlinks, no hidden names, not the pool links."""
     try:
         with os.scandir(folder) as entries:
             return [
@@ -113,7 +111,7 @@ def compare_with_stored(stored: list[CreatedDataset], found: list[FileSnapshot])
     """Sort what a scan found into new / re-saved / renamed (pure; no I/O)."""
     stored_by_path = {dataset.snapshot.path: dataset for dataset in stored}
     found_paths = {snapshot.path for snapshot in found}
-    # A rename keeps the inode, size and mtime; requiring all three stops a reused inode taking over a card (SEC10)
+    # A rename keeps the inode, size and mtime; requiring all three stops a reused inode taking over a card
     gone_by_identity = {
         _identity(dataset.snapshot): dataset for dataset in stored if dataset.snapshot.path not in found_paths
     }
@@ -149,7 +147,7 @@ def _identity(snapshot: FileSnapshot) -> tuple[int, int, int]:
 
 
 def is_file_present(files_dir: Path, path: str) -> bool:
-    """`ready` test: files/<path> is a regular file inside files/, and no part of it is a link (AC7)."""
+    """`ready` test: files/<path> is a regular file inside files/, and no part of it is a link."""
     target = _path_with_no_linked_folder(files_dir, path)
     return target is not None and not target.is_symlink() and target.is_file()
 
@@ -157,7 +155,7 @@ def is_file_present(files_dir: Path, path: str) -> bool:
 def remove_created_file(files_dir: Path, path: str) -> int:
     """Delete files/<path> itself; a link there is unlinked, never followed. Returns the bytes freed.
 
-    Nothing is touched when a folder on the way is a link: the file behind it isn't this project's (SEC1).
+    Nothing is touched when a folder on the way is a link: the file behind it isn't this project's.
     """
     target = _path_with_no_linked_folder(files_dir, path)
     if target is None:
@@ -186,11 +184,11 @@ def _path_with_no_linked_folder(files_dir: Path, path: str) -> Path | None:
     return folder / parts[-1]
 
 
-# ---- the AC11 toast text ---------------------------------------------------------
+# ---- the missing-files toast text ---------------------------------------------------------
 
 
 def missing_notice(names: list[str]) -> str:
-    """The AC11 toast text for these missing files, one line, names capped (SEC6)."""
+    """The missing-files toast text, one line, names capped."""
     shown_names = [_one_line_name(name) for name in names]
     if len(shown_names) == 1:
         return (f"{shown_names[0]} was deleted or renamed and can't be found. "
@@ -234,20 +232,20 @@ class CreatedDatasets:
         return changes.has_changes
 
     def panel_rows(self, project_id: str) -> list[DatasetProps]:
-        """Created cards for NotebookProps.datasets: origin 'created', source 'created', no licence/url/shared (AC3)."""
+        """Created cards for NotebookProps.datasets: origin 'created', source 'created', no licence/url/shared."""
         return [self._panel_row(project_id, dataset) for dataset in cds.load_created_datasets(project_id, self.root)]
 
     def model_views(self, project_id: str) -> "list[DatasetRecordView]":
-        """Created rows for dataset_list: path /work/<path>, missing_files when gone (AC7, AC9)."""
+        """Created rows for dataset_list: path /work/<path>, missing_files when gone."""
         return [self._model_view(project_id, dataset) for dataset in cds.load_created_datasets(project_id, self.root)]
 
     def owns(self, project_id: str, dataset_id: str) -> bool:
-        """True when this id is one of the project's created datasets (routes ds_delete, SEC3)."""
+        """True when this id is one of the project's created datasets (routes ds_delete)."""
         return self._find(project_id, dataset_id) is not None
 
     async def delete(self, project_id: str, dataset_id: str) -> int:
-        """Remove the file and its card; a link is unlinked, never followed (AC8, A7). Returns the bytes freed."""
-        # Under the run lock no cell can swap the file for a link between the check and the unlink (SEC2)
+        """Remove the file and its card; a link is unlinked, never followed. Returns the bytes freed."""
+        # Under the run lock no cell can swap the file for a link between the check and the unlink
         async with self._lock_for(project_id):
             dataset = self._find(project_id, dataset_id)
             if dataset is None:
@@ -257,7 +255,7 @@ class CreatedDatasets:
         return freed_bytes
 
     def missing_names(self, project_id: str) -> list[str]:
-        """Paths of created files that can't be found, for the AC11 toast."""
+        """Paths of created files that can't be found, for the missing-files toast."""
         files_dir = self._files_dir(project_id)
         return [
             dataset.snapshot.path for dataset in cds.load_created_datasets(project_id, self.root)

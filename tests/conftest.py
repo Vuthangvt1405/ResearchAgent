@@ -88,7 +88,7 @@ def service_factory(fake_kernels):
     return make
 
 
-# ---- NB-3 dataset download helpers (plan §7 test infrastructure) -----------------
+# ---- dataset download helpers -----------------------------------------
 
 
 async def fake_lookup(host: str) -> list[str]:

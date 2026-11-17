@@ -1,6 +1,4 @@
-"""SQLite database: schema, Alembic migrations, placement and injection (SQLite plan G1, S1).
-
-Plan: docs/plans/sqlite-alembic-storage-plan.md §7
+"""SQLite database: schema, Alembic migrations, placement and injection.
 """
 
 import os
@@ -47,12 +45,12 @@ def stored_revision(database_file) -> str:
         return connection.execute("SELECT version_num FROM alembic_version").fetchone()[0]
 
 
-# ---- SQLite plan G1 — Schema and migrations (AC1, AC4, AC5, SEC4, SEC6) · integration
+# ---- Schema and migrations · integration
 # Baseline: Given an empty `tmp_path/workspaces` · When `database_for(root)` is called
 
 
 def test_first_open_creates_database_at_head(root):
-    # G1✅1 · baseline
+    # baseline
     # Changed: —
     # Then: researchchat.db exists; alembic_version = head; all five tables exist
     # Demonstrates: a fresh workspace gets the full schema with no manual step
@@ -64,7 +62,7 @@ def test_first_open_creates_database_at_head(root):
 
 
 def test_second_open_reuses_database_without_migrating(root):
-    # G1✅2 · edge
+    # edge
     # Changed: called twice (and on a second Engine)
     # Then: same file; no revision applied the second time; rows kept
     # Demonstrates: upgrading at every start is safe
@@ -83,10 +81,10 @@ def test_second_open_reuses_database_without_migrating(root):
 
 
 def test_migrations_match_table_definitions(root):
-    # G1✅3 · edge
+    # edge
     # Changed: compare upgrade head with schema.metadata (Alembic compare_metadata)
     # Then: no differences
-    # Demonstrates: the migration and the code can't drift (AC5)
+    # Demonstrates: the migration and the code can't drift
     engine = db.database_for(root)
 
     with engine.connect() as connection:
@@ -96,7 +94,7 @@ def test_migrations_match_table_definitions(root):
 
 
 def test_downgrade_to_base_removes_all_tables(root):
-    # G1✅4 · edge
+    # edge
     # Changed: downgrade base after upgrade
     # Then: no app tables left
     # Demonstrates: the rollback path works
@@ -111,7 +109,7 @@ def test_downgrade_to_base_removes_all_tables(root):
 
 
 def test_foreign_keys_are_enforced_on_every_connection(root):
-    # G1❌1 · negative
+    # negative
     # Changed: insert a project_datasets row whose pool_entry_pk doesn't exist, on a fresh pooled connection
     # Then: IntegrityError; no row
     # Demonstrates: the FK actually holds (the PRAGMA isn't forgotten)
@@ -131,7 +129,7 @@ def test_foreign_keys_are_enforced_on_every_connection(root):
 
 
 def test_database_from_newer_version_stops_startup(root):
-    # G1❌2 · negative
+    # negative
     # Changed: alembic_version set to "9999"
     # Then: SystemExit with the "newer version" text; file bytes unchanged
     # Demonstrates: the app never writes to a schema it doesn't know
@@ -148,7 +146,7 @@ def test_database_from_newer_version_stops_startup(root):
 
 
 def test_unreadable_database_file_stops_startup(root):
-    # G1❌3 · negative
+    # negative
     # Changed: researchchat.db contains random bytes
     # Then: SystemExit with the "damaged" text; file bytes unchanged
     # Demonstrates: a broken file gives steps, not a stack trace
@@ -162,12 +160,12 @@ def test_unreadable_database_file_stops_startup(root):
     assert db.database_path(root).read_bytes() == garbage
 
 
-# ---- SQLite plan S1 — Database placement and injection (SEC1, SEC2) · unit / integration
+# ---- Database placement and injection · unit / integration
 # Baseline: Given a workspace at head
 
 
 def test_database_file_is_outside_kernel_mounts(root):
-    # S1❌1 · negative
+    # negative
     # Changed: KernelRegistry.run_arguments(...) for a project
     # Then: no mount source is, or contains, researchchat.db or the workspaces/ root
     # Demonstrates: kernel code can't edit app data
@@ -183,7 +181,7 @@ def test_database_file_is_outside_kernel_mounts(root):
 
 
 def test_sql_metacharacters_are_stored_as_plain_text(root):
-    # S1❌2 · negative
+    # negative
     # Changed: project name `x'); DROP TABLE projects; --`, file path `a'b.csv`, license `"; --`
     # Then: stored and read back verbatim; all tables still exist
     # Demonstrates: values never become SQL
@@ -202,7 +200,7 @@ def test_sql_metacharacters_are_stored_as_plain_text(root):
     assert APP_TABLES <= table_names(db.database_for(root))
 
 
-# ---- PCD-1 Group 10 — Storage: both kinds in one table (D2, §3.3) · integration (real SQLite)
+# ---- Storage: both kinds in one table · integration (real SQLite)
 # Baseline: Given a workspace with project `p` and a downloaded dataset `hf-x` (pool entry + 2 file rows) ·
 #   When migration 0002 runs up or down
 
@@ -245,7 +243,7 @@ def file_list_paths(engine) -> list[str]:
 
 
 def test_migration_0002_marks_existing_rows_downloaded(root):
-    # G10✅2 · edge
+    # edge
     # Changed: upgrade a 0001 database with rows
     # Then: every old row `origin = 'downloaded'`, pool entry kept, `status_known` check still there,
     #   and every `project_dataset_files` row intact (the rebuild must not cascade-delete them)
@@ -265,7 +263,7 @@ def test_migration_0002_marks_existing_rows_downloaded(root):
 
 
 def test_migration_0002_downgrade_drops_created_rows_only(root):
-    # G10✅3 · edge
+    # edge
     # Changed: downgrade to 0001
     # Then: created rows gone, downloaded rows and their `project_dataset_files` intact,
     #   `pool_entry_pk` NOT NULL again; files on disk untouched
@@ -288,7 +286,7 @@ def test_migration_0002_downgrade_drops_created_rows_only(root):
 
 
 def test_upgrade_with_foreign_keys_on_would_empty_file_lists(root):
-    # G10✅2 · edge (added in implementation: proves why engine.foreign_keys_off exists)
+    # proves why engine.foreign_keys_off exists
     # Changed: the same upgrade, but run inside one transaction with foreign keys on
     # Then: project_dataset_files is emptied by the table rebuild's DROP
     # Demonstrates: the guard in upgrade_to_latest is load-bearing
