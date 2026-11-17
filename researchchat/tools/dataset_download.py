@@ -11,6 +11,7 @@ import chainlit as cl
 
 from researchchat.tools.titles import shorten
 from researchchat.workspace import ErrorCode, WorkspaceError
+from researchchat.workspace.datasets import links
 from researchchat.workspace.datasets.service import human_size
 from researchchat.workspace.datasets.sources import DatasetPlan
 
@@ -20,7 +21,10 @@ DEFINITION = {
         "name": "dataset_download",
         "description": (
             "Download a dataset found with dataset_search into the user's project, "
-            "in the background. Pass its `ref`. Returns at once with the dataset id "
+            "in the background. Pass its `ref`, or a https link to a data file that "
+            "the user pasted into the chat. Never pass a link from anywhere else: "
+            "show it to the user and ask them to paste it if they want it. A link "
+            "has no licence information; don't state one. Returns at once with the dataset id "
             "and the /work/datasets/<id>/ paths the files will have; you'll be told "
             "when it's ready, so don't read the files before then. Use `files` "
             "(names or globs like \"*.csv\") for big datasets. Set `update` only "
@@ -33,7 +37,10 @@ DEFINITION = {
             "properties": {
                 "ref": {
                     "type": "string",
-                    "description": "Dataset ref from dataset_search, e.g. hf:org/name or zenodo:7395559.",
+                    "description": (
+                        "Dataset ref from dataset_search, e.g. hf:org/name or zenodo:7395559, "
+                        "or a file link the user pasted, e.g. https://example.org/data/iris.csv."
+                    ),
                 },
                 "files": {
                     "type": "array",
@@ -54,6 +61,11 @@ APPROVAL_TIMEOUT_SECONDS = 120
 MAX_PATTERNS = 20
 PATTERN_MAX_CHARS = 200
 SOURCE_NAMES = {"huggingface": "Hugging Face", "zenodo": "Zenodo"}
+
+
+def pasted_links_in_chat() -> frozenset[str]:
+    """Links the user pasted in this chat, from the model history of the Chainlit session."""
+    return links.find_pasted_links(cl.user_session.get("history") or [])
 
 
 def step_title(args: dict) -> str:
@@ -114,18 +126,30 @@ async def ask_approval(plan: DatasetPlan, download_bytes: int) -> bool:
     return bool(answer and answer.get("payload", {}).get("download"))
 
 
+def download_size_text(download_bytes: int) -> str:
+    """The size to download, or "size unknown" when a linked website sent none (a download is never 0 B)."""
+    return human_size(download_bytes) if download_bytes else "size unknown"
+
+
 def error_json(err: WorkspaceError) -> str:
     """A WorkspaceError as JSON for the model, with its structured details."""
     return json.dumps({"error": err.code, "message": err.message, **(err.details or {})})
 
 
 async def run(
-    args: dict, *, svc=None, project_id: str | None = None, session_id: str | None = None, approve=None
+    args: dict,
+    *,
+    svc=None,
+    project_id: str | None = None,
+    session_id: str | None = None,
+    approve=None,
+    pasted_links: frozenset[str] | None = None,
 ) -> tuple[str, str]:
     """Return (text shown in the chat step, JSON DownloadStarted for the model).
 
-    svc / project_id / session_id / approve default to actions.datasets, this
-    chat's project, cl.context.session.id and the chat prompt; tests pass fakes.
+    svc / project_id / session_id / approve / pasted_links default to
+    actions.datasets, this chat's project, cl.context.session.id, the chat
+    prompt and the links in the user's messages; tests pass fakes.
     """
     ref, files, update = read_args(args)
     if svc is None or project_id is None or session_id is None:
@@ -134,8 +158,13 @@ async def run(
         svc = svc or actions.datasets
         project_id = project_id or actions.session_project(cl.user_session)
         session_id = session_id or cl.context.session.id
+        if pasted_links is None:
+            pasted_links = pasted_links_in_chat()
     try:
-        started = await svc.request(project_id, session_id, ref, files, update, approve=approve or ask_approval)
+        started = await svc.request(
+            project_id, session_id, ref, files, update, approve=approve or ask_approval,
+            pasted_links=pasted_links or frozenset(),
+        )
     except WorkspaceError as e:
         if e.code == ErrorCode.DECLINED:
             return "Skipped: the user chose not to download it.", error_json(e)
@@ -145,7 +174,7 @@ async def run(
     elif started["already_downloaded"]:
         shown = f"Already downloaded: `{started['path']}/`"
     elif started["status"] == "queued":
-        shown = f"Queued ({human_size(started['download_bytes'])}), {started['position_in_queue']} ahead → `{started['path']}/`"
+        shown = f"Queued ({download_size_text(started['download_bytes'])}), {started['position_in_queue']} ahead → `{started['path']}/`"
     else:
-        shown = f"Downloading in the background ({human_size(started['download_bytes'])}) → `{started['path']}/`"
+        shown = f"Downloading in the background ({download_size_text(started['download_bytes'])}) → `{started['path']}/`"
     return shown, json.dumps(started)

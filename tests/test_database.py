@@ -57,7 +57,7 @@ def test_first_open_creates_database_at_head(root):
     engine = db.database_for(root)
 
     assert db.database_path(root).is_file()
-    assert current_revisions(engine) == ("0002",)
+    assert current_revisions(engine) == ("0003",)
     assert APP_TABLES <= table_names(engine)
 
 
@@ -75,7 +75,7 @@ def test_second_open_reuses_database_without_migrating(root):
     second = db.database_for(root)
 
     assert second is not first
-    assert current_revisions(second) == ("0002",)
+    assert current_revisions(second) == ("0003",)
     with second.connect() as connection:
         assert connection.execute(text("SELECT slug FROM projects")).scalars().all() == ["p1"]
 
@@ -237,6 +237,14 @@ def insert_created_row(engine) -> None:
         ))
 
 
+def insert_link_entry(engine) -> None:
+    with engine.begin() as connection:
+        connection.execute(text(
+            "INSERT INTO pool_entries (slug, source, source_id, name, created_at) "
+            "VALUES ('link-example-org--iris-csv@abc1234', 'link', 'https://example.org/iris.csv', 'iris.csv', 't')"
+        ))
+
+
 def file_list_paths(engine) -> list[str]:
     with engine.connect() as connection:
         return list(connection.execute(text("SELECT path FROM project_dataset_files ORDER BY position")).scalars())
@@ -297,6 +305,52 @@ def test_upgrade_with_foreign_keys_on_would_empty_file_lists(root):
 
     with engine.begin() as connection:
         config.attributes["connection"] = connection
-        command.upgrade(config, "head")
+        command.upgrade(config, "0002")
 
     assert file_list_paths(engine) == []
+
+# ---- The database accepts the link source
+# Baseline: Given a workspace database at the previous revision · When it is upgraded
+
+
+def test_upgrade_allows_link_source(root):
+    # Then: a pool entry with source 'link' can be stored and existing rows are unchanged
+    # Demonstrates: pasted-link downloads can be saved
+    engine = db.database_for(root)
+    migrate(engine, command.downgrade, "0002")
+    seed_downloaded_dataset(engine)
+
+    migrate(engine, command.upgrade, "head")
+
+    insert_link_entry(engine)
+    with engine.connect() as connection:
+        sources = list(connection.execute(text("SELECT source FROM pool_entries ORDER BY pk")).scalars())
+        dataset = connection.execute(text("SELECT slug, pool_entry_pk FROM project_datasets")).one()
+    assert sources == ["huggingface", "link"]
+    assert tuple(dataset) == ("hf-x", 1)
+    assert file_list_paths(engine) == ["a.csv", "b.csv"]
+
+
+def test_unknown_source_still_refused(root):
+    # Then: source 'ftp' is still refused
+    # Demonstrates: the source list stays closed
+    engine = db.database_for(root)
+    with pytest.raises(IntegrityError), engine.begin() as connection:
+        connection.execute(text(
+            "INSERT INTO pool_entries (slug, source, source_id, name, created_at) VALUES ('x', 'ftp', 'x', 'x', 't')"
+        ))
+
+
+def test_downgrade_refuses_with_link_rows(root):
+    # Then: a downgrade with a link row stops with a clear message and keeps the data
+    # Demonstrates: a downgrade never orphans a project's dataset
+    engine = db.database_for(root)
+    insert_link_entry(engine)
+
+    with pytest.raises(RuntimeError, match="pasted links"):
+        migrate(engine, command.downgrade, "0002")
+
+    assert current_revisions(engine) == ("0003",)
+    with engine.connect() as connection:
+        assert connection.execute(text("SELECT count(*) FROM pool_entries WHERE source = 'link'")).scalar() == 1
+

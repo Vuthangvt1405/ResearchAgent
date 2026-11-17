@@ -13,9 +13,11 @@ import logging
 import re
 import shutil
 import unicodedata
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import Literal
+from urllib.parse import unquote, urlparse
 
 from sqlalchemy import Connection, Row, Select, delete, insert, select
 
@@ -39,7 +41,7 @@ PATH_MAX = 1024
 KERNEL_ROOT = "/work/datasets"  # how the kernel sees files/datasets/
 DRIVE_RE = re.compile(r"^[A-Za-z]:")
 
-Source = Literal["huggingface", "zenodo"]
+Source = Literal["huggingface", "zenodo", "link"]  # link: a file link the user pasted
 StoredStatus = Literal["queued", "downloading", "ready", "failed"]
 ORIGIN_DOWNLOADED = "downloaded"  # project_datasets.origin of a catalog download
 DatasetStatus = Literal["queued", "downloading", "ready", "failed", "missing"]  # missing is computed on read
@@ -54,10 +56,21 @@ def slug_of(text: str) -> str:
 ID_PREFIXES: dict[Source, str] = {"huggingface": "hf"}  # a source not listed here uses its own name
 
 
+def link_id_text(link: str) -> str:
+    """<host>/<file name> of a pasted link: a long URL path would push the file name out of the id."""
+    parts = urlparse(link)
+    file_name = unquote(parts.path.rsplit("/", 1)[-1])
+    return f"{parts.hostname or ''}/{file_name}"
+
+
+ID_TEXTS: dict[Source, Callable[[str], str]] = {"link": link_id_text}  # a source not listed here slugs its id as is
+
+
 def base_id(source: Source, source_id: str) -> str:
-    """hf-<owner>--<name> / zenodo-<id>: the readable slug of a catalog dataset."""
+    """hf-<owner>--<name> / zenodo-<id> / link-<host>--<file>: the readable slug of a dataset."""
     prefix = ID_PREFIXES.get(source, source)
-    body = "--".join(p for p in (slug_of(part) for part in source_id.split("/")) if p) or "dataset"
+    id_text = ID_TEXTS.get(source, str)(source_id)
+    body = "--".join(p for p in (slug_of(part) for part in id_text.split("/")) if p) or "dataset"
     return re.sub(r"-{3,}", "--", f"{prefix}-{body}")[:DATASET_ID_MAX].strip("-")
 
 

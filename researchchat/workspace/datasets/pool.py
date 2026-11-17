@@ -32,7 +32,13 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from researchchat.config import WORKSPACES_DIR
 from researchchat.db.engine import database_for
-from researchchat.db.schema import pool_entries, pool_files, project_datasets, projects
+from researchchat.db.schema import (
+    SOURCES,
+    pool_entries,
+    pool_files,
+    project_datasets,
+    projects,
+)
 from researchchat.workspace import ErrorCode, WorkspaceError
 from researchchat.workspace.datasets import store as ds
 from researchchat.workspace.datasets.store import Source
@@ -312,7 +318,7 @@ def _entry_from_row(row: Row, file_rows: list[Row]) -> PoolEntry | None:
     except WorkspaceError:
         log.warning("Ignored a pool entry row with an unsafe id or file path: %r", row.slug[:80])
         return None
-    if row.source not in ("huggingface", "zenodo"):
+    if row.source not in SOURCES:
         log.warning("Ignored a pool entry row with an unknown source: %r", row.slug[:80])
         return None
     return PoolEntry(
