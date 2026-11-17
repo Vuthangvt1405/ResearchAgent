@@ -13,7 +13,7 @@ from researchchat.db.engine import database_for
 
 # Wrong Python or no API key: say how to fix it before anything else fails
 check_setup()
-# Create or upgrade workspaces/researchchat.db now; a damaged or newer file stops here with steps (AC4)
+# Create or upgrade workspaces/researchchat.db now; a damaged or newer file stops here with steps
 database_for(WORKSPACES_DIR)
 
 from researchchat.llm import model_params, stream_round  # noqa: E402 (needs the key checked first)
@@ -54,7 +54,7 @@ async def on_chat_start():
         # Kernel containers left by an earlier run of the app
         _cleaned = True
         asyncio.create_task(notebook.kernels.cleanup_leftovers())
-        # Downloads cut off by an earlier run; dataset_download waits for this (NB-3)
+        # Downloads cut off by an earlier run; dataset_download waits for this
         asyncio.create_task(notebook.datasets.startup_cleanup())
 
     cl.user_session.set(
@@ -87,7 +87,7 @@ async def on_message(message: cl.Message):
     settings = cl.user_session.get("settings") or {}
     tools = chosen_tools(settings)
     # Background downloads that finished since the last turn: told to the model
-    # once, for this turn only, never kept in history (NB-3)
+    # once, for this turn only, never kept in history
     note = notebook.datasets.take_notes(cl.context.session.id)
     turn_notes = [{"role": "system", "content": note}] if note else []
     # Create the reply before the progress group so it isn't nested inside it

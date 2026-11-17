@@ -1,4 +1,4 @@
-"""Flag risky code before the model's code runs without asking (AC11).
+"""Flag risky code before the model's code runs without asking.
 
 This is a speed bump, not a wall: the Docker sandbox is the real protection.
 It reads the code with `ast`, so words inside strings and comments never count.

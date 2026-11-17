@@ -1,5 +1,5 @@
 """Tests for the dataset_download / dataset_list / dataset_delete tools and the
-search ref (NB-3 plan §7: G8, S❌3). Tools get a fake dataset service."""
+search ref. Tools get a fake dataset service."""
 
 import asyncio
 import json
@@ -47,12 +47,12 @@ def run(coro):
     return asyncio.run(coro)
 
 
-# ---- Group 8 — Model tools (AC1, AC24, AC26) · unit (fake service)
+# ---- Model tools · unit (fake service)
 # Baseline: Given a fake dataset service and project p1 · When each tool's run(args, svc=…, project_id="p1")
 
 
 def test_download_tool_returns_before_download_ends():
-    # G8✅1 · Changed: job never finishes · Then: downloading, future /work paths, "don't read yet" note
+    # Changed: job never finishes · Then: downloading, future /work paths, "don't read yet" note
     # Demonstrates: the chat isn't blocked
     svc = FakeDatasetService()
     svc.started = STARTED
@@ -65,7 +65,7 @@ def test_download_tool_returns_before_download_ends():
 
 
 def test_list_tool_shows_status_and_progress():
-    # G8✅2 · Changed: ready, downloading (40%), queued · Then: all three, done_bytes, position_in_queue
+    # Changed: ready, downloading (40%), queued · Then: all three, done_bytes, position_in_queue
     # Demonstrates: the model can answer "is it done?"
     svc = FakeDatasetService()
     svc.records = [view("a", "ready"), view("b", "downloading", done=400), view("c", "queued", position=1)]
@@ -78,7 +78,7 @@ def test_list_tool_shows_status_and_progress():
 
 
 def test_search_results_carry_download_ref():
-    # G8✅3 · Changed: dataset_search result · Then: ref on HF / Zenodo items, none on DataCite
+    # Changed: dataset_search result · Then: ref on HF / Zenodo items, none on DataCite
     # Demonstrates: search → download is one step
     assert search.huggingface_item({"id": "org/name"})["ref"] == "hf:org/name"
     assert search.zenodo_item({"id": 7395559, "metadata": {"title": "x"}})["ref"] == "zenodo:7395559"
@@ -86,7 +86,7 @@ def test_search_results_carry_download_ref():
 
 
 def test_dataset_tools_are_behind_notebook_switch():
-    # G8✅4 · Changed: settings · Then: present only with notebook: True · Demonstrates: the switch controls them
+    # Changed: settings · Then: present only with notebook: True · Demonstrates: the switch controls them
     names = lambda s: {t["function"]["name"] for t in chosen_tools(s)}
     dataset_tools = {"dataset_download", "dataset_list", "dataset_delete"}
     assert dataset_tools <= names({"notebook": True})
@@ -95,7 +95,7 @@ def test_dataset_tools_are_behind_notebook_switch():
 
 
 def test_download_tool_needs_ref():
-    # G8❌1 · Changed: {} · Then: ValueError; service not called
+    # Changed: {} · Then: ValueError; service not called
     svc = FakeDatasetService()
     for args in ({}, {"ref": ""}, {"ref": 5}):
         with pytest.raises(ValueError):
@@ -104,7 +104,7 @@ def test_download_tool_needs_ref():
 
 
 def test_download_tool_rejects_bad_args():
-    # G8❌2 · Changed: files not a list / 21 items / ..; update not a bool · Then: ValueError; service not called
+    # Changed: files not a list / 21 items / ..; update not a bool · Then: ValueError; service not called
     # Demonstrates: bad arguments stop early
     svc = FakeDatasetService()
     for args in (
@@ -121,7 +121,7 @@ def test_download_tool_rejects_bad_args():
 
 
 def test_no_space_result_explains_sizes():
-    # G8❌3 · Changed: service raises NO_SPACE with details · Then: needed/free sizes and available_files in the tool result
+    # Changed: service raises NO_SPACE with details · Then: needed/free sizes and available_files in the tool result
     # Demonstrates: the model can explain and retry
     svc = FakeDatasetService()
     svc.error = WorkspaceError(ErrorCode.NO_SPACE, "Not enough disk.", {
@@ -134,12 +134,12 @@ def test_no_space_result_explains_sizes():
     assert data["available_files"] == [{"path": "a.csv", "size": 50}]
 
 
-# ---- Group S — Security (§5 #4) · unit
+# ---- Security · unit
 # Baseline: negatives only; Given a dataset service with a 300 MB plan
 
 
 def test_model_cannot_skip_approval_with_arguments(tmp_path):
-    # S❌3 · Changed: extra args like {"approved": true} · Then: still asks · Demonstrates: approval can't be bypassed (#4)
+    # Changed: extra args like {"approved": true} · Then: still asks · Demonstrates: approval can't be bypassed
     root = tmp_path / "ws"
     store.create_project("P1", root, project_id="p1")
     plan = DatasetPlan("huggingface", "org/name", "Big", "1" * 40, "https://huggingface.co/datasets/org/name", None,
@@ -165,12 +165,12 @@ def test_model_cannot_skip_approval_with_arguments(tmp_path):
     run(scenario())
 
 
-# ---- PCD-1 Group 8 — One list, two kinds (AC3, AC9) · unit
+# ---- One list, two kinds · unit
 # Baseline: Given the tool's service lists a downloaded dataset and a created `Iris.csv` · When `dataset_list` runs
 
 
 def test_dataset_list_line_says_created_in_this_project(tmp_path):
-    # G8✅4 · edge
+    # edge
     # Changed: a created view in the list
     # Then: line `- Iris.csv · ready · 4.6 KB · created in this project · `/work/Iris.csv``
     # Demonstrates: the model knows the file's origin

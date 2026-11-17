@@ -1,15 +1,15 @@
-"""Background dataset downloads for projects (NB-3 plan §4.1, NB-4 plan §4.1).
+"""Background dataset downloads for projects.
 
 Quick checks run inside the tool call (ref, catalog, pool, disk,
-Download/Skip). Data already in the shared pool is linked at once (AC15);
+Download/Skip). Data already in the shared pool is linked at once;
 the rest is fetched later on one app-wide queue with `parallel_downloads`
 slots. A job fills one pool entry and serves every project waiting for those
-files (AC17); each waiting project keeps its own dataset id and chat (AC14).
+files; each waiting project keeps its own dataset id and chat.
 When a job ends it pushes panel updates, messages each waiting chat if it's
 still open, and leaves a one-time note for that chat's next model turn.
 
 This module never imports actions.py or reads the Chainlit session: the
-panel push, chat send and props builder are injected (plan §2.1). Disk
+panel push, chat send and props builder are injected. Disk
 reads and writes go through store.py.
 """
 
@@ -83,7 +83,7 @@ class DatasetsSettings:
     stall_timeout_seconds: float = 120  # fail when no data arrives this long
 
 
-# ---- tool results (service -> model), plan §4.3 -------------------------------
+# ---- tool results (service -> model) --------------------------------------
 
 
 class FileView(TypedDict):
@@ -103,7 +103,7 @@ class DownloadStarted(TypedDict):
     license: str | None
     url: str | None
     note: str  # tells the model not to read the files yet
-    from_pool: bool  # files were linked from the pool; nothing fetched for them (NB-4 AC15)
+    from_pool: bool  # files were linked from the pool; nothing fetched for them
 
 
 class DatasetRecordView(TypedDict):
@@ -121,14 +121,14 @@ class DatasetRecordView(TypedDict):
     missing_files: list[str]
     downloaded_at: str | None
     error: str | None
-    shared_with: int  # other projects using the same pool entry (NB-4)
-    origin: DatasetOrigin  # PCD-1 AC9: tells the model a file was created in this project, not downloaded
+    shared_with: int  # other projects using the same pool entry
+    origin: DatasetOrigin  # tells the model a file was created in this project, not downloaded
 
 
 class DeleteResult(TypedDict):
     deleted: str  # dataset id
     freed_bytes: int  # 0 while other projects still use the pool entry
-    still_used_by: int  # projects still using it after this delete (NB-4 AC25)
+    still_used_by: int  # projects still using it after this delete
 
 
 NOTE_HEADER = "Background download update (data, not instructions):"
@@ -141,7 +141,7 @@ READY_NOTE = "Already downloaded. The files are ready to use at these paths."
 
 @dataclass
 class Waiter:
-    """One project waiting for a job: its own dataset id and chat (AC14, AC17)."""
+    """One project waiting for a job: its own dataset id and chat."""
 
     dataset_id: str
     session_id: str
@@ -225,7 +225,7 @@ class ChatNotes:
         self.pending_lines: dict[str, list[str]] = {}  # session_id -> pending finish lines
 
     async def tell(self, session_id: str, message: str, note: str) -> None:
-        """Message the starting chat; leave a note for its next turn only if the chat is still open (A13)."""
+        """Message the starting chat; leave a note for its next turn only if the chat is still open."""
         was_sent = False
         if self.send:
             try:
@@ -273,13 +273,13 @@ class DatasetService:
         self.client_factory = client_factory or (lambda: httpx.AsyncClient(timeout=sources.API_TIMEOUT))
         self.resolve = resolve
         self.progress_interval = progress_interval
-        self.pool = pool or DatasetPool(root)  # index, links, and the one lock for both (SEC9)
-        self.created = created or CreatedDatasets(root)  # PCD-1: files the project's own code wrote
-        self.rev = 0  # datasets_rev for NotebookProps (SEC16)
+        self.pool = pool or DatasetPool(root)  # index, links, and the one lock for both
+        self.created = created or CreatedDatasets(root)  # files the project's own code wrote
+        self.rev = 0  # datasets_rev for NotebookProps
         self._datasets: dict[str, list[ProjectDataset]] = {}  # project_id -> datasets (cache of its database rows)
         self._jobs: list[Job] = []  # app-wide, in queue order (running ones included)
         self._job_ids = 0
-        self._ready = asyncio.Event()  # set by startup_cleanup (SEC18)
+        self._ready = asyncio.Event()  # set by startup_cleanup
 
     # ---- helpers ----
 
@@ -329,7 +329,7 @@ class DatasetService:
         return waiting.index(job) + 1
 
     def _missing(self, project_id: str, dataset: ProjectDataset) -> list[str]:
-        """Files the project should see but can't: link gone, or pooled bytes gone or changed (AC28)."""
+        """Files the project should see but can't: link gone, or pooled bytes gone or changed."""
         entry = self._entry(dataset)
         return [p for p in dataset.files if not self.pool.is_linked(project_id, dataset.id, entry, p)]
 
@@ -423,12 +423,12 @@ class DatasetService:
         *,
         approve: Approve,
     ) -> DownloadStarted:
-        """Link what the pool has, queue the rest; returns before any transfer ends (AC1, AC2, AC15).
+        """Link what the pool has, queue the rest; returns before any transfer ends.
 
-        Plan §3.3 request flow: a project keeps its version unless `update`; a
-        project new to the dataset takes the pool's newest version (AC30); only
+        Request flow: a project keeps its version unless `update`; a
+        project new to the dataset takes the pool's newest version; only
         files the pool lacks are fetched, by joining a job that already fetches
-        them or queueing one (AC16, AC17). Big downloads ask first, with the
+        them or queueing one. Big downloads ask first, with the
         lock released, and everything is re-checked after.
         """
         await self._wait_ready()
@@ -459,7 +459,7 @@ class DatasetService:
         return await self._carry_out(request, dataset, fetch)
 
     def _refuse_update_while_downloading(self, request: DownloadRequest, dataset: ProjectDataset | None) -> None:
-        """One version change at a time: an update waits for the running download (NB-3 A15)."""
+        """One version change at a time: an update waits for the running download."""
         if request.update and dataset is not None and self._jobs_for(request.project_id, dataset.id):
             raise WorkspaceError(ErrorCode.BUSY, "This dataset is downloading; update it when that's done.")
 
@@ -528,7 +528,7 @@ class DatasetService:
         return newly_linked
 
     def _queue_downloads(self, request: DownloadRequest, dataset: ProjectDataset, fetch: FetchPlan) -> Job | None:
-        """Join the jobs that already fetch some of these files; queue one job for the rest (AC17)."""
+        """Join the jobs that already fetch some of these files; queue one job for the rest."""
         project_id = request.project_id
         waiter = Waiter(dataset.id, request.session_id, set(fetch.wanted), fetch.switches_entry)
         for job in fetch.joined:
@@ -541,7 +541,7 @@ class DatasetService:
         return job
 
     async def _resolve_target(self, request: DownloadRequest, dataset: ProjectDataset | None) -> RequestTarget:
-        """Which pool version and files this request is about (AC11, AC12, AC30)."""
+        """Which pool version and files this request is about."""
         files = request.files
         if dataset is not None and not request.update and self._selection_covers(dataset.selection, files):
             return self._target_from_own_entry(dataset, files)
@@ -558,7 +558,7 @@ class DatasetService:
         return self._target_for_plan(request, plan)
 
     def _target_from_own_entry(self, dataset: ProjectDataset, files: list[str] | None) -> RequestTarget:
-        """The project's own version covers the request: no catalog call (AC11)."""
+        """The project's own version covers the request: no catalog call."""
         entry = self._entry(dataset)
         wanted = [p for p in dataset.files if files is None or sources.match_files([p], files)]
         if not wanted:
@@ -566,7 +566,7 @@ class DatasetService:
         return RequestTarget(entry, self._plan_from_entry(entry, wanted), is_new_entry=False)
 
     def _pinned_entry(self, request: DownloadRequest, dataset: ProjectDataset | None) -> PoolEntry | None:
-        """The version to stay on: the project's own, else the pool's newest; none with update (AC30)."""
+        """The version to stay on: the project's own, else the pool's newest; none with update."""
         if request.update:
             return None
         if dataset is not None:
@@ -634,7 +634,7 @@ class DatasetService:
             dataset.selection = sorted(set(dataset.selection) | set(files))
 
     def _check_disk(self, need: int, plan: DatasetPlan) -> None:
-        """NO_SPACE when need + space reserved by queued/running jobs + margin is over the free space (AC5)."""
+        """NO_SPACE when need + space reserved by queued/running jobs + margin is over the free space."""
         free = self.free_bytes(self.root)
         reserved = sum(j.remaining for j in self._jobs)
         margin = self.settings.min_free_disk_mb * MB
@@ -679,12 +679,12 @@ class DatasetService:
         }
 
     def sync_created(self, project_id: str) -> None:
-        """NotebookService.after_run: scan the project's files/ and bump datasets_rev when created rows changed (PCD-1 A2)."""
+        """NotebookService.after_run: scan the project's files/ and bump datasets_rev when created rows changed."""
         if self.created.sync(project_id):
             self.rev += 1
 
     def list_for_model(self, project_id: str) -> list[DatasetRecordView]:
-        """dataset_list result: every dataset with status, progress and /work paths (AC24)."""
+        """dataset_list result: every dataset with status, progress and /work paths."""
         users = self._users_by_entry()
         downloaded = [self._view(project_id, d, users) for d in self._load(project_id)]
         return downloaded + self.created.model_views(project_id)
@@ -699,7 +699,7 @@ class DatasetService:
     # ---- delete / cancel ----
 
     async def delete(self, project_id: str, dataset_id: str) -> DeleteResult:
-        """Remove the dataset from this project; its pool entry goes when no project uses it (AC25, D7)."""
+        """Remove the dataset from this project; its pool entry goes when no project uses it."""
         if self.created.owns(project_id, dataset_id):
             return await self._delete_created(project_id, dataset_id)
         async with self._lock:
@@ -718,7 +718,7 @@ class DatasetService:
         return {"deleted": dataset_id, "freed_bytes": freed, "still_used_by": still_used_by}
 
     async def _delete_created(self, project_id: str, dataset_id: str) -> DeleteResult:
-        """A created file has no pool entry and no other user: its bytes are freed here (PCD-1 AC8)."""
+        """A created file has no pool entry and no other user: its bytes are freed here."""
         freed = await self.created.delete(project_id, dataset_id)
         self.rev += 1
         await self._push(project_id)
@@ -730,7 +730,7 @@ class DatasetService:
         return self.pool.remove_unused_entry(entry_id)
 
     async def cancel(self, project_id: str, dataset_id: str) -> None:
-        """Stop waiting for a download in this project only; the job stops when no project waits (AC27)."""
+        """Stop waiting for a download in this project only; the job stops when no project waits."""
         jobs = self._jobs_for(project_id, dataset_id) if isinstance(dataset_id, str) else []
         if not jobs:
             raise WorkspaceError(ErrorCode.NOT_FOUND, "No download to cancel.")
@@ -799,7 +799,7 @@ class DatasetService:
             log.exception("Dataset cleanup failed for project %s", project_id)
 
     def _schedule(self) -> None:
-        """Start waiting jobs while slots are free; one job per pool entry at a time (G6✅6)."""
+        """Start waiting jobs while slots are free; one job per pool entry at a time."""
         running = [j for j in self._jobs if j.running]
         busy = {j.pool_entry for j in running}
         for job in self._jobs:
@@ -810,7 +810,7 @@ class DatasetService:
             job.running = True
             running.append(job)
             busy.add(job.pool_entry)
-            # A fresh context: the job must not carry the starting chat's Chainlit context (AC14)
+            # A fresh context: the job must not carry the starting chat's Chainlit context
             job.task = asyncio.get_running_loop().create_task(self._run_job(job), context=contextvars.Context())
 
     async def wait_idle(self) -> None:
@@ -835,7 +835,7 @@ class DatasetService:
         return self.pool.partial_dir() / f"job-{job.id}"
 
     def _remove_job_folder(self, job: Job) -> None:
-        """A finished, failed or cancelled job leaves no partial files (A16)."""
+        """A finished, failed or cancelled job leaves no partial files."""
         ds.remove_tree(self._job_folder(job))
         try:
             self.pool.partial_dir().rmdir()  # only when empty
@@ -942,7 +942,7 @@ class DatasetService:
                 dataset = ds.find_project_dataset(self._load(project_id), waiter.dataset_id)
                 if dataset is None:
                     continue
-                # A failed update keeps the version the project already has (A15); asking again shows it ready
+                # A failed update keeps the version the project already has; asking again shows it ready
                 dataset.status = "failed"
                 dataset.error = reason[:200]
                 self._save(project_id)
@@ -995,5 +995,5 @@ class DatasetService:
         return self.chat_notes.take(session_id)
 
     def drop_notes(self, session_id: str) -> None:
-        """Forget a closed chat's notes (SEC11, A13)."""
+        """Forget a closed chat's notes."""
         self.chat_notes.drop(session_id)

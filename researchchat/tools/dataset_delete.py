@@ -1,4 +1,4 @@
-"""dataset_delete tool: delete one dataset, only after the user agrees (NB-3 AC26).
+"""dataset_delete tool: delete one dataset, only after the user agrees.
 
 Every model delete shows Delete / Keep with the name and the space it frees.
 """
@@ -35,7 +35,7 @@ def step_title(args: dict) -> str:
 
 
 def approval_text(name: str, frees_bytes: int, shared_with: int) -> str:
-    """The Delete / Keep question; a dataset other projects use frees nothing here (AC25)."""
+    """The Delete / Keep question; a dataset other projects use frees nothing here."""
     text = f"The assistant wants to delete the dataset **{name}** from this project, freeing **{human_size(frees_bytes)}**."
     if shared_with:
         others = "1 other project" if shared_with == 1 else f"{shared_with} other projects"

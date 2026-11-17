@@ -7,8 +7,6 @@ workspaces/
 The database sits at the workspaces root, outside every kernel mount, so kernel
 code can't edit it. This module only reads and writes storage: no locks, no
 network. The rules (who may delete, when to download) live in service.py.
-
-Plans: docs/plans/done/NB-3-dataset-download-plan.md, docs/plans/sqlite-alembic-storage-plan.md
 """
 
 import logging
@@ -43,7 +41,7 @@ DRIVE_RE = re.compile(r"^[A-Za-z]:")
 
 Source = Literal["huggingface", "zenodo"]
 StoredStatus = Literal["queued", "downloading", "ready", "failed"]
-ORIGIN_DOWNLOADED = "downloaded"  # project_datasets.origin of a catalog download (PCD-1)
+ORIGIN_DOWNLOADED = "downloaded"  # project_datasets.origin of a catalog download
 DatasetStatus = Literal["queued", "downloading", "ready", "failed", "missing"]  # missing is computed on read
 
 
@@ -98,7 +96,7 @@ def _linked() -> WorkspaceError:
 
 def datasets_root(project_id: str, root: Path = WORKSPACES_DIR) -> Path:
     """files/datasets/. Kernel code can replace it with a symlink (files/ is /work,
-    read-write), so it's never resolved through: a link here is refused (SEC2, SEC8)."""
+    read-write), so it's never resolved through: a link here is refused."""
     base = (store.project_dir(project_id, root) / store.FILES_DIR).resolve() / DATASETS_DIR
     if base.resolve() != base:
         raise _linked()
@@ -158,7 +156,7 @@ def remove_dataset_dir(project_id: str, dataset_id: str, root: Path = WORKSPACES
     remove_tree(base / dataset_id)
 
 
-# ---- project datasets: rows pointing at shared pool entries (NB-4 plan §3.3) --------
+# ---- project datasets: rows pointing at shared pool entries --------
 
 STORED_STATUSES = ("queued", "downloading", "ready", "failed")
 
@@ -176,7 +174,7 @@ class ProjectDataset:
 
 
 def load_project_datasets(project_id: str, root: Path = WORKSPACES_DIR) -> list[ProjectDataset]:
-    """The project's datasets from the database, in list order; a tampered row is skipped and logged (SEC3)."""
+    """The project's datasets from the database, in list order; a tampered row is skipped and logged."""
     store.project_dir(project_id, root)  # NOT_FOUND for an id that isn't a safe slug
     with database_for(root).connect() as connection:
         rows = connection.execute(_project_datasets_query(project_id)).all()
@@ -191,7 +189,7 @@ def save_project_datasets(project_id: str, datasets: list[ProjectDataset], root:
     with database_for(root).begin() as connection:
         project_pk = _project_pk(connection, project_id)
         entry_pks = _pool_entry_pks(connection, {dataset.pool_entry for dataset in datasets})
-        # Created rows share this table (PCD-1); a replace-all of every row would wipe them
+        # Created rows share this table; a replace-all of every row would wipe them
         connection.execute(delete(project_datasets).where(
             project_datasets.c.project_pk == project_pk, project_datasets.c.origin == ORIGIN_DOWNLOADED
         ))
@@ -279,7 +277,7 @@ def find_project_dataset(datasets: list[ProjectDataset], dataset_id: str) -> Pro
 
 
 def link_path(project_id: str, dataset_id: str, relpath: str, root: Path = WORKSPACES_DIR) -> Path:
-    """files/datasets/<id>/<relpath>, not resolved (it's a link). Refused when a folder on the way is a link (SEC23)."""
+    """files/datasets/<id>/<relpath>, not resolved (it's a link). Refused when a folder on the way is a link."""
     folder = dataset_dir(project_id, dataset_id, root)
     path = folder / safe_relpath(relpath)
     for parent in path.relative_to(folder).parents:

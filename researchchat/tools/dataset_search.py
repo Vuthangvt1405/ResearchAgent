@@ -86,7 +86,7 @@ def huggingface_item(d: dict) -> dict:
     tags = d.get("tags") or []
     return {
         "source": "Hugging Face",
-        "ref": f"hf:{d['id']}",  # what dataset_download takes (NB-3)
+        "ref": f"hf:{d['id']}",  # what dataset_download takes
         "name": d["id"],
         "url": f"https://huggingface.co/datasets/{d['id']}",
         "description": clean(d.get("description")),
@@ -105,7 +105,7 @@ def zenodo_item(d: dict) -> dict:
     size_mb = sum(f.get("size", 0) for f in files) / 1e6
     return {
         "source": "Zenodo",
-        "ref": f"zenodo:{d['id']}" if d.get("id") else None,  # DataCite items get no ref (A18)
+        "ref": f"zenodo:{d['id']}" if d.get("id") else None,  # DataCite items get no ref
         "name": meta.get("title") or d.get("title"),
         "url": (d.get("links") or {}).get("self_html") or d.get("doi_url"),
         "description": clean(meta.get("description")),

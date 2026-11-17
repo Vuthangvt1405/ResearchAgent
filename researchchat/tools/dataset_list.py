@@ -1,4 +1,4 @@
-"""dataset_list tool: the project's datasets with status, progress and paths (NB-3 AC24)."""
+"""dataset_list tool: the project's datasets with status, progress and paths."""
 
 import json
 
@@ -27,7 +27,7 @@ def step_title(args: dict) -> str:
 
 
 def _created_line(v: dict) -> str:
-    """`- Iris.csv · ready · 4.6 KB · created in this project · `/work/Iris.csv`` (PCD-1 §4.3)."""
+    """`- Iris.csv · ready · 4.6 KB · created in this project · `/work/Iris.csv``."""
     return f"- {v['name']} · {v['status']} · {human_size(v['size_bytes'])} · created in this project · `{v['path']}`"
 
 

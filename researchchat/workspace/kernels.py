@@ -83,7 +83,7 @@ class ContainerMounts:
 
     files_dir: Path  # → /work, read-write
     conn_dir: Path  # → /conn, read-only
-    pool_dir: Path  # → /.dataset-pool, read-only (NB-4)
+    pool_dir: Path  # → /.dataset-pool, read-only
 
 
 @dataclass
@@ -119,7 +119,7 @@ def _free_ports(n: int) -> list[int]:
 
 
 class _Capper:
-    """Keeps a run's outputs inside the size limits (AC12)."""
+    """Keeps a run's outputs inside the size limits."""
 
     def __init__(self, max_chars: int, max_image_kb: int):
         self.left = max_chars
@@ -254,7 +254,7 @@ class KernelRegistry:
         kernel.state = "idle"
 
     def run_arguments(self, name: str, project_id: str, mounts: ContainerMounts, ports: tuple[int, ...]) -> list[str]:
-        """The `docker run` arguments for one kernel: /work read-write, /conn and the dataset pool read-only (AC18)."""
+        """The `docker run` arguments for one kernel: /work read-write, /conn and the dataset pool read-only."""
         published = [arg for p in ports for arg in ("-p", f"127.0.0.1:{p}:{p}")]
         return [
             "run", "-d", "--rm", "--init", "--name", name,

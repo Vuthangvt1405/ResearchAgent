@@ -1,6 +1,4 @@
 """Projects and notebook files on disk.
-
-Plan: docs/plans/done/notebook-workspace-plan.md section 7.
 """
 
 from pathlib import Path
@@ -34,12 +32,12 @@ class FakeSession:
         self.values[key] = value
 
 
-# ---- Group 1: Projects (AC1, AC5, AC18) · unit
+# ---- Projects · unit
 # Baseline: Given an empty temp `workspaces_dir` · When a project "Tokyo housing" is created and its notebook is loaded
 
 
 def test_project_name_becomes_safe_slug():
-    # G1✅2 (edge) · Demonstrates: any name works, folder names stay safe
+    # Demonstrates: any name works, folder names stay safe
     assert store.slugify("Tokyo Housing!!") == "tokyo-housing"
     assert store.slugify("  Nhà ở Tokyo  ") == "nha-o-tokyo"
     assert store.slugify("東京") == "project"  # nothing Latin left
@@ -47,7 +45,7 @@ def test_project_name_becomes_safe_slug():
 
 
 def test_default_project_created_on_first_start(root):
-    # G1✅3 (edge) · Demonstrates: the app is usable right away
+    # Demonstrates: the app is usable right away
     project = store.ensure_default_project(root)
     assert project.id == store.DEFAULT_PROJECT_ID
     assert [p.id for p in store.list_projects(root)] == ["default"]
@@ -57,7 +55,7 @@ def test_default_project_created_on_first_start(root):
 
 
 def test_notebook_round_trips_cells_and_outputs(root):
-    # G1✅4 (edge) · Demonstrates: work survives restarts
+    # Demonstrates: work survives restarts
     pid = store.create_project("Tokyo housing", root).id
     nb = store.load_notebook(pid, root)
     cell = store.add_cell(nb, "code", None)
@@ -72,7 +70,7 @@ def test_notebook_round_trips_cells_and_outputs(root):
 
 
 def test_saved_notebook_is_valid_nbformat(root):
-    # G1✅5 (edge) · Demonstrates: file opens in Jupyter/VS Code
+    # Demonstrates: file opens in Jupyter/VS Code
     pid = store.create_project("Tokyo housing", root).id
     nb = store.load_notebook(pid, root)
     store.add_cell(nb, "code", None)
@@ -83,7 +81,7 @@ def test_saved_notebook_is_valid_nbformat(root):
 
 
 def test_save_is_atomic_when_write_fails(root, monkeypatch):
-    # G1❌1 (negative) · Demonstrates: a crash never corrupts a notebook
+    # Demonstrates: a crash never corrupts a notebook
     pid = store.create_project("Tokyo housing", root).id
     path = root / pid / "notebook.ipynb"
     before = path.read_text("utf-8")
@@ -102,7 +100,7 @@ def test_save_is_atomic_when_write_fails(root, monkeypatch):
 
 
 def test_duplicate_name_gets_unique_id(root):
-    # G1❌2 (negative) · Demonstrates: projects never overwrite each other
+    # Demonstrates: projects never overwrite each other
     first = store.create_project("Tokyo housing", root)
     nb = store.load_notebook(first.id, root)
     store.add_cell(nb, "code", None)
@@ -114,7 +112,7 @@ def test_duplicate_name_gets_unique_id(root):
 
 
 def test_switch_project_changes_session_and_panel(root, service_factory):
-    # G1✅6 (edge) · Demonstrates: the bottom bar switches projects (AC18)
+    # Demonstrates: the bottom bar switches projects
     from researchchat.workspace import actions
 
     store.create_project("P", root)
@@ -127,7 +125,6 @@ def test_switch_project_changes_session_and_panel(root, service_factory):
 
 
 def test_create_project_from_bar_switches_to_it(root, service_factory):
-    # G1✅7 (edge)
     from researchchat.workspace import actions
 
     store.create_project("P", root)
@@ -140,7 +137,6 @@ def test_create_project_from_bar_switches_to_it(root, service_factory):
 
 
 def test_switch_to_missing_project_is_rejected(root, service_factory):
-    # G1❌3 (negative)
     from researchchat.workspace import actions
 
     store.create_project("P", root)
@@ -158,9 +154,8 @@ def run(coro):
     return asyncio.run(coro)
 
 
-# ---- SQLite plan G2 — Projects in the database (AC2, AC6, SEC3) · integration
+# ---- Projects in the database · integration
 # Baseline: Given a workspace at head · When `store.create_project("Tokyo housing", root)` and then `list_projects` / `get_project`
-# Plan: docs/plans/sqlite-alembic-storage-plan.md §7
 
 
 def project_rows(root) -> list[tuple[str, str]]:
@@ -176,7 +171,7 @@ def insert_project_row(root, slug: str) -> None:
 
 
 def test_new_project_is_a_row_with_notebook_and_files_dir(root):
-    # G2✅1 · baseline · rewrite of test_new_project_has_empty_notebook_and_files_dir
+    # rewrite of test_new_project_has_empty_notebook_and_files_dir
     # Changed: —
     # Then: row (slug tokyo-housing, "Tokyo housing", created_at); folder has notebook.ipynb and files/; **no** project.json
     # Demonstrates: projects live in the DB, notebooks stay files
@@ -194,7 +189,7 @@ def test_new_project_is_a_row_with_notebook_and_files_dir(root):
 
 
 def test_projects_are_listed_by_name_then_id(root):
-    # G2✅2 · edge
+    # edge
     # Changed: three projects, names differing only in case
     # Then: same order as today (name.lower(), then id)
     # Demonstrates: sorting didn't change
@@ -207,7 +202,7 @@ def test_projects_are_listed_by_name_then_id(root):
 
 @pytest.mark.parametrize("bad_name", ["", "   ", "x" * (store.PROJECT_NAME_MAX + 1)])
 def test_bad_project_names_are_rejected_without_a_row(root, bad_name):
-    # G2❌1 · negative
+    # negative
     # Changed: name "", "   ", 81 chars
     # Then: BAD_NAME; no row; no folder
     # Demonstrates: validation still runs before any write
@@ -222,7 +217,7 @@ def test_bad_project_names_are_rejected_without_a_row(root, bad_name):
 
 
 def test_failed_folder_create_leaves_no_row(root, monkeypatch):
-    # G2❌2 · negative
+    # negative
     # Changed: mkdir raises OSError
     # Then: error raised; no row
     # Demonstrates: a project is never half-created
@@ -243,7 +238,7 @@ def test_failed_folder_create_leaves_no_row(root, monkeypatch):
 
 
 def test_id_taken_by_a_folder_without_a_row_is_not_reused(root):
-    # G2❌3 · negative
+    # negative
     # Changed: workspaces/tokyo-housing/ exists, no row
     # Then: new project gets tokyo-housing-2; old folder untouched
     # Demonstrates: a stray folder is never overwritten
@@ -258,7 +253,7 @@ def test_id_taken_by_a_folder_without_a_row_is_not_reused(root):
 
 
 def test_unknown_project_is_not_found(root):
-    # G2❌4 · negative
+    # negative
     # Changed: get_project("nope")
     # Then: NOT_FOUND
     # Demonstrates: same error as today
@@ -271,7 +266,7 @@ def test_unknown_project_is_not_found(root):
 
 
 def test_tampered_project_row_is_ignored(root, tmp_path):
-    # G2❌5 · negative
+    # negative
     # Changed: a row with slug ../x inserted by hand
     # Then: not listed; get_project("../x") → NOT_FOUND; nothing outside root touched
     # Demonstrates: a tampered row can't become a path
@@ -287,7 +282,7 @@ def test_tampered_project_row_is_ignored(root, tmp_path):
 
 
 def test_duplicate_project_slug_is_refused_by_the_database(root):
-    # G2❌6 · negative
+    # negative
     # Changed: insert a second row with slug default directly
     # Then: IntegrityError (UNIQUE); one row
     # Demonstrates: the unique slug holds even when _unique_id is bypassed

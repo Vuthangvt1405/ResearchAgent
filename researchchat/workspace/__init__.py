@@ -1,11 +1,9 @@
 """Project workspaces: one notebook, one Docker kernel and one files folder per project.
-
-Plan: docs/plans/done/notebook-workspace-plan.md
 """
 
 
 class ErrorCode:
-    """Error codes returned to the panel and the model (plan §4.2)."""
+    """Error codes returned to the panel and the model."""
 
     NOT_FOUND = "NOT_FOUND"  # unknown project or cell id
     STALE = "STALE"  # the panel's version is out of date
@@ -16,7 +14,7 @@ class ErrorCode:
     NOT_CODE = "NOT_CODE"  # tried to run a note
     KERNEL_DEAD = "KERNEL_DEAD"  # the kernel container crashed
     KERNEL_UNAVAILABLE = "KERNEL_UNAVAILABLE"  # Docker isn't running
-    # NB-3 dataset downloads (docs/plans/done/NB-3-dataset-download-plan.md §4.3)
+    # dataset downloads
     BAD_REF = "BAD_REF"  # empty or malformed dataset ref, or a URL on another host
     UNSUPPORTED_SOURCE = "UNSUPPORTED_SOURCE"  # a catalog without a file API (Kaggle, DataCite)
     NOT_PUBLIC = "NOT_PUBLIC"  # gated / private Hugging Face, restricted Zenodo

@@ -1,9 +1,7 @@
-"""Created datasets: scan, listing, rename, missing, delete (PCD-1 plan §7).
+"""Created datasets: scan, listing, rename, missing, delete.
 
 Files are written straight into root/<project>/files/ to stand in for kernel code
-(G5✅4 uses a real kernel).
-
-Plan: docs/plans/PCD-1-created-datasets-plan.md §7
+(the load-code test uses a real kernel).
 """
 
 import asyncio
@@ -83,12 +81,12 @@ def listed_iris(root, created):
     return target
 
 
-# ---- PCD-1 Group 1 — A new data file gets a card (AC1, AC2) · unit
+# ---- A new data file gets a card · unit
 # Baseline: Given project `p` with an empty `files/` · When `Iris.csv` is written and `sync(p)` runs
 
 
 def test_new_csv_is_listed_as_created_and_ready(root, created):
-    # G1✅1 · baseline
+    # baseline
     # Changed: —
     # Then: one row: name `Iris.csv`, size, `ready`, path `/work/Iris.csv`, origin `created`
     # Demonstrates: a file saved by code becomes a dataset
@@ -102,7 +100,7 @@ def test_new_csv_is_listed_as_created_and_ready(root, created):
 
 
 def test_file_in_subfolder_is_listed_with_its_folder(root, created):
-    # G1✅2 · edge
+    # edge
     # Changed: file at `out/results.csv`
     # Then: path `/work/out/results.csv`
     # Demonstrates: data in folders isn't lost
@@ -114,7 +112,7 @@ def test_file_in_subfolder_is_listed_with_its_folder(root, created):
 
 
 def test_name_with_spaces_and_quotes_is_listed(root, created):
-    # G1✅3 · edge
+    # edge
     # Changed: file `my "iris" data.csv`
     # Then: listed, name unchanged
     # Demonstrates: odd names still show
@@ -126,7 +124,7 @@ def test_name_with_spaces_and_quotes_is_listed(root, created):
 
 
 def test_empty_csv_is_listed_with_zero_size(root, created):
-    # G1✅4 · edge
+    # edge
     # Changed: 0-byte file
     # Then: listed, size 0
     # Demonstrates: an empty result is still visible
@@ -138,7 +136,7 @@ def test_empty_csv_is_listed_with_zero_size(root, created):
 
 
 def test_nothing_listed_when_no_file_written(root, created):
-    # G1❌1 · negative
+    # negative
     # Changed: no file
     # Then: no rows, no DB write
     # Demonstrates: no phantom cards
@@ -146,15 +144,14 @@ def test_nothing_listed_when_no_file_written(root, created):
     assert rows(created) == []
 
 
-# ---- PCD-1 Group 3 — Saving again updates, never duplicates (AC4) · unit
+# ---- Saving again updates, never duplicates · unit
 # Baseline: Given `Iris.csv` listed · When it is rewritten bigger and `sync` runs
 
 
 def test_resave_updates_size_and_keeps_one_card(root, created):
-    # G3✅1 · baseline
+    # baseline
     # Changed: —
     # Then: one row, new size, `updated_at` newer, same id
-    # Demonstrates: AC4
     target = listed_iris(root, created)
     [before] = rows(created)
     target.write_text(IRIS_CSV * 3)
@@ -167,7 +164,7 @@ def test_resave_updates_size_and_keeps_one_card(root, created):
 
 
 def test_resave_many_times_in_one_turn_keeps_one_card(root, created):
-    # G3✅2 · edge
+    # edge
     # Changed: 5 writes, then one sync
     # Then: one row
     # Demonstrates: loops don't multiply cards
@@ -180,7 +177,7 @@ def test_resave_many_times_in_one_turn_keeps_one_card(root, created):
 
 
 def test_unchanged_file_writes_nothing(root, created):
-    # G3✅3 · edge
+    # edge
     # Changed: file not rewritten
     # Then: no DB write, rev unchanged
     # Demonstrates: scans are cheap when nothing changed
@@ -191,15 +188,14 @@ def test_unchanged_file_writes_nothing(root, created):
     assert rows(created) == [before]
 
 
-# ---- PCD-1 Group 4 — Only data files count (AC5, A4) · unit
+# ---- Only data files count · unit
 # Baseline: Given an empty `files/` · When `Iris.csv`, `plot.png`, `model.pkl` are written and `sync` runs
 
 
 def test_only_data_files_are_listed(root, created):
-    # G4✅1 · baseline
+    # baseline
     # Changed: —
     # Then: only `Iris.csv`
-    # Demonstrates: AC5
     for path in ("Iris.csv", "plot.png", "model.pkl"):
         write(root, path)
 
@@ -209,10 +205,10 @@ def test_only_data_files_are_listed(root, created):
 
 
 def test_every_data_extension_is_listed(root, created):
-    # G4✅2 · edge
-    # Changed: one file per extension in A4
+    # edge
+    # Changed: one file per data extension
     # Then: all listed
-    # Demonstrates: the list in A4 is complete
+    # Demonstrates: the data-extension list is complete
     for extension in CREATED_DATA_EXTENSIONS:
         write(root, f"data{extension}")
 
@@ -223,7 +219,7 @@ def test_every_data_extension_is_listed(root, created):
 
 
 def test_extension_match_ignores_case(root, created):
-    # G4✅3 · edge
+    # edge
     # Changed: `IRIS.CSV`
     # Then: listed
     # Demonstrates: Windows-style names work
@@ -235,7 +231,7 @@ def test_extension_match_ignores_case(root, created):
 
 
 def test_image_is_not_listed(root, created):
-    # G4❌1 · negative
+    # negative
     # Changed: only `plot.png`
     # Then: none
     # Demonstrates: images aren't datasets
@@ -246,7 +242,7 @@ def test_image_is_not_listed(root, created):
 
 
 def test_pickle_is_not_listed(root, created):
-    # G4❌2 · negative
+    # negative
     # Changed: only `model.pkl`
     # Then: none
     # Demonstrates: models aren't datasets
@@ -258,7 +254,7 @@ def test_pickle_is_not_listed(root, created):
 
 
 def test_file_without_extension_is_not_listed(root, created):
-    # G4❌3 · negative
+    # negative
     # Changed: `data`
     # Then: none
     # Demonstrates: unknown files aren't datasets
@@ -270,7 +266,7 @@ def test_file_without_extension_is_not_listed(root, created):
 
 
 def test_hidden_and_checkpoint_folders_are_skipped(root, created):
-    # G4❌4 · negative
+    # negative
     # Changed: `.ipynb_checkpoints/x.csv`, `.cache/y.csv`, `.hidden.csv`
     # Then: none
     # Demonstrates: tool clutter isn't a dataset
@@ -282,14 +278,14 @@ def test_hidden_and_checkpoint_folders_are_skipped(root, created):
     assert rows(created) == []
 
 
-# ---- PCD-1 Group 5 — Load code (AC6, SEC5) · docker
+# ---- Load code · docker
 # Baseline: Given a real kernel for project `p` · When kernel code saves Iris.csv, the scan lists it,
 #   and the card's load code runs in the same kernel
 
 
 @pytest.mark.docker
 def test_created_csv_load_code_runs_in_kernel(root, created):
-    # G5✅4 · edge
+    # edge
     # Changed: real kernel (`@pytest.mark.docker`)
     # Then: runs without error, `df.shape` > 0
     # Demonstrates: the code truly works
@@ -317,12 +313,12 @@ def test_created_csv_load_code_runs_in_kernel(root, created):
     assert result.outputs[-1]["data"]["text/plain"] == "(2, 2)"
 
 
-# ---- PCD-1 Group 6 — Only the project's own files (AC10, SEC1, SEC8) · unit
+# ---- Only the project's own files · unit
 # Baseline: Given project `p` · When a file is placed as described and `sync(p)` runs
 
 
 def test_regular_file_inside_files_is_listed(root, created):
-    # G6✅1 · baseline
+    # baseline
     # Changed: regular `Iris.csv`
     # Then: listed
     # Demonstrates: a plain file inside the project counts
@@ -334,7 +330,7 @@ def test_regular_file_inside_files_is_listed(root, created):
 
 
 def test_symlink_to_outside_file_is_not_listed(root, created, tmp_path):
-    # G6❌1 · negative
+    # negative
     # Changed: `evil.csv → <outside>/secret.csv`
     # Then: not listed
     # Demonstrates: no escape via links
@@ -348,7 +344,7 @@ def test_symlink_to_outside_file_is_not_listed(root, created, tmp_path):
 
 
 def test_symlink_to_other_projects_file_is_not_listed(root, created):
-    # G6❌2 · negative
+    # negative
     # Changed: link to `q/files/x.csv`
     # Then: not listed; project `q` rows unchanged
     # Demonstrates: projects stay apart
@@ -361,7 +357,7 @@ def test_symlink_to_other_projects_file_is_not_listed(root, created):
 
 
 def test_symlinked_folder_is_not_walked(root, created, tmp_path):
-    # G6❌3 · negative
+    # negative
     # Changed: `out → <outside folder>` containing CSVs
     # Then: nothing listed
     # Demonstrates: folders behind links are skipped
@@ -376,7 +372,7 @@ def test_symlinked_folder_is_not_walked(root, created, tmp_path):
 
 
 def test_symlink_inside_files_is_not_listed(root, created):
-    # G6❌4 · negative
+    # negative
     # Changed: `b.csv → a.csv` (both inside)
     # Then: only `a.csv`
     # Demonstrates: one rule for all links, simpler and safe
@@ -389,7 +385,7 @@ def test_symlink_inside_files_is_not_listed(root, created):
 
 
 def test_pool_links_are_not_listed_as_created(root, created):
-    # G6❌5 · negative
+    # negative
     # Changed: CSV under `files/datasets/hf-x/`
     # Then: not created; downloaded card unchanged
     # Demonstrates: no duplicates with downloads
@@ -402,7 +398,7 @@ def test_pool_links_are_not_listed_as_created(root, created):
 
 
 def test_other_project_is_not_scanned(root, created):
-    # G6❌6 · negative
+    # negative
     # Changed: write in `q/files/` and sync `p`
     # Then: no rows for either
     # Demonstrates: scan scope is one project
@@ -413,15 +409,14 @@ def test_other_project_is_not_scanned(root, created):
     assert rows(created, "p") == [] and rows(created, "q") == []
 
 
-# ---- PCD-1 Group 7 — Missing (AC7, AC11) · unit
+# ---- Missing · unit
 # Baseline: Given `Iris.csv` listed · When the file is removed and the list is read
 
 
 def test_deleted_file_shows_missing(root, created, datasets):
-    # G7✅1 · baseline
+    # baseline
     # Changed: —
     # Then: card `missing`; `dataset_list` `missing`, `missing_files` = `[/work/Iris.csv]`
-    # Demonstrates: AC7
     listed_iris(root, created).unlink()
 
     [row] = rows(created)
@@ -431,7 +426,7 @@ def test_deleted_file_shows_missing(root, created, datasets):
 
 
 def test_file_back_at_same_path_is_ready_again(root, created):
-    # G7✅2 · edge
+    # edge
     # Changed: file recreated
     # Then: `ready`, same id
     # Demonstrates: no stuck missing
@@ -444,7 +439,7 @@ def test_file_back_at_same_path_is_ready_again(root, created):
 
 
 def test_missing_file_is_not_dropped_by_scan(root, created):
-    # G7❌3 · negative
+    # negative
     # Changed: sync after delete
     # Then: row kept
     # Demonstrates: card stays until the user deletes it
@@ -457,7 +452,7 @@ def test_missing_file_is_not_dropped_by_scan(root, created):
 
 
 def test_file_replaced_by_link_shows_missing(root, created, tmp_path):
-    # G7❌4 · negative
+    # negative
     # Changed: `Iris.csv` replaced by a link
     # Then: `missing`
     # Demonstrates: a link never counts as the file
@@ -472,15 +467,14 @@ def test_file_replaced_by_link_shows_missing(root, created, tmp_path):
     assert [row["status"] for row in rows(created)] == ["missing"]
 
 
-# ---- PCD-1 Group 8 — One list, two kinds (AC3, AC9) · unit
+# ---- One list, two kinds · unit
 # Baseline: Given downloaded `hf-scikit-learn--iris` and created `Iris.csv` · When `panel_state` / `list_for_model` run
 
 
 def test_panel_state_has_both_kinds_in_one_list(root, created, datasets):
-    # G8✅1 · baseline
+    # baseline
     # Changed: —
     # Then: 2 rows, origins `downloaded` and `created`
-    # Demonstrates: AC3
     pool = DatasetPool(root)
     pool.add_entry(PoolEntry("hf-scikit-learn--iris", "huggingface", "scikit-learn/iris", None, "iris", None, "cc0",
                              [PoolFile("Iris.csv", 10, None, True)]))
@@ -496,7 +490,7 @@ def test_panel_state_has_both_kinds_in_one_list(root, created, datasets):
 
 
 def test_created_id_never_clashes_with_catalog_id(root, created):
-    # G8❌1 · negative
+    # negative
     # Changed: created `hf.csv`, and two names with the same slug
     # Then: id `file-hf-csv`; the second gets `-2`
     # Demonstrates: Delete hits the right one
@@ -509,7 +503,7 @@ def test_created_id_never_clashes_with_catalog_id(root, created):
 
 
 def test_long_file_name_is_capped_in_views(root, created, datasets):
-    # G8❌2 · negative
+    # negative
     # Changed: 250-char name (filesystems stop at 255)
     # Then: name ≤ 200
     # Demonstrates: the tab and model aren't flooded
@@ -521,15 +515,15 @@ def test_long_file_name_is_capped_in_views(root, created, datasets):
     assert len(datasets.list_for_model("p")[0]["name"]) == ds.NAME_MAX
 
 
-# ---- PCD-1 Group 9 — Delete warns and removes only the file (AC8, AC13) · unit
+# ---- Delete warns and removes only the file · unit
 # Baseline: Given created `Iris.csv` listed · When `ds_delete file-iris-csv` runs (DatasetService.delete)
 
 
 def test_delete_created_removes_file_and_row(root, created, datasets):
-    # G9✅1 · baseline
+    # baseline
     # Changed: —
     # Then: file gone, row gone, rev bumped
-    # Demonstrates: AC8 Confirm
+    # Demonstrates: Confirm deletes the file and its card
     target = listed_iris(root, created)
     rev_before = datasets.rev
 
@@ -541,7 +535,7 @@ def test_delete_created_removes_file_and_row(root, created, datasets):
 
 
 def test_delete_missing_created_removes_card(root, created, datasets):
-    # G9✅4 · edge
+    # edge
     # Changed: file already gone
     # Then: row gone, no error
     # Demonstrates: user can clear a missing card
@@ -553,10 +547,9 @@ def test_delete_missing_created_removes_card(root, created, datasets):
 
 
 def test_file_saved_again_after_delete_gets_new_card(root, created, datasets):
-    # G9✅5 · edge
+    # edge
     # Changed: after delete, code saves `Iris.csv` again, then sync
     # Then: one new `ready` card
-    # Demonstrates: AC13
     listed_iris(root, created)
     run(datasets.delete("p", "file-iris-csv"))
     write(root, "Iris.csv")
@@ -567,7 +560,7 @@ def test_file_saved_again_after_delete_gets_new_card(root, created, datasets):
 
 
 def test_delete_unknown_id_is_not_found(root, created, datasets):
-    # G9❌1 · negative
+    # negative
     # Changed: id `file-nope`
     # Then: `NOT_FOUND`, nothing changed
     # Demonstrates: unknown ids are refused
@@ -581,7 +574,7 @@ def test_delete_unknown_id_is_not_found(root, created, datasets):
 
 
 def test_delete_created_does_not_touch_other_files(root, created, datasets):
-    # G9❌2 · negative
+    # negative
     # Changed: sibling `Iris2.csv`
     # Then: sibling still there
     # Demonstrates: delete is exact
@@ -594,15 +587,14 @@ def test_delete_created_does_not_touch_other_files(root, created, datasets):
     assert sibling.exists() and names(created) == ["Iris2.csv"]
 
 
-# ---- PCD-1 Group 11 — A rename keeps the card (AC12, SEC10) · unit
+# ---- A rename keeps the card · unit
 # Baseline: Given `Iris.csv` listed as `file-iris-csv` · When it is renamed to `iris_v2.csv` (contents unchanged) and `sync` runs
 
 
 def test_renamed_file_keeps_its_card_with_new_name(root, created):
-    # G11✅1 · baseline
+    # baseline
     # Changed: —
     # Then: one row, id `file-iris-csv`, name `iris_v2.csv`, path `/work/iris_v2.csv`, `ready`; no `missing` row
-    # Demonstrates: AC12
     target = listed_iris(root, created)
     target.rename(target.with_name("iris_v2.csv"))
 
@@ -614,7 +606,7 @@ def test_renamed_file_keeps_its_card_with_new_name(root, created):
 
 
 def test_file_moved_into_subfolder_keeps_its_card(root, created):
-    # G11✅2 · edge
+    # edge
     # Changed: moved to `out/Iris.csv`
     # Then: same id, path `/work/out/Iris.csv`
     # Demonstrates: moves count as renames
@@ -628,7 +620,7 @@ def test_file_moved_into_subfolder_keeps_its_card(root, created):
 
 
 def test_renamed_file_gets_no_toast(root, created):
-    # G11✅3 · edge
+    # edge
     # Changed: then the workspace is opened
     # Then: no missing names, so no toast
     # Demonstrates: a rename isn't a loss
@@ -640,10 +632,10 @@ def test_renamed_file_gets_no_toast(root, created):
 
 
 def test_rename_to_non_data_name_shows_missing(root, created):
-    # G11❌1 · negative
+    # negative
     # Changed: renamed to `iris.txt`
     # Then: card `missing`, no new card
-    # Demonstrates: AC5 still applies
+    # Demonstrates: renaming to a non-data extension drops the card
     target = listed_iris(root, created)
     target.rename(target.with_name("iris.txt"))
 
@@ -653,7 +645,7 @@ def test_rename_to_non_data_name_shows_missing(root, created):
 
 
 def test_move_into_hidden_folder_shows_missing(root, created):
-    # G11❌2 · negative
+    # negative
     # Changed: moved to `.old/Iris.csv`
     # Then: card `missing`
     # Demonstrates: skipped folders still skipped
@@ -667,7 +659,7 @@ def test_move_into_hidden_folder_shows_missing(root, created):
 
 
 def test_copy_keeps_original_and_adds_card(root, created):
-    # G11❌3 · negative
+    # negative
     # Changed: copied with its mtime (new inode), original kept
     # Then: original `ready`, copy gets its own card
     # Demonstrates: a copy isn't a rename
@@ -680,10 +672,10 @@ def test_copy_keeps_original_and_adds_card(root, created):
 
 
 def test_rename_and_edit_in_one_run_is_missing_plus_new_card(root, created):
-    # G11❌4 · negative
+    # negative
     # Changed: renamed and rewritten before sync
     # Then: old `missing`, new card
-    # Demonstrates: unmatched renames fall back to AC7
+    # Demonstrates: unmatched renames fall back to missing
     target = listed_iris(root, created)
     renamed = target.rename(target.with_name("iris_v2.csv"))
     renamed.write_text(IRIS_CSV * 2)
@@ -694,10 +686,10 @@ def test_rename_and_edit_in_one_run_is_missing_plus_new_card(root, created):
 
 
 def test_new_file_on_reused_inode_is_not_a_rename():
-    # G11❌5 · negative
+    # negative
     # Changed: old file deleted, new file reuses its inode with another mtime
     # Then: old `missing`, new card
-    # Demonstrates: a stranger can't take over a card (SEC10)
+    # Demonstrates: a stranger can't take over a card
     gone = CreatedDataset("file-iris-csv", FileSnapshot("Iris.csv", 41, 1_000, inode=7), "t", "t")
     stranger = FileSnapshot("other.csv", 41, 2_000, inode=7)
 
@@ -706,7 +698,7 @@ def test_new_file_on_reused_inode_is_not_a_rename():
     assert (changes.new_files, changes.renamed, changes.resaved) == ([stranger], [], [])
 
 
-# ---- PCD-1 Group S1 — Delete never follows links (SEC1, SEC2) · unit
+# ---- Delete never follows links · unit
 # Baseline: Given created `Iris.csv` listed, and a victim file outside `files/` · When `ds_delete` runs after the change below
 
 
@@ -719,7 +711,7 @@ def victim(tmp_path):
 
 
 def test_delete_when_file_became_link_keeps_target(root, created, datasets, victim):
-    # S1❌1 · negative
+    # negative
     # Changed: `Iris.csv` replaced by link → victim
     # Then: victim intact; link and row removed
     # Demonstrates: Delete can't destroy outside files
@@ -734,7 +726,7 @@ def test_delete_when_file_became_link_keeps_target(root, created, datasets, vict
 
 
 def test_delete_when_parent_folder_became_link_keeps_target(root, created, datasets, victim):
-    # S1❌2 · negative
+    # negative
     # Changed: `out/` replaced by link, row `out/x.csv`
     # Then: victim intact; row removed
     # Demonstrates: folder links too
@@ -750,7 +742,7 @@ def test_delete_when_parent_folder_became_link_keeps_target(root, created, datas
 
 
 def test_delete_link_to_other_project_keeps_its_file(root, created, datasets):
-    # S1❌3 · negative
+    # negative
     # Changed: link → `q/files/x.csv`
     # Then: `q`'s file intact
     # Demonstrates: projects can't harm each other
@@ -765,7 +757,7 @@ def test_delete_link_to_other_project_keeps_its_file(root, created, datasets):
 
 
 def test_delete_holds_run_lock(root):
-    # S1❌4 · negative
+    # negative
     # Changed: a run is in progress
     # Then: delete waits until the run ends
     # Demonstrates: no swap between check and unlink
@@ -787,12 +779,12 @@ def test_delete_holds_run_lock(root):
     assert not target.exists()
 
 
-# ---- PCD-1 Group S3 — Names are shown as text (SEC6) · unit
+# ---- Names are shown as text · unit
 # Baseline: negatives only (injection payloads), no baseline row
 
 
 def test_toast_strips_newlines_and_caps_names():
-    # S3❌2 · negative
+    # negative
     # Changed: name with `\n`, control characters, 300 chars
     # Then: one line, name ≤ 80 chars
     # Demonstrates: toast text can't be broken or flooded

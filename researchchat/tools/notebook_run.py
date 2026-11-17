@@ -1,7 +1,7 @@
 """notebook_run tool: run Python in the project's notebook.
 
-Safe code runs at once (AC10). Risky code is shown in the chat with the
-reasons and Run / Skip buttons, and runs only on Run (AC11).
+Safe code runs at once. Risky code is shown in the chat with the
+reasons and Run / Skip buttons, and runs only on Run.
 """
 
 import chainlit as cl

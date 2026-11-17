@@ -22,7 +22,7 @@ from researchchat.tools import (
 )
 
 _MODULES = [web_search, read_page, dataset_search]  # behind the "Web search" switch
-# behind the "Notebook" switch; datasets land in the project's files, so they share it (NB-3)
+# behind the "Notebook" switch; datasets land in the project's files, so they share it
 _NOTEBOOK_MODULES = [notebook_read, notebook_run, dataset_download, dataset_list, dataset_delete]
 
 _BY_NAME = {m.DEFINITION["function"]["name"]: m for m in _MODULES + _NOTEBOOK_MODULES}

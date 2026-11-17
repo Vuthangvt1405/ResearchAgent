@@ -1,6 +1,4 @@
 """Editing, versions and security rules in the notebook service.
-
-Plan: docs/plans/done/notebook-workspace-plan.md section 7.
 """
 
 import asyncio
@@ -26,7 +24,7 @@ def root(tmp_path):
 
 @pytest.fixture
 def nb_ab(root, service_factory):
-    """Group 2 baseline: a notebook with cells A, B at version 3."""
+    """Cell-editing baseline: a notebook with cells A, B at version 3."""
     pid = store.create_project("P", root).id
     nb = store.load_notebook(pid, root)
     a = store.add_cell(nb, "code", None)
@@ -55,12 +53,12 @@ def assert_rejected(code, coro, root, pid):
     assert on_disk(root, pid) == before  # nothing changed
 
 
-# ---- Group 2: Cell editing (AC5, AC15, AC16) · unit
+# ---- Cell editing · unit
 # Baseline: Given a notebook with cells A, B at version 3 · When editing with version 3
 
 
 def test_update_cell_saves_source_and_bumps_version(nb_ab, root):
-    # G2✅1 (baseline) · Demonstrates: edits persist
+    # Demonstrates: edits persist
     svc, pid, a, _ = nb_ab
     props = run(svc.update_cell(pid, 3, a, "a = 10"))
     assert props["version"] == 4
@@ -69,21 +67,19 @@ def test_update_cell_saves_source_and_bumps_version(nb_ab, root):
 
 
 def test_add_cell_after_given_cell(nb_ab):
-    # G2✅2 (edge) · Demonstrates: insert where asked
+    # Demonstrates: insert where asked
     svc, pid, a, b = nb_ab
     props = run(svc.add_cell(pid, 3, a, "code"))
     assert ids(props)[0] == a and ids(props)[2] == b and len(ids(props)) == 3
 
 
 def test_add_cell_at_end_when_no_after_id(nb_ab):
-    # G2✅3 (edge)
     svc, pid, a, b = nb_ab
     props = run(svc.add_cell(pid, 3, None, "code"))
     assert ids(props)[:2] == [a, b] and len(ids(props)) == 3
 
 
 def test_move_cell_down_and_up(nb_ab):
-    # G2✅4 (edge)
     svc, pid, a, b = nb_ab
     props = run(svc.move_cell(pid, 3, a, "down"))
     assert ids(props) == [b, a]
@@ -92,7 +88,7 @@ def test_move_cell_down_and_up(nb_ab):
 
 
 def test_move_first_cell_up_is_noop(nb_ab):
-    # G2✅5 (edge) · Demonstrates: boundary is safe
+    # Demonstrates: boundary is safe
     svc, pid, a, b = nb_ab
     props = run(svc.move_cell(pid, 3, a, "up"))
     assert ids(props) == [a, b]
@@ -132,14 +128,12 @@ def test_clear_outputs_on_a_note_is_rejected(nb_ab, root):
 
 
 def test_delete_cell(nb_ab):
-    # G2✅6 (edge)
     svc, pid, a, b = nb_ab
     props = run(svc.delete_cell(pid, 3, b))
     assert ids(props) == [a]
 
 
 def test_clear_outputs_keeps_sources(nb_ab):
-    # G2✅7 (edge)
     svc, pid, _, _ = nb_ab
     props = run(svc.clear_outputs(pid, 3))
     assert all(c["outputs"] == [] for c in props["cells"])
@@ -147,7 +141,7 @@ def test_clear_outputs_keeps_sources(nb_ab):
 
 
 def test_stale_version_is_rejected(nb_ab, root):
-    # G2❌1 (negative) · Demonstrates: concurrent edits never silently overwrite
+    # Demonstrates: concurrent edits never silently overwrite
     svc, pid, a, _ = nb_ab
     assert_rejected(ErrorCode.STALE, svc.update_cell(pid, 2, a, "lost"), root, pid)
     # Through the action layer, the latest notebook comes back with the error
@@ -158,19 +152,16 @@ def test_stale_version_is_rejected(nb_ab, root):
 
 
 def test_unknown_cell_id_is_rejected(nb_ab, root):
-    # G2❌2 (negative)
     svc, pid, _, _ = nb_ab
     assert_rejected(ErrorCode.NOT_FOUND, svc.update_cell(pid, 3, "zzz", "x"), root, pid)
 
 
 def test_oversized_source_is_rejected(nb_ab, root):
-    # G2❌3 (negative)
     svc, pid, a, _ = nb_ab
     assert_rejected(ErrorCode.TOO_LARGE, svc.update_cell(pid, 3, a, "x" * (101 * 1024)), root, pid)
 
 
 def test_bad_move_direction_is_rejected(nb_ab, root):
-    # G2❌4 (negative)
     svc, pid, a, _ = nb_ab
     assert_rejected(ErrorCode.BAD_PAYLOAD, svc.move_cell(pid, 3, a, "left"), root, pid)
     # The action layer rejects wrong types before the service runs
@@ -180,7 +171,7 @@ def test_bad_move_direction_is_rejected(nb_ab, root):
 
 
 def test_add_note_cell(nb_ab):
-    # G2✅8 (edge) · Demonstrates: notes can be added (AC15)
+    # Demonstrates: notes can be added
     svc, pid, _, b = nb_ab
     props = run(svc.add_cell(pid, 3, b, "markdown"))
     note = props["cells"][2]
@@ -189,7 +180,7 @@ def test_add_note_cell(nb_ab):
 
 
 def test_note_saved_as_markdown_cell_in_ipynb(nb_ab, root):
-    # G2✅9 (edge) · Demonstrates: notes open in Jupyter too
+    # Demonstrates: notes open in Jupyter too
     svc, pid, _, b = nb_ab
     props = run(svc.add_cell(pid, 3, b, "markdown"))
     note_id = props["cells"][2]["id"]
@@ -201,25 +192,24 @@ def test_note_saved_as_markdown_cell_in_ipynb(nb_ab, root):
 
 
 def test_unknown_cell_type_is_rejected(nb_ab, root):
-    # G2❌5 (negative)
     svc, pid, _, _ = nb_ab
     assert_rejected(ErrorCode.BAD_TYPE, svc.add_cell(pid, 3, None, "raw"), root, pid)
 
 
 def test_running_a_note_is_rejected(nb_ab, root, fake_kernels):
-    # G2❌6 (negative) · Demonstrates: notes never execute (AC16)
+    # Demonstrates: notes never execute
     svc, pid, _, b = nb_ab
     note_id = run(svc.add_cell(pid, 3, b, "markdown"))["cells"][2]["id"]
     assert_rejected(ErrorCode.NOT_CODE, svc.run_cell(pid, 4, note_id, "print(1)"), root, pid)
     assert fake_kernels.executed == []
 
 
-# ---- Group S: Security (§5) · unit + integration
+# ---- Security · unit + integration
 # No shared baseline: each row is its own attack.
 
 
 def test_risky_model_code_never_runs_without_click(root, service_factory, fake_kernels):
-    # S1 (negative) · Demonstrates: (#1) injected risky code can't run alone
+    # Demonstrates: injected risky code can't run alone
     from researchchat.tools import notebook_run
 
     pid = store.create_project("P", root).id
@@ -236,7 +226,7 @@ def test_risky_model_code_never_runs_without_click(root, service_factory, fake_k
 
 
 def test_payload_project_id_is_ignored(root, service_factory):
-    # S2 (negative) · Demonstrates: (#2)
+    # Demonstrates: a payload can't pick another project
     store.create_project("P", root)
     store.create_project("Q", root)
     svc = service_factory(root)
@@ -248,7 +238,6 @@ def test_payload_project_id_is_ignored(root, service_factory):
 
 @pytest.mark.parametrize("bad", ["../evil", "..", "a/../../evil", "evil/..", "Evil", ""])
 def test_traversal_project_id_rejected(root, bad):
-    # S3a (negative) · Demonstrates: (#3)
     root.mkdir()
     with pytest.raises(WorkspaceError):
         store.project_dir(bad, root)
@@ -257,14 +246,13 @@ def test_traversal_project_id_rejected(root, bad):
 
 @pytest.mark.parametrize("bad", ["C:\\x", "C:/x", "/etc", "\\\\server\\share", "d:"])
 def test_absolute_and_drive_paths_rejected(root, bad):
-    # S3b (negative)
     with pytest.raises(WorkspaceError):
         store.project_dir(bad, root)
 
 
 @pytest.mark.parametrize("host", ["0.0.0.0", "192.168.1.5", "::", "example.com"])
 def test_startup_refuses_non_local_host(host):
-    # S5 (negative) · Demonstrates: (#5)
+    # Demonstrates: the app only serves on localhost
     from researchchat.config import check_local_host
 
     with pytest.raises(RuntimeError, match="localhost"):
@@ -274,7 +262,7 @@ def test_startup_refuses_non_local_host(host):
 
 
 def test_concurrent_edits_one_wins_one_stale(nb_ab, root):
-    # S8 (negative) · Demonstrates: (#8)
+    # Demonstrates: of two edits on one version, one is refused as stale
     svc, pid, a, b = nb_ab
 
     async def both():
@@ -302,7 +290,7 @@ def test_stream_output_strips_ansi_colours():
     assert out == {"kind": "stdout", "text": "notice installed\nnext\n", "image": ""}
 
 
-# ---- PCD-1 helpers: a kernel whose code writes files, a notebook wired like actions.py, a toast recorder
+# ---- created-dataset helpers: a kernel whose code writes files, a notebook wired like actions.py, a toast recorder
 
 
 class WritingKernels:
@@ -363,15 +351,15 @@ def created_ids(props) -> list[str]:
     return [row["id"] for row in props["datasets"] if row["origin"] == "created"]
 
 
-# ---- PCD-1 Group 2 — Runs trigger the scan before the push (AC1, AC2, AC9) · unit (FakeKernels)
+# ---- Runs trigger the scan before the push · unit (FakeKernels)
 # Baseline: Given project `p`, a fake kernel whose code writes `Iris.csv` · When `run_for_model(p, code)` runs
 
 
 def test_assistant_run_pushes_card_in_same_turn(wired):
-    # G2✅1 · baseline
+    # baseline
     # Changed: —
     # Then: the final pushed props contain the `Iris.csv` card; `datasets_rev` bumped
-    # Demonstrates: AC1 without reload
+    # Demonstrates: the card shows without a reload
     service, datasets, pushed = wired
     rev_before = datasets.rev
 
@@ -382,7 +370,7 @@ def test_assistant_run_pushes_card_in_same_turn(wired):
 
 
 def test_user_cell_run_pushes_card(wired):
-    # G2✅2 · edge
+    # edge
     # Changed: `run_cell` instead of `run_for_model`
     # Then: same
     # Demonstrates: user code counts
@@ -396,7 +384,7 @@ def test_user_cell_run_pushes_card(wired):
 
 
 def test_dataset_list_after_run_includes_file(wired):
-    # G2✅3 · edge
+    # edge
     # Changed: then call `dataset_list`
     # Then: result has `/work/Iris.csv`
     # Demonstrates: the assistant sees it
@@ -411,7 +399,7 @@ def test_dataset_list_after_run_includes_file(wired):
 
 
 def test_failed_cell_still_lists_written_file(wired):
-    # G2✅4 · edge
+    # edge
     # Changed: code writes then raises
     # Then: card present
     # Demonstrates: partial work isn't hidden
@@ -423,7 +411,7 @@ def test_failed_cell_still_lists_written_file(wired):
 
 
 def test_run_that_writes_nothing_does_not_bump_rev(wired):
-    # G2❌1 · negative
+    # negative
     # Changed: no file written
     # Then: `datasets_rev` unchanged
     # Demonstrates: quiet runs don't re-render the tab
@@ -436,7 +424,7 @@ def test_run_that_writes_nothing_does_not_bump_rev(wired):
 
 
 def test_scan_error_does_not_fail_the_run(root, project_p, fake_kernels, caplog):
-    # G2❌2 · negative
+    # negative
     # Changed: scan raises `OSError`
     # Then: cell result returned, error logged
     # Demonstrates: a scan problem never breaks the notebook
@@ -453,7 +441,7 @@ def test_scan_error_does_not_fail_the_run(root, project_p, fake_kernels, caplog)
     assert "Scanning p for created datasets failed" in caplog.text
 
 
-# ---- PCD-1 Group 7 — Missing and the toast (AC7, AC11) · unit + session
+# ---- Missing and the toast · unit + session
 # Baseline: Given `Iris.csv` listed in project `p` · When the file is gone and the workspace is opened
 
 
@@ -472,10 +460,9 @@ def open_workspace(datasets, project_id, toasts) -> None:
 
 
 def test_open_workspace_toasts_missing_files_once(iris_listed_then_gone):
-    # G7✅3 · edge
+    # edge
     # Changed: `open_for_session`
     # Then: one `send_toast(…, "warning")` naming `Iris.csv`
-    # Demonstrates: AC11
     toasts = ToastRecorder()
 
     open_workspace(iris_listed_then_gone, "p", toasts)
@@ -487,10 +474,10 @@ def test_open_workspace_toasts_missing_files_once(iris_listed_then_gone):
 
 
 def test_switch_project_toasts_for_new_project(root, iris_listed_then_gone, service_factory):
-    # G7✅4 · edge
+    # edge
     # Changed: `nb_switch_project` to a project with a missing file
     # Then: one toast
-    # Demonstrates: AC11 on switch
+    # Demonstrates: the missing-files toast shows on project switch
     store.create_project("Q", root, project_id="q")
     session = FakeSession(project_id="q")
     toasts = ToastRecorder()
@@ -503,7 +490,7 @@ def test_switch_project_toasts_for_new_project(root, iris_listed_then_gone, serv
 
 
 def test_several_missing_files_share_one_toast(root, wired):
-    # G7✅5 · edge
+    # edge
     # Changed: 3 files gone
     # Then: one toast naming all 3
     # Demonstrates: no toast storm
@@ -521,7 +508,7 @@ def test_several_missing_files_share_one_toast(root, wired):
 
 
 def test_no_toast_when_nothing_missing(wired):
-    # G7❌1 · negative
+    # negative
     # Changed: all files present
     # Then: no toast
     # Demonstrates: no noise
@@ -535,7 +522,7 @@ def test_no_toast_when_nothing_missing(wired):
 
 
 def test_toast_not_repeated_within_one_opening(wired, iris_listed_then_gone):
-    # G7❌2 · negative
+    # negative
     # Changed: later runs/props in the same chat
     # Then: no second toast
     # Demonstrates: once per opening
@@ -549,7 +536,7 @@ def test_toast_not_repeated_within_one_opening(wired, iris_listed_then_gone):
     assert len(toasts.toasts) == 1
 
 
-# ---- PCD-1 Group S2 — Project isolation (SEC3) · unit (actions.dispatch)
+# ---- Project isolation · unit (actions.dispatch)
 # Baseline: Given `Iris.csv` created in project `q`, the chat on project `p` · When `ds_delete` is sent
 
 
@@ -567,7 +554,7 @@ def file_created_in_q(root, project_p, monkeypatch):
 
 
 def test_delete_other_projects_created_file_is_not_found(root, file_created_in_q, service_factory):
-    # S2❌1 · negative
+    # negative
     # Changed: id of `q`'s file
     # Then: `NOT_FOUND`; `q`'s file and row intact
     # Demonstrates: ids can't cross projects
@@ -582,7 +569,7 @@ def test_delete_other_projects_created_file_is_not_found(root, file_created_in_q
 
 
 def test_payload_project_field_is_ignored(root, file_created_in_q, service_factory):
-    # S2❌2 · negative
+    # negative
     # Changed: payload adds `project_id: "q"`
     # Then: same as ❌1
     # Demonstrates: project comes from the session

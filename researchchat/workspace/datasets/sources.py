@@ -1,9 +1,9 @@
-"""Turn a dataset ref into a file plan, and stream files safely (NB-3 plan §4.1).
+"""Turn a dataset ref into a file plan, and stream files safely.
 
 Only Hugging Face and Zenodo have a file API. Every URL is built here from
 the catalog API, never taken from model text. Downloads are HTTPS only; every
 redirect hop and next-page link is re-checked: HTTPS, and every address the
-host resolves to must be public (SEC1). Redirects are followed by hand.
+host resolves to must be public. Redirects are followed by hand.
 """
 
 import asyncio
@@ -24,7 +24,7 @@ from researchchat.workspace import ErrorCode, WorkspaceError
 from researchchat.workspace.datasets.store import NAME_MAX, Source, safe_relpath
 
 MAX_REDIRECTS = 5
-USER_AGENT = "ResearchChat"  # generic; no tokens are ever sent (A1, SEC14)
+USER_AGENT = "ResearchChat"  # generic; no tokens are ever sent
 HEADERS = {"User-Agent": USER_AGENT}
 AVAILABLE_FILES_MAX = 100
 CHUNK_SIZE = 1 << 16
@@ -210,7 +210,7 @@ async def _get_json(client: httpx.AsyncClient, url: str, source: Source, missing
 
 
 def _clean(text, limit: int = NAME_MAX) -> str | None:
-    """Catalog text for display: control characters removed, length capped (SEC20)."""
+    """Catalog text for display: control characters removed, length capped."""
     if text is None:
         return None
     text = re.sub(r"[\x00-\x1f\x7f]+", " ", str(text)).strip()
@@ -274,7 +274,7 @@ async def resolve(
     """Ask the catalog for the file list, filtered by `files` globs.
 
     `revision` pins a Hugging Face commit (an existing dataset keeps its
-    version, AC12); None means the current revision. Zenodo records never change.
+    version); None means the current revision. Zenodo records never change.
     """
     resolver = CATALOGS[source].resolve
     if client is not None:
