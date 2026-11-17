@@ -4,6 +4,7 @@ Run with: chainlit run app.py
 
 import asyncio
 import os
+import subprocess
 
 import chainlit as cl
 from chainlit.config import FILES_DIRECTORY
@@ -65,6 +66,15 @@ async def on_chat_start():
     cl.user_session.set("settings", settings)
     await notebook.open_for_session()
     await cl.Message(content=GREETING).send()
+
+
+@cl.on_app_shutdown
+async def on_app_shutdown() -> None:
+    # Kernels hold memory until stopped; without this they run on after the app exits
+    try:
+        await notebook.kernels.stop_all()
+    except (OSError, subprocess.TimeoutExpired):
+        pass  # Docker is gone or stuck: cleanup_leftovers removes them on the next start
 
 
 @cl.on_chat_end
