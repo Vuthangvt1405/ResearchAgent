@@ -24,6 +24,8 @@ class ErrorCode:
     BUSY = "BUSY"  # delete while the dataset is downloading
     DECLINED = "DECLINED"  # the user pressed Skip / Keep or didn't answer
     DOWNLOAD_FAILED = "DOWNLOAD_FAILED"  # checksum, network, stall or disk full
+    NOT_PASTED = "NOT_PASTED"  # a link that isn't in any of the user's own messages
+    NOT_A_FILE = "NOT_A_FILE"  # a pasted link that opens a web page
 
 
 class WorkspaceError(Exception):

@@ -147,3 +147,72 @@ describe("PCD-1 Group S3 — Names are shown as text", () => {
     expect(within(card("file-iris-csv")).getAllByText(hostile).length).toBeGreaterThan(0);
   });
 });
+
+// A card for a file downloaded from a pasted link
+// Baseline: Given a ready dataset with source "link", url https://example.org/data/iris.csv and no licence · When the card renders
+const linkDataset = (over = {}) =>
+  dataset({
+    id: "link-example-org--iris-csv", name: "iris.csv", source: "link", license: null,
+    url: "https://example.org/data/iris.csv", path: "/work/datasets/link-example-org--iris-csv", ...over,
+  });
+
+async function showLinkCard(d = linkDataset()) {
+  await showDatasets(props({ datasets_rev: 1, datasets: [d] }));
+  return card(d.id);
+}
+
+async function openDetails(el: HTMLElement) {
+  await act(async () => fireEvent.click(within(el).getByRole("button", { name: /Show details/ })));
+}
+
+describe("pasted-link card", () => {
+  it("shows the website host as source", async () => {
+    // Then: the source label is example.org
+    // Demonstrates: the user sees which website the file came from
+    const el = await showLinkCard();
+    expect(el.querySelector(".rcds-meta")?.textContent).toContain("example.org");
+  });
+
+  it("link licence says unknown", async () => {
+    // Then: the open details show "Unknown — check the source"
+    // Demonstrates: no licence is ever invented for a link
+    const el = await showLinkCard();
+    await openDetails(el);
+    expect(within(el).getByText("Unknown — check the source")).toBeTruthy();
+  });
+
+  it("downloading with unknown size", async () => {
+    // Then: while downloading with size 0 the card shows "1.2 MB of unknown size" and no percent value
+    // Demonstrates: progress without a size doesn't show nonsense
+    const el = await showLinkCard(linkDataset({ status: "downloading", size_bytes: 0, done_bytes: 1_200_000 }));
+    expect(el.querySelector(".rcds-size")?.textContent).toBe("1.2 MB of unknown size");
+    expect(within(el).getByRole("progressbar", { name: "Download progress" }).getAttribute("aria-valuenow")).toBeNull();
+    expect(within(el).queryByText("0%")).toBeNull();
+  });
+
+  it("catalog licence fallback unchanged", async () => {
+    // Then: a Zenodo card without a licence still says "Not stated"
+    // Demonstrates: existing cards don't change
+    const el = await showLinkCard(dataset({ id: "zenodo-1", source: "zenodo", license: null }));
+    await openDetails(el);
+    expect(within(el).getByText("Not stated")).toBeTruthy();
+  });
+
+  it("non-https url shows no host or link", async () => {
+    // Then: with no url the label is "Website" and there is no source link
+    // Demonstrates: unsafe links are never rendered
+    const el = await showLinkCard(linkDataset({ url: null }));
+    expect(el.querySelector(".rcds-meta")?.textContent).toContain("Website");
+    await openDetails(el);
+    expect(within(el).queryByText("Open source page")).toBeNull();
+  });
+
+  it("script-like host is shown as text", async () => {
+    // Then: a name like <img onerror> is rendered as plain text, no img element
+    // Demonstrates: a website can't inject markup into the panel
+    const hostile = '<img src=x onerror="alert(1)">';
+    const el = await showLinkCard(linkDataset({ name: hostile }));
+    expect(el.querySelector("img")).toBeNull();
+    expect(within(el).getAllByText(hostile).length).toBeGreaterThan(0);
+  });
+});

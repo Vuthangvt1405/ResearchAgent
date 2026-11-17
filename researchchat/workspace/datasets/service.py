@@ -29,7 +29,7 @@ import httpx
 from researchchat.clock import utc_now
 from researchchat.config import WORKSPACES_DIR
 from researchchat.workspace import ErrorCode, WorkspaceError, store
-from researchchat.workspace.datasets import sources
+from researchchat.workspace.datasets import links, sources
 from researchchat.workspace.datasets import store as ds
 from researchchat.workspace.datasets.created import CreatedDatasets
 from researchchat.workspace.datasets.pool import DatasetPool, PoolEntry, PoolFile
@@ -49,6 +49,7 @@ Approve = Callable[[DatasetPlan, int], Awaitable[bool]]  # (plan, download_bytes
 PropsFor = Callable[[str], Awaitable[NotebookProps]]
 FreeBytes = Callable[[Path], int]
 Resolve = Callable[..., Awaitable[DatasetPlan]]
+ResolveLink = Callable[..., Awaitable[DatasetPlan]]  # (link, *, client) -> one-file plan
 
 MB = 1_000_000
 NEVER_ASK_BYTES = 1 << 62  # after the user said Download, don't ask again
@@ -137,6 +138,8 @@ STARTED_NOTE = (
     "when it's ready. Don't read the files until then."
 )
 READY_NOTE = "Already downloaded. The files are ready to use at these paths."
+LINK_READY_NOTE = "Tell the user: This file is already in your datasets. Give them the path; nothing was downloaded."
+LINK_LICENCE_NOTE = " No licence is known for a pasted link; don't state one."
 
 
 @dataclass
@@ -162,6 +165,7 @@ class Job:
     task: asyncio.Task | None = None
     cancelled: bool = False
     last_push: float = field(default=0.0)
+    is_link: bool = False  # a pasted link: its size may only be known once it's downloaded
 
     @property
     def total(self) -> int:
@@ -186,6 +190,7 @@ class DownloadRequest:
     source_id: str
     files: list[str] | None  # glob patterns; None = all files
     update: bool  # the user asked for the newest version
+    pasted_links: frozenset[str] = frozenset()  # links found in the user's own messages of this chat
 
 
 @dataclass
@@ -259,6 +264,7 @@ class DatasetService:
         free_bytes: FreeBytes = disk_free,
         client_factory: Callable[[], httpx.AsyncClient] | None = None,
         resolve: Resolve = sources.resolve,
+        resolve_link: ResolveLink = links.resolve_link,
         progress_interval: float = PROGRESS_INTERVAL,
         pool: DatasetPool | None = None,
         created: CreatedDatasets | None = None,
@@ -272,6 +278,7 @@ class DatasetService:
         self.free_bytes = free_bytes
         self.client_factory = client_factory or (lambda: httpx.AsyncClient(timeout=sources.API_TIMEOUT))
         self.resolve = resolve
+        self.resolve_link = resolve_link
         self.progress_interval = progress_interval
         self.pool = pool or DatasetPool(root)  # index, links, and the one lock for both
         self.created = created or CreatedDatasets(root)  # files the project's own code wrote
@@ -390,8 +397,16 @@ class DatasetService:
         return DatasetPlan(
             source=entry.source, source_id=entry.source_id, name=entry.name, revision=entry.revision,
             url=entry.url or "", license=entry.license,
-            files=[PlannedFile(f.path, f.size, f.checksum, sources.file_url(entry.source, entry.source_id, entry.revision, f.path)) for f in files],
+            files=[DatasetService._planned_from_pool(entry, f) for f in files],
         )
+
+    @staticmethod
+    def _planned_from_pool(entry: PoolEntry, pool_file: PoolFile) -> PlannedFile:
+        """A pooled file to fetch again. An unfinished link file's stored size isn't trusted:
+        the website may have sent none, or the file may have changed since."""
+        url = links.download_url(entry.source, entry.source_id, entry.revision, pool_file.path)
+        is_unfinished_link = entry.source == links.LINK_SOURCE and not pool_file.ready
+        return PlannedFile(pool_file.path, pool_file.size, pool_file.checksum, url, size_is_known=not is_unfinished_link)
 
     def _started(self, project_id: str, dataset: ProjectDataset, job: Job | None, files: list[PlannedFile], from_pool: bool) -> DownloadStarted:
         status: DatasetStatus = "ready" if job is None else ("downloading" if job.running else "queued")
@@ -407,9 +422,16 @@ class DatasetService:
             "files": [{"path": ds.kernel_path(dataset.id, f.path), "size": f.size} for f in files[:VIEW_FILES_MAX]],
             "license": self._entry(dataset).license,
             "url": self._entry(dataset).url,
-            "note": READY_NOTE if job is None else STARTED_NOTE,
+            "note": self._note(self._entry(dataset), job),
             "from_pool": from_pool,
         }
+
+    @staticmethod
+    def _note(entry: PoolEntry, job: Job | None) -> str:
+        """What the model should do with the result; a link never has a licence to repeat."""
+        if entry.source != links.LINK_SOURCE:
+            return READY_NOTE if job is None else STARTED_NOTE
+        return (LINK_READY_NOTE if job is None else STARTED_NOTE) + LINK_LICENCE_NOTE
 
     # ---- tool-call side (quick checks) ----
 
@@ -422,6 +444,7 @@ class DatasetService:
         update: bool = False,
         *,
         approve: Approve,
+        pasted_links: frozenset[str] = frozenset(),
     ) -> DownloadStarted:
         """Link what the pool has, queue the rest; returns before any transfer ends.
 
@@ -433,8 +456,11 @@ class DatasetService:
         """
         await self._wait_ready()
         store.get_project(project_id, self.root)  # NOT_FOUND for an unknown project
-        source, source_id = sources.parse_ref(ref)
-        request = DownloadRequest(project_id, session_id, source, source_id, files, update)
+        source, source_id = links.parse_dataset_ref(ref)
+        if source == links.LINK_SOURCE:
+            links.require_pasted(source_id, pasted_links)
+            links.refuse_file_options(files, update)
+        request = DownloadRequest(project_id, session_id, source, source_id, files, update, pasted_links)
         ask_above_bytes = self.settings.ask_above_mb * MB
         while True:
             async with self._lock:
@@ -454,7 +480,9 @@ class DatasetService:
         fetch = self._plan_fetch(dataset, target)
         if fetch.to_fetch:
             self._check_disk(fetch.download_bytes, target.plan)
-            if fetch.download_bytes > ask_above_bytes:
+            # Pasted links don't ask yet; a size prompt for them is a separate change
+            asks_first = request.source != links.LINK_SOURCE and fetch.download_bytes > ask_above_bytes
+            if asks_first:
                 return (target.plan, fetch.download_bytes)
         return await self._carry_out(request, dataset, fetch)
 
@@ -536,7 +564,8 @@ class DatasetService:
         if not fetch.to_fetch:
             return None
         self._job_ids += 1
-        job = Job(self._job_ids, fetch.target.entry.id, fetch.to_fetch, {project_id: waiter})
+        is_link = fetch.target.entry.source == links.LINK_SOURCE
+        job = Job(self._job_ids, fetch.target.entry.id, fetch.to_fetch, {project_id: waiter}, is_link=is_link)
         self._jobs.append(job)
         return job
 
@@ -551,11 +580,19 @@ class DatasetService:
             if wanted:
                 return RequestTarget(pinned, self._plan_from_entry(pinned, wanted), is_new_entry=False)
         async with self.client_factory() as client:
-            plan = await self.resolve(
-                request.source, request.source_id, self._patterns(request, dataset), max_files=self.settings.max_files,
-                revision=pinned.revision if pinned is not None else None, client=client,
-            )
+            plan = await self._fetch_plan(request, dataset, pinned, client)
         return self._target_for_plan(request, plan)
+
+    async def _fetch_plan(
+        self, request: DownloadRequest, dataset: ProjectDataset | None, pinned: PoolEntry | None, client: httpx.AsyncClient
+    ) -> DatasetPlan:
+        """Ask the source what to download: the catalog's file list, or a probe of the pasted link."""
+        if request.source == links.LINK_SOURCE:
+            return await self.resolve_link(request.source_id, client=client)
+        return await self.resolve(
+            request.source, request.source_id, self._patterns(request, dataset), max_files=self.settings.max_files,
+            revision=pinned.revision if pinned is not None else None, client=client,
+        )
 
     def _target_from_own_entry(self, dataset: ProjectDataset, files: list[str] | None) -> RequestTarget:
         """The project's own version covers the request: no catalog call."""
@@ -571,6 +608,8 @@ class DatasetService:
             return None
         if dataset is not None:
             return self._entry(dataset)
+        if request.source == links.LINK_SOURCE:
+            return None  # each project downloads its own copy of a link: the file may have changed since
         entries = self.pool.find_entries(request.source, request.source_id)
         return entries[0] if entries else None
 
@@ -861,10 +900,16 @@ class DatasetService:
             async with self.client_factory() as client:
                 for f in job.files:
                     dest = ds.path_inside(folder, f.path)
-                    await sources.stream_file(
-                        f, dest, client=client, on_bytes=lambda n: self._on_bytes(job, n),
-                        stall_timeout=self.settings.stall_timeout_seconds,
-                    )
+                    if job.is_link:
+                        f.size = await links.stream_link_file(
+                            f, dest, client=client, on_bytes=lambda n: self._on_bytes(job, n),
+                            stall_timeout=self.settings.stall_timeout_seconds,
+                        )
+                    else:
+                        await sources.stream_file(
+                            f, dest, client=client, on_bytes=lambda n: self._on_bytes(job, n),
+                            stall_timeout=self.settings.stall_timeout_seconds,
+                        )
                     await self._commit_file(job, f, dest)
         except asyncio.CancelledError:
             if job.cancelled:

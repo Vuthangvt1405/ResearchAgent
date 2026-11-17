@@ -30,7 +30,7 @@ NAMING_CONVENTION = {
 }
 
 PROJECT_NAME_MAX = 80  # same rule as store.PROJECT_NAME_MAX
-SOURCES = ("huggingface", "zenodo")
+SOURCES = ("huggingface", "zenodo", "link")  # two catalogs, and file links the user pasted
 STORED_STATUSES = ("queued", "downloading", "ready", "failed")  # "missing" is computed, never stored
 ORIGINS = ("downloaded", "created")  # catalog download, or a file the project's own code wrote
 CREATED_PATH_MAX = 1024  # same limit as datasets.store.PATH_MAX

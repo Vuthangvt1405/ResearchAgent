@@ -21,6 +21,39 @@ export function isCreated(d: DatasetProps): boolean {
 }
 
 /** PCD-1 AC8: the Delete confirmation for a created file: permanent, no other copy, can be made again */
+/** A file downloaded from a link the user pasted */
+export function isLink(d: DatasetProps): boolean {
+  return d.source === "link";
+}
+
+/** The website a pasted link came from (example.org), or "Website" when the link isn't safe to show */
+export function linkSourceLabel(d: DatasetProps): string {
+  const href = safeHref(d.url);
+  if (!href) return "Website";
+  try {
+    return new URL(href).hostname || "Website";
+  } catch {
+    return "Website";
+  }
+}
+
+/** The licence line; a pasted link never has one, so it says to check the source */
+export function licenceText(d: DatasetProps): string {
+  if (isLink(d)) return "Unknown — check the source";
+  return d.license || "Not stated";
+}
+
+/** A pasted link whose website sent no size: progress can only count bytes */
+function hasUnknownSize(d: DatasetProps): boolean {
+  return isLink(d) && !d.size_bytes;
+}
+
+function sizeText(d: DatasetProps, active: boolean): string {
+  if (!active) return fmtBytes(d.size_bytes);
+  const total = hasUnknownSize(d) ? "unknown size" : fmtBytes(d.size_bytes);
+  return `${fmtBytes(d.done_bytes)} of ${total}`;
+}
+
 export function createdDeleteText(d: DatasetProps): string {
   return `Delete ${d.name}? The file is removed from this project for good, and the app keeps no other copy. You can make it again by re-running the code or asking the assistant.`;
 }
@@ -61,6 +94,7 @@ function DatasetCardView({ d, inserting, onCancel, onDelete, onInsert }: Dataset
   useEffect(() => () => clearTimeout(timer.current), []);
   const active = isActive(d);
   const pct = percent(d);
+  const unknownSize = hasUnknownSize(d);
   const href = safeHref(d.url);
   const copy = async (key: string, text: string) => {
     if (await copyText(text)) {
@@ -81,14 +115,14 @@ function DatasetCardView({ d, inserting, onCancel, onDelete, onInsert }: Dataset
         <div className="rcds-head">
           <div className="rcds-name" title={d.name}>{d.name}</div>
           <div className="rcds-meta">
-            <span>{SOURCES[d.source] || d.source}</span>
+            <span>{isLink(d) ? linkSourceLabel(d) : SOURCES[d.source] || d.source}</span>
             <span className="rcds-dot">·</span>
-            <span className="rcds-size">{active ? `${fmtBytes(d.done_bytes)} of ${fmtBytes(d.size_bytes)}` : fmtBytes(d.size_bytes)}</span>
+            <span className="rcds-size">{sizeText(d, active)}</span>
           </div>
         </div>
         {d.status !== "ready" && (
           <Badge variant="outline" className={`rcds-badge ${d.status}`}>
-            {d.status === "downloading" ? `${pct}%` : d.status === "queued" ? `${ordinal(d.position_in_queue || 1)} in queue` : DS_BADGE[d.status] || d.status}
+            {d.status === "downloading" ? (unknownSize ? DS_BADGE.downloading : `${pct}%`) : d.status === "queued" ? `${ordinal(d.position_in_queue || 1)} in queue` : DS_BADGE[d.status] || d.status}
           </Badge>
         )}
         {active && (
@@ -110,7 +144,7 @@ function DatasetCardView({ d, inserting, onCancel, onDelete, onInsert }: Dataset
         </Button>
       </div>
 
-      {active && <Progress className="rcds-progress" value={d.status === "queued" ? 0 : pct} aria-label="Download progress" />}
+      {active && <Progress className="rcds-progress" value={d.status === "queued" ? 0 : unknownSize ? null : pct} aria-label="Download progress" />}
       {d.status === "failed" && d.error && <div className="rcds-error">{d.error}</div>}
       {d.status === "missing" && <div className="rcds-error">{created ? createdMissingText(d) : DOWNLOAD_MISSING_TEXT}</div>}
 
@@ -120,7 +154,7 @@ function DatasetCardView({ d, inserting, onCancel, onDelete, onInsert }: Dataset
             {!created && (
               <>
                 <dt>Licence</dt>
-                <dd>{d.license || "Not stated"}</dd>
+                <dd>{licenceText(d)}</dd>
               </>
             )}
             <dt>Files</dt>

@@ -10,6 +10,7 @@ import httpx
 import pytest
 
 from researchchat.workspace import ErrorCode, WorkspaceError
+from researchchat.workspace.datasets import links
 from researchchat.workspace.datasets import sources as src
 from tests.conftest import catalog_client, fake_lookup
 
@@ -319,3 +320,66 @@ def test_downloader_only_starts_at_catalog_hosts(tmp_path):
             run(go(url))
     assert requested == []
     assert not (tmp_path / "x").exists()
+
+# ---- A pasted link becomes the link source
+# Baseline: Given ref https://example.org/data/iris.csv · When parse_ref runs
+
+
+def test_parse_ref_file_link_is_link_source():
+    # Then: ('link', the url)
+    # Demonstrates: any public website is a valid source
+    assert links.parse_dataset_ref("https://example.org/data/iris.csv") == ("link", "https://example.org/data/iris.csv")
+
+
+def test_parse_ref_catalog_page_still_catalog():
+    # Then: https://huggingface.co/datasets/a/b stays ('huggingface', 'a/b')
+    # Demonstrates: catalog pages keep their richer handling
+    assert links.parse_dataset_ref("https://huggingface.co/datasets/a/b") == ("huggingface", "a/b")
+    assert links.parse_dataset_ref("zenodo:123") == ("zenodo", "123")
+
+
+def test_parse_ref_catalog_file_url_is_link():
+    # Then: a huggingface.co .../resolve/main/f.csv URL is ('link', url)
+    # Demonstrates: a direct file on a catalog host is a plain file link
+    url = "https://huggingface.co/x/y/resolve/main/f.csv"
+    assert links.parse_dataset_ref(url) == ("link", url)
+
+
+def test_parse_ref_fragment_dropped():
+    # Then: '#top' is removed from the url
+    # Demonstrates: the fragment never reaches the website
+    assert links.parse_dataset_ref("https://example.org/data/iris.csv#top") == ("link", "https://example.org/data/iris.csv")
+
+
+def test_parse_ref_http_link_refused():
+    # Then: http:// gives BAD_REF 'Only https links can be downloaded.'
+    # Demonstrates: plain http is never fetched
+    with pytest.raises(WorkspaceError) as e:
+        links.parse_dataset_ref("http://example.org/data/iris.csv")
+    assert e.value.code == ErrorCode.BAD_REF and e.value.message == "Only https links can be downloaded."
+
+
+def test_parse_ref_link_with_password_refused():
+    # Then: https://u:p@example.org/f.csv gives BAD_REF
+    # Demonstrates: credentials are never sent
+    for ref in ("https://u:p@example.org/f.csv", "https://user@huggingface.co/datasets/a/b", "https://example.org:8443/f.csv"):
+        with pytest.raises(WorkspaceError) as e:
+            links.parse_dataset_ref(ref)
+        assert e.value.code == ErrorCode.BAD_REF
+
+
+def test_parse_ref_overlong_link_refused():
+    # Then: a 2,001-character link gives BAD_REF
+    # Demonstrates: input size is capped
+    ref = "https://example.org/" + "a" * (2001 - len("https://example.org/"))
+    assert code_of(lambda: links.parse_dataset_ref(ref)) == ErrorCode.BAD_REF
+
+
+def test_parse_ref_other_scheme_refused():
+    # Then: ftp:// and file:///etc/passwd give BAD_REF
+    # Demonstrates: only https links are accepted
+    for ref in ("ftp://example.org/f.csv", "file:///etc/passwd"):
+        with pytest.raises(WorkspaceError) as e:
+            links.parse_dataset_ref(ref)
+        assert e.value.code == ErrorCode.BAD_REF
+

@@ -1297,3 +1297,305 @@ def test_no_code_references_removed_formats():
     ]
 
     assert hits == []
+
+LINK = "https://example.org/data/iris.csv"
+LINK_BODY = b"x" * 4551
+PASTED = frozenset({LINK})
+
+
+class LinkSite:
+    """A fake website serving one file; `then` (if set) answers every request after the first."""
+
+    def __init__(self, body=LINK_BODY, content_type="text/csv", length: int | None = -1, status=200):
+        self.answers = [(body, content_type, length, status)]
+        self.requests: list[httpx.Request] = []
+
+    def then(self, body, content_type="text/csv", length: int | None = -1, status=200):
+        self.answers.append((body, content_type, length, status))
+        return self
+
+    async def __call__(self, request):
+        body, content_type, length, status = self.answers[min(len(self.requests), len(self.answers) - 1)]
+        self.requests.append(request)
+        headers = {"content-type": content_type}
+        if length == -1:
+            headers["content-length"] = str(len(body)) if isinstance(body, bytes) else "0"
+        elif length is not None:
+            headers["content-length"] = str(length)
+        return httpx.Response(status, headers=headers, content=self._stream(body))
+
+    @staticmethod
+    async def _stream(body):
+        if callable(body):
+            async for chunk in body():
+                yield chunk
+        else:
+            yield body
+
+
+async def download_link(env, pid="p1", files=None, update=False):
+    started = await env.svc.request(pid, "s1", LINK, files, update, approve=yes, pasted_links=PASTED)
+    await env.svc.wait_idle()
+    return started
+
+
+def link_card(env, pid="p1"):
+    rows, _ = env.svc.panel_state(pid)
+    return rows
+
+
+# ---- Downloading a pasted link through the service
+# Baseline: Given a project, the link pasted, probe and download answering text/csv with 4,551 bytes · When the download is requested and the job finishes
+
+
+def test_link_download_card_goes_ready(root):
+    # Then: the card goes queued, downloading, ready with size 4551, source link, file at /work/datasets/link-example-org--iris-csv/iris.csv
+    # Demonstrates: a pasted file ends up in the project
+    async def scenario():
+        env = Env(root, catalog=LinkSite(), parallel_downloads=0)
+        svc = await env.start()
+        started = await svc.request("p1", "s1", LINK, approve=yes, pasted_links=PASTED)
+        assert started["status"] == "queued" and started["license"] is None
+        assert started["files"] == [{"path": "/work/datasets/link-example-org--iris-csv/iris.csv", "size": 4551}]
+        svc.settings.parallel_downloads = 1
+        svc._schedule()
+        await svc.wait_idle()
+        statuses = [d["status"] for _, props in env.pushes for d in props["datasets"]]
+        assert "downloading" in statuses
+        [row] = link_card(env)
+        assert (row["status"], row["source"], row["size_bytes"], row["name"]) == ("ready", "link", 4551, "iris.csv")
+        assert row["path"] == "/work/datasets/link-example-org--iris-csv" and row["url"] == LINK and row["license"] is None
+        assert (env.folder("p1", "link-example-org--iris-csv") / "iris.csv").read_bytes() == LINK_BODY
+
+    run(scenario())
+
+
+def test_unknown_size_recorded_when_done(root):
+    # Then: with no Content-Length the ready card and the pool both say 4551
+    # Demonstrates: the real size is shown after the download
+    async def scenario():
+        env = Env(root, catalog=LinkSite(length=None))
+        await env.start()
+        started = await download_link(env)
+        assert started["download_bytes"] == 0
+        [row] = link_card(env)
+        assert row["status"] == "ready" and row["size_bytes"] == 4551 and row["files"][0]["size"] == 4551
+        [entry] = DatasetPool(root).load_index()
+        assert entry.files[0].size == 4551 and entry.files[0].ready
+
+    run(scenario())
+
+
+def test_same_link_same_project_already_downloaded(root):
+    # Then: a second request is already_downloaded, says 'already in your datasets', fetches nothing and adds no card
+    # Demonstrates: pasting a link again never downloads it twice
+    async def scenario():
+        site = LinkSite()
+        env = Env(root, catalog=site)
+        await env.start()
+        await download_link(env)
+        asked = len(site.requests)
+        again = await download_link(env)
+        assert again["already_downloaded"] and again["status"] == "ready"
+        assert "This file is already in your datasets" in again["note"]
+        assert len(site.requests) == asked
+        assert len(link_card(env)) == 1
+
+    run(scenario())
+
+
+def test_same_link_other_project_downloads_again(root):
+    # Then: a second project gets a new pool entry and the file is fetched again
+    # Demonstrates: another project's copy is not reused
+    async def scenario():
+        site = LinkSite()
+        env = Env(root, catalog=site)
+        await env.start()
+        await download_link(env, "p1")
+        asked = len(site.requests)
+        second = await download_link(env, "p2")
+        assert not second["already_downloaded"] and not second["from_pool"]
+        assert len(site.requests) == asked + 2  # probe + download again
+        assert len(DatasetPool(root).load_index()) == 2
+
+    run(scenario())
+
+
+def test_stream_disk_full_fails_card(root):
+    # Then: a disk that fills during the download fails the card with 'disk full', keeps no file and sends a chat note
+    # Demonstrates: a failed download keeps nothing
+    async def endless():
+        while True:
+            yield b"x" * 1000
+            await asyncio.sleep(0)
+
+    async def scenario():
+        env = Env(root, catalog=LinkSite(body=endless, length=None))
+        svc = await env.start()
+        env.disk.free = 0
+        await download_link(env)
+        [view] = svc.list_for_model("p1")
+        assert view["status"] == "failed" and view["error"] == "disk full"
+        assert not env.partial().exists() or not any(env.partial().iterdir())
+        assert not (env.folder("p1", "link-example-org--iris-csv") / "iris.csv").exists()
+        assert env.chats.sent and "failed: disk full" in env.chats.sent[-1][1]
+
+    run(scenario())
+
+
+def test_stream_longer_than_declared_fails(root):
+    # Then: Content-Length 100 with 200 bytes sent fails and keeps nothing
+    # Demonstrates: a website can't push more than it declared
+    async def scenario():
+        env = Env(root, catalog=LinkSite(body=b"x" * 100).then(b"x" * 200, length=100))
+        svc = await env.start()
+        await download_link(env)
+        [view] = svc.list_for_model("p1")
+        assert view["status"] == "failed" and "bigger than the website said" in view["error"]
+        [entry] = DatasetPool(root).load_index()
+        assert not entry.files[0].ready
+
+    run(scenario())
+
+
+def test_stream_shorter_than_declared_fails(root):
+    # Then: 100 declared and 50 sent fails with 'incomplete'
+    # Demonstrates: half files never become ready
+    async def scenario():
+        env = Env(root, catalog=LinkSite(body=b"x" * 100).then(b"x" * 50, length=100))
+        svc = await env.start()
+        await download_link(env)
+        [view] = svc.list_for_model("p1")
+        assert view["status"] == "failed" and view["error"] == "iris.csv is incomplete"
+
+    run(scenario())
+
+
+def test_stream_now_html_fails(root):
+    # Then: a probe that saw CSV and a download that gets HTML fails with 'the link now opens a web page'
+    # Demonstrates: a website that changes still can't save a page
+    async def scenario():
+        env = Env(root, catalog=LinkSite().then(b"<!doctype html><p>moved</p>", content_type="text/html"))
+        svc = await env.start()
+        await download_link(env)
+        [view] = svc.list_for_model("p1")
+        assert view["status"] == "failed" and view["error"] == "the link now opens a web page"
+        assert not DatasetPool(root).load_index()[0].files[0].ready
+
+    run(scenario())
+
+
+def test_stream_stall_fails(root):
+    # Then: no bytes for the stall timeout fails with 'stalled'
+    # Demonstrates: a stuck download ends
+    async def stalling():
+        yield b"a,b\n"
+        await asyncio.sleep(0.5)
+
+    async def scenario():
+        env = Env(root, catalog=LinkSite(body=stalling, length=None))
+        svc = await env.start()
+        await download_link(env)
+        [view] = svc.list_for_model("p1")
+        assert view["status"] == "failed" and view["error"] == "stalled on iris.csv"
+
+    run(scenario())
+
+
+def test_probe_failure_saves_no_card(root):
+    # Then: a 404 probe gives NOT_FOUND with no dataset row and no pool entry
+    # Demonstrates: a link that never worked leaves nothing behind
+    async def scenario():
+        env = Env(root, catalog=LinkSite(status=404))
+        svc = await env.start()
+        with pytest.raises(WorkspaceError) as e:
+            await download_link(env)
+        assert e.value.code == ErrorCode.NOT_FOUND
+        assert svc.list_for_model("p1") == [] and DatasetPool(root).load_index() == []
+
+    run(scenario())
+
+
+def test_link_with_files_refused(root):
+    # Then: files=['*.csv'] gives BAD_REF and no row
+    # Demonstrates: a link is one file
+    async def scenario():
+        site = LinkSite()
+        env = Env(root, catalog=site)
+        svc = await env.start()
+        with pytest.raises(WorkspaceError) as e:
+            await download_link(env, files=["*.csv"])
+        assert e.value.code == ErrorCode.BAD_REF and "a link is one file" in e.value.message
+        assert svc.list_for_model("p1") == [] and site.requests == []
+
+    run(scenario())
+
+
+def test_link_with_update_refused(root):
+    # Then: update=True gives BAD_REF and no row
+    # Demonstrates: a link has no newer version
+    async def scenario():
+        site = LinkSite()
+        env = Env(root, catalog=site)
+        svc = await env.start()
+        with pytest.raises(WorkspaceError) as e:
+            await download_link(env, update=True)
+        assert e.value.code == ErrorCode.BAD_REF
+        assert svc.list_for_model("p1") == [] and site.requests == []
+
+    run(scenario())
+
+
+def test_known_size_over_free_disk(root):
+    # Then: free disk below 4551 gives NO_SPACE and no row
+    # Demonstrates: the disk check covers links with a known size
+    async def scenario():
+        env = Env(root, catalog=LinkSite(), free=1000)
+        svc = await env.start()
+        with pytest.raises(WorkspaceError) as e:
+            await download_link(env)
+        assert e.value.code == ErrorCode.NO_SPACE
+        assert svc.list_for_model("p1") == [] and DatasetPool(root).load_index() == []
+
+    run(scenario())
+
+
+
+def test_failed_link_pasted_again_downloads(root):
+    # Given a link with no declared size that stalled once · When the user pastes it again
+    # Then: the second download ends ready with the real size
+    # Demonstrates: a retry never trusts the size stored for an unfinished link file
+    calls = {"n": 0}
+
+    async def stall_once():
+        calls["n"] += 1
+        yield LINK_BODY[:10]
+        if calls["n"] == 2:  # the 1st request is the probe, the 2nd the first download
+            await asyncio.sleep(0.5)
+        yield LINK_BODY[10:]
+
+    async def scenario():
+        env = Env(root, catalog=LinkSite(body=stall_once, length=None))
+        svc = await env.start()
+        await download_link(env)
+        [failed] = svc.list_for_model("p1")
+        assert failed["status"] == "failed"
+        await download_link(env)
+        [row] = link_card(env)
+        assert row["status"] == "ready" and row["size_bytes"] == len(LINK_BODY)
+
+    run(scenario())
+
+
+def test_link_never_asks_before_download(root):
+    # Given a link whose website declares more than ask_above_mb · When it is requested
+    # Then: no Download / Skip question; the download starts
+    # Demonstrates: the size prompt for links is not part of this change
+    async def scenario():
+        env = Env(root, catalog=LinkSite(body=b"x" * 2 * MB), ask_above_mb=1, parallel_downloads=0)
+        svc = await env.start()
+        approver = Approver(False)
+        started = await svc.request("p1", "s1", LINK, approve=approver, pasted_links=PASTED)
+        assert approver.calls == [] and started["status"] == "queued"
+
+    run(scenario())

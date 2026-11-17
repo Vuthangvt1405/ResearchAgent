@@ -40,7 +40,8 @@ class PlannedFile:
     path: str  # safe relative path (datasets.store.safe_relpath)
     size: int  # bytes, from the catalog
     checksum: str | None  # "sha256:…" (HF LFS) / "md5:…" (Zenodo) / None
-    url: str  # https download URL built from the catalog API, pinned to the revision
+    url: str  # https download URL built from the catalog API, pinned to the revision; a link: the pasted URL
+    size_is_known: bool = True  # False when a linked website sent no size; the real size is recorded at the end
 
 
 @dataclass
@@ -171,7 +172,12 @@ async def check_download_url(url: str, source: Source | None = None, *, catalog_
 
 
 async def open_checked(
-    client: httpx.AsyncClient, url: str, *, source: Source | None = None, catalog_only: bool = False
+    client: httpx.AsyncClient,
+    url: str,
+    *,
+    source: Source | None = None,
+    catalog_only: bool = False,
+    headers: dict[str, str] = HEADERS,
 ) -> httpx.Response:
     """GET `url` as a stream, following up to MAX_REDIRECTS redirects, checking every hop.
 
@@ -183,7 +189,7 @@ async def open_checked(
             await check_download_url(url, source, catalog_only=catalog_only)
         else:
             await check_download_url(url)
-        response = await client.send(client.build_request("GET", url, headers=HEADERS), stream=True)
+        response = await client.send(client.build_request("GET", url, headers=headers), stream=True)
         location = response.headers.get("location")
         if response.status_code in REDIRECTS and location:
             await response.aclose()

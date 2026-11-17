@@ -141,8 +141,9 @@ class FakeDatasetService:
         self.records: list = []  # DatasetRecordView list for list_for_model()
         self.error = None  # WorkspaceError to raise from request()
 
-    async def request(self, project_id, session_id, ref, files=None, update=False, *, approve):
+    async def request(self, project_id, session_id, ref, files=None, update=False, *, approve, pasted_links=frozenset()):
         self.calls.append(("request", project_id, session_id, ref, files, update))
+        self.pasted_links = pasted_links
         if self.error:
             raise self.error
         return self.started
