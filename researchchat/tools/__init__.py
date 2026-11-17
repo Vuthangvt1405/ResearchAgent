@@ -9,7 +9,6 @@ import json
 import chainlit as cl
 
 from researchchat.progress import STEP_AVATAR, Progress
-
 from researchchat.tools import (
     dataset_delete,
     dataset_download,

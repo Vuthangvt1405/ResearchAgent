@@ -381,7 +381,7 @@ class DatasetService:
     async def _wait_ready(self) -> None:
         try:
             await asyncio.wait_for(self._ready.wait(), READY_WAIT_SECONDS)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             log.warning("Dataset startup cleanup didn't finish; continuing")
 
     @staticmethod

@@ -19,8 +19,7 @@ from typing import Literal, TypedDict
 from nbformat import NotebookNode
 
 from researchchat.config import NOTEBOOK_READ_MAX_CHARS, WORKSPACES_DIR
-from researchchat.workspace import ErrorCode, WorkspaceError
-from researchchat.workspace import store
+from researchchat.workspace import ErrorCode, WorkspaceError, store
 from researchchat.workspace.kernels import KernelRegistry, KernelStatus, RunResult
 from researchchat.workspace.store import CellType, Direction
 

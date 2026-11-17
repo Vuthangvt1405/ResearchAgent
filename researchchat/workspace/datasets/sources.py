@@ -14,8 +14,8 @@ import ipaddress
 import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Protocol
 from pathlib import Path
+from typing import Protocol
 from urllib.parse import quote, urljoin, urlparse
 
 import httpx
@@ -460,7 +460,7 @@ async def stream_file(
     hasher = hashlib.new(algo) if algo in ("md5", "sha256") else None
     try:
         response = await asyncio.wait_for(open_checked(client, file.url, catalog_only=True), stall_timeout)
-    except asyncio.TimeoutError as e:
+    except TimeoutError as e:
         raise _failed(f"stalled on {file.path}") from e
     except httpx.HTTPError as e:
         raise _failed(f"network error on {file.path}") from e
@@ -488,7 +488,7 @@ async def stream_file(
                         raise _failed("disk full") from e
                     raise _failed(f"couldn't write {file.path}") from e
                 await on_bytes(len(chunk))
-    except asyncio.TimeoutError as e:
+    except TimeoutError as e:
         raise _failed(f"stalled on {file.path}") from e
     except httpx.HTTPError as e:
         raise _failed(f"network error on {file.path}") from e
