@@ -13,6 +13,7 @@ import ast
 import asyncio
 import hashlib
 import json
+import queue
 import secrets
 import shutil
 import socket
@@ -312,11 +313,15 @@ class KernelRegistry:
                         raise WorkspaceError(ErrorCode.KERNEL_DEAD, "The kernel stopped responding: press Restart.")
                     try:
                         msg = await kernel.client.get_iopub_msg(timeout=1)
-                    except Exception:  # queue.Empty: nothing yet
+                    except queue.Empty:  # nothing yet
                         if not await self._running(kernel):
                             kernel.state = "dead"
                             raise WorkspaceError(ErrorCode.KERNEL_DEAD, "The kernel died (maybe out of memory): press Restart.")
                         continue
+                    except Exception as e:
+                        # A broken channel would otherwise look like "nothing yet" until the time limit
+                        kernel.state = "dead"
+                        raise WorkspaceError(ErrorCode.KERNEL_DEAD, "Lost the connection to the kernel: press Restart.") from e
                     if msg.get("parent_header", {}).get("msg_id") != msg_id:
                         continue
                     kind = msg["msg_type"]

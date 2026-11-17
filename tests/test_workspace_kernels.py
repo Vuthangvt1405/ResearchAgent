@@ -219,6 +219,24 @@ def test_html_output_is_returned_as_text(root):
     go(root)
 
 
+def test_broken_kernel_channel_is_reported_at_once(root):
+    @kernel_test
+    async def go(reg, root, pid):
+        await exec_(reg, root, pid, "x = 1")
+
+        async def broken_channel(*args, **kwargs):
+            raise RuntimeError("channel closed")
+
+        reg._kernels[pid].client.get_iopub_msg = broken_channel
+        started = time.monotonic()
+        with pytest.raises(WorkspaceError) as err:
+            await exec_(reg, root, pid, "x")
+        assert err.value.code == ErrorCode.KERNEL_DEAD and reg.status(pid) == "dead"
+        assert time.monotonic() - started < reg.timeout_seconds
+
+    go(root)
+
+
 def test_dead_kernel_is_reported_and_restartable(root):
     @kernel_test
     async def go(reg, root, pid):
