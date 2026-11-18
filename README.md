@@ -4,7 +4,7 @@
 
 # SillyTherin
 
-### *If You Are Need Analyst Wordk Jupyter, I Think Maybe You Need This :D*
+### *If You Are Need Analyst Work Jupyter, I Think Maybe You Need This :D*
 
 **A friendly research assistant that thinks, searches the web, finds datasets and runs notebook code, all from one chat.**
 
