@@ -51,7 +51,7 @@ def _remember_looks(code: str, datasets, project_id: str, session_id: str, looke
     except WorkspaceError:
         return
     for view in undescribed_named_in(code, views):
-        (looked or chat_looks).allow(session_id, project_id, view["dataset_id"])
+        (looked or chat_looks).remember(session_id, project_id, view["dataset_id"])
 
 
 def step_title(args: dict) -> str:

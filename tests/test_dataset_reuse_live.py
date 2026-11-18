@@ -40,13 +40,13 @@ class Chat:
     """One scripted conversation: the real model, fake tools, every call recorded."""
 
     def __init__(self, records: list[dict]):
-        from researchchat.tools.dataset_describe import ChatPermissions
+        from researchchat.tools.dataset_describe import ChatLooks
 
         self.svc = FakeDatasetService()
         self.svc.records = records
         self.calls: list[tuple[str, dict]] = []
         self.retry_questions: list[str] = []  # names the "Download again?" question was shown for
-        self.looked, self.notebook = ChatPermissions(), FirstRows()
+        self.looked, self.notebook = ChatLooks(), FirstRows()
         self.svc.started = {"dataset_id": "hf-other--iris", "status": "queued", "already_downloaded": False,
                             "position_in_queue": 1, "size_bytes": 10, "download_bytes": 10,
                             "path": "/work/datasets/hf-other--iris", "files": [], "license": None, "url": None,

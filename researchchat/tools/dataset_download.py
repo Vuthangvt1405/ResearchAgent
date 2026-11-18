@@ -160,7 +160,7 @@ def undescribed_not_looked_at(svc, project_id: str, session_id: str, ref: str, l
     except WorkspaceError:
         return []  # the request reports a bad ref or project
     seen = looked or chat_looks
-    return [v for v in views if not seen.is_allowed(session_id, project_id, v["dataset_id"])]
+    return [v for v in views if not seen.has_looked(session_id, project_id, v["dataset_id"])]
 
 
 def broken_copy(svc, project_id: str, ref: str) -> dict | None:

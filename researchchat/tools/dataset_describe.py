@@ -34,24 +34,24 @@ DEFINITION = {
     },
 }
 
-class ChatPermissions:
-    """Datasets marked per chat (memory only, forgotten when the chat ends)."""
+class ChatLooks:
+    """Undescribed datasets the assistant ran code on, per chat (memory only, forgotten when the chat ends)."""
 
     def __init__(self) -> None:
-        self._allowed: dict[str, set[tuple[str, str]]] = {}  # session_id -> {(project_id, dataset_id)}
+        self._looked: dict[str, set[tuple[str, str]]] = {}  # session_id -> {(project_id, dataset_id)}
 
-    def allow(self, session_id: str, project_id: str, dataset_id: str) -> None:
-        self._allowed.setdefault(session_id, set()).add((project_id, dataset_id))
+    def remember(self, session_id: str, project_id: str, dataset_id: str) -> None:
+        self._looked.setdefault(session_id, set()).add((project_id, dataset_id))
 
-    def is_allowed(self, session_id: str, project_id: str, dataset_id: str) -> bool:
-        return (project_id, dataset_id) in self._allowed.get(session_id, set())
+    def has_looked(self, session_id: str, project_id: str, dataset_id: str) -> bool:
+        return (project_id, dataset_id) in self._looked.get(session_id, set())
 
     def forget(self, session_id: str) -> None:
         """The chat ended: what the assistant looked at in it no longer counts."""
-        self._allowed.pop(session_id, None)
+        self._looked.pop(session_id, None)
 
 
-looked = ChatPermissions()  # undescribed datasets the assistant looked at (notebook_run), per chat; lets downloads go
+looked = ChatLooks()  # undescribed datasets the assistant looked at (notebook_run), per chat; lets downloads go
 
 
 async def run(

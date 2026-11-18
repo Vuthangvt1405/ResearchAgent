@@ -540,7 +540,7 @@ def undescribed_xls(**over) -> dict:
 
 def download_in(records, *, looked=None, session_id="s1", args=None, ref="hf:scikit-learn/iris", pasted=frozenset()):
     """dataset_download.run with a fake service; returns (svc, result or the LOOK_FIRST error dict)."""
-    from researchchat.tools.dataset_describe import ChatPermissions
+    from researchchat.tools.dataset_describe import ChatLooks
 
     svc = FakeDatasetService()
     svc.records = records
@@ -548,7 +548,7 @@ def download_in(records, *, looked=None, session_id="s1", args=None, ref="hf:sci
     try:
         _shown, result = run(dataset_download.run(
             {"ref": ref, **(args or {})}, svc=svc, project_id="p1", session_id=session_id, approve=never_big,
-            confirm_retry=RetryQuestion(True), pasted_links=pasted, looked=looked or ChatPermissions(),
+            confirm_retry=RetryQuestion(True), pasted_links=pasted, looked=looked or ChatLooks(),
         ))
         return svc, json.loads(result)
     except ValueError as e:
@@ -570,10 +570,10 @@ def test_reading_it_with_notebook_run_lets_the_download_go():
     # Positive · Changed: a notebook_run in this chat named its path / file name
     # Then: the download starts
     # Demonstrates: one look is enough; a new copy can still be downloaded after it
-    from researchchat.tools.dataset_describe import ChatPermissions
+    from researchchat.tools.dataset_describe import ChatLooks
 
     for code in ('pd.read_excel("/work/data.xls").head()', "df = pd.read_excel('DATA.XLS')"):
-        looked = ChatPermissions()
+        looked = ChatLooks()
         notebook = FakeNotebook()
         datasets = FakeDatasetService()
         datasets.records = [undescribed_xls()]
@@ -615,10 +615,10 @@ def test_a_look_in_another_chat_doesnt_count():
     # Negative · Changed: looked at in chat s2, download from s1
     # Then: `LOOK_FIRST`
     # Demonstrates: the check is per chat
-    from researchchat.tools.dataset_describe import ChatPermissions
+    from researchchat.tools.dataset_describe import ChatLooks
 
-    looked = ChatPermissions()
-    looked.allow("s2", "p1", undescribed_xls()["dataset_id"])
+    looked = ChatLooks()
+    looked.remember("s2", "p1", undescribed_xls()["dataset_id"])
     svc, error = download_in([undescribed_xls()], looked=looked, session_id="s1")
     assert error["error"] == "LOOK_FIRST" and not requested(svc)
 
