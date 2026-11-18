@@ -1,5 +1,5 @@
 // The panel (port of the old Notebook() default export). It lives in a React root that
-// never unmounts, so local state survives every props push (AC1).
+// never unmounts, so local state survives every props push.
 import { useEffect, useRef, useState, type DragEvent, type ReactNode } from "react";
 import { AlertCircle, Check, Code2, Database, Eraser, FastForward, GripVertical, Loader2, NotebookPen, Plus, RotateCcw, Search, SearchX, Square, StickyNote, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -105,7 +105,7 @@ export function Notebook() {
   const seen = useRef<{ project: string; ids: Set<string>; until: Record<string, number> } | null>(null);
   const lastRunning = useRef<string | null>(null);
 
-  // A new project starts unfiltered with no menu open, as the old switchProject did (AC6)
+  // A new project starts unfiltered with no menu open, as the old switchProject did
   const projectKey = nb?.project.id;
   useEffect(() => {
     setMenu(null);

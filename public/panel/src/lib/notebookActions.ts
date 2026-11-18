@@ -1,5 +1,5 @@
 // Every panel action, ported from the body of the old Notebook() so payloads stay the
-// same (AC4). Saves run in the background; button actions go through useRunner (AC8).
+// same. Saves run in the background; button actions go through useRunner.
 import { useEffect, useRef, useState } from "react";
 import { usePanel } from "@/store";
 import { call, useRunner } from "@/lib/actions";
@@ -43,7 +43,7 @@ export function useNotebookActions() {
           result = await call("nb_update_cell", { version: result.version, cell_id: cellId, source: text });
         }
       }
-      // Never drop a draft while the user is mid-composition in that cell (AC10)
+      // Never drop a draft while the user is mid-composition in that cell
       if (result && !result.error && state().composing !== cellId) dropDraft(cellId, text);
       state().apply(result);
       return result;

@@ -1,5 +1,5 @@
 // Vendor copy of Chainlit 2.12's own shadcn/ui button (from its frontend source map), so every
-// Tailwind class here is one Chainlit's prebuilt CSS already contains (A2, AC9).
+// Tailwind class here is one Chainlit's prebuilt CSS already contains.
 import { cn } from '@/lib/utils';
 import { Slot } from '@radix-ui/react-slot';
 import { type VariantProps, cva } from 'class-variance-authority';

@@ -1,5 +1,5 @@
 // Project picker in the header (port of ProjectPicker). The list comes from
-// useProjects (TanStack Query, D4). Project names are React text only (SEC1).
+// useProjects (TanStack Query). Project names are React text only, never HTML.
 import { useState } from "react";
 import { Check, ChevronsUpDown, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";

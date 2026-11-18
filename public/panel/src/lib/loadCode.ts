@@ -20,7 +20,7 @@ export function ordinal(n: number): string {
 
 export const isActive = (d: DatasetProps) => d.status === "downloading" || d.status === "queued";
 
-/** Percent for the progress bar; 0 when the size is 0 or unknown (G3❌1) */
+/** Percent for the progress bar; 0 when the size is 0 or unknown */
 export function percent(d: DatasetProps): number {
   return d.size_bytes ? Math.min(100, Math.round((100 * (d.done_bytes || 0)) / d.size_bytes)) : 0;
 }
@@ -36,10 +36,10 @@ const READERS: [RegExp, (p: string) => string][] = [
   [/\.feather$/i, (p) => `pd.read_feather(${p})`],
 ];
 
-/** PCD-1 AC6: load a created file straight from its /work path (d.path is the file, not a folder) */
+/** Load a created file straight from its /work path (d.path is the file, not a folder) */
 export function createdLoadCode(d: DatasetProps): string {
   const reader = READERS.find(([re]) => re.test(d.path));
-  // JSON.stringify gives a valid Python string literal, so a file name can never become code (SEC5)
+  // JSON.stringify gives a valid Python string literal, so a file name can never become code
   const quotedPath = JSON.stringify(d.path);
   if (!reader) return `print(open(${quotedPath}).read(2000))\n`;
   return ["import pandas as pd", "", `df = ${reader[1](quotedPath)}`, "df.head()"].join("\n") + "\n";

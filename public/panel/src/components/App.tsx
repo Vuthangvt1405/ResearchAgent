@@ -1,5 +1,5 @@
 // App root: one QueryClient for the panel's lifetime and an error boundary so a crash
-// shows a message inside the panel, not a blank sidebar (AC7).
+// shows a message inside the panel, not a blank sidebar.
 import { Component, type ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Notebook } from "@/components/Notebook";

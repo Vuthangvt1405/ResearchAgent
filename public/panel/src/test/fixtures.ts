@@ -1,4 +1,4 @@
-// Shared test data (plan §7 baselines)
+// Shared test data
 import type { CellProps, DatasetProps, NotebookProps } from "@/types";
 
 export function dataset(over: Partial<DatasetProps> = {}): DatasetProps {

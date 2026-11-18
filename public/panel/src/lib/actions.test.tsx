@@ -1,5 +1,4 @@
-// Group 5 — Actions (AC4, AC8 · component with a mocked callAction)
-// Plan: docs/plans/done/panel-react-build-plan.md §7
+// Actions (component with a mocked callAction)
 // Baseline: Given the app has a callAction mock · When a button is clicked
 import { describe, it, expect, vi } from "vitest";
 import { act, fireEvent, renderHook, screen } from "@testing-library/react";
@@ -13,9 +12,9 @@ import { resetStore, usePanel } from "@/store";
 
 const lists = (a: { name: string }) => (a.name === "nb_list_projects" ? { projects: [] } : null);
 
-describe("Group 5 — Actions", () => {
+describe("Actions", () => {
   it("run_cell_calls_nb_run_cell", async () => {
-    // ✅1 · changed: —
+    // Positive · changed: —
     // Then: called with name nb_run_cell and payload cell_id · Demonstrates: same contract
     const h = await mountPanel(props());
     await act(async () => {
@@ -25,7 +24,7 @@ describe("Group 5 — Actions", () => {
   });
 
   it("each_action_payload_matches_today", async () => {
-    // ✅2 · changed: table-driven over all 17 actions
+    // Positive · changed: table-driven over all 17 actions
     // Then: the payloads equal the current ones · Demonstrates: 1:1 port
     // Expected payloads come from the OLD panel (git show 6010c47:public/elements/Notebook.jsx,
     // lines 1350-1589 and 988/1069), not from the new hook: run_all carries the version.
@@ -70,7 +69,7 @@ describe("Group 5 — Actions", () => {
   });
 
   it("uses_latest_callAction_after_remount", async () => {
-    // ✅3 · changed: a new fn set after remount
+    // Positive · changed: a new fn set after remount
     // Then: the new fn is called, the old one isn't · Demonstrates: no stale closure
     const h = await mountPanel(props());
     const fresh = vi.fn(async (a: { name: string }) => lists(a));
@@ -84,7 +83,7 @@ describe("Group 5 — Actions", () => {
   });
 
   it("rejected_action_clears_busy_and_shows_error", async () => {
-    // ❌1 · changed: the mock rejects
+    // Negative · changed: the mock rejects
     // Then: the button is enabled again, an error is shown · Demonstrates: no stuck spinner
     const fn = vi.fn(async (a: { name: string }) => {
       if (a.name === "nb_restart") throw new Error("Kernel restart failed");
@@ -100,7 +99,7 @@ describe("Group 5 — Actions", () => {
   });
 
   it("double_click_sends_once", async () => {
-    // ❌2 · changed: 2 fast clicks
+    // Negative · changed: 2 fast clicks
     // Then: 1 call · Demonstrates: no double run or delete
     let release!: () => void;
     const fn = vi.fn((a: { name: string }) =>
@@ -116,35 +115,34 @@ describe("Group 5 — Actions", () => {
   });
 });
 
-// PCD-1 Group 5 — Load code for a created file (AC6, SEC5 · unit)
-// Plan: docs/plans/PCD-1-created-datasets-plan.md §7
+// Load code for a created file (unit)
 // Baseline: Given a created card {path: "/work/Iris.csv", files: [{path: "Iris.csv"}]} · When load code is built
 const createdCard = (path = "/work/Iris.csv") =>
   dataset({ id: "file-iris-csv", name: path.split("/").pop(), origin: "created", source: "created", path, files: [{ path: path.split("/").pop()!, size: 4551 }] });
 
-describe("PCD-1 Group 5 — Load code for a created file", () => {
+describe("Load code for a created file", () => {
   it("loads a created csv from its work path", () => {
-    // ✅1 · baseline · changed: —
-    // Then: df = pd.read_csv("/work/Iris.csv") · Demonstrates: AC6
+    // Positive · baseline · changed: —
+    // Then: df = pd.read_csv("/work/Iris.csv") · Demonstrates: a created file loads from its /work path
     expect(loadCode(createdCard())).toBe('import pandas as pd\n\ndf = pd.read_csv("/work/Iris.csv")\ndf.head()\n');
   });
 
   it("quotes a name with spaces and quotes safely", () => {
-    // ✅2 · edge · changed: /work/my "iris".csv
-    // Then: the path sits inside one JSON string literal · Demonstrates: SEC5
+    // Positive · edge · changed: /work/my "iris".csv
+    // Then: the path sits inside one JSON string literal · Demonstrates: a file name can't become code
     expect(loadCode(createdCard('/work/my "iris".csv'))).toContain('pd.read_csv("/work/my \\"iris\\".csv")');
   });
 
   it("uses the right reader per extension", () => {
-    // ✅3 · edge · changed: .parquet, .jsonl, .xlsx
-    // Then: read_parquet, read_json(lines=True), read_excel · Demonstrates: every A4 type loads
+    // Positive · edge · changed: .parquet, .jsonl, .xlsx
+    // Then: read_parquet, read_json(lines=True), read_excel · Demonstrates: every table type loads
     expect(loadCode(createdCard("/work/a.parquet"))).toContain('pd.read_parquet("/work/a.parquet")');
     expect(loadCode(createdCard("/work/a.jsonl"))).toContain('pd.read_json("/work/a.jsonl", lines=True)');
     expect(loadCode(createdCard("/work/a.xlsx"))).toContain('pd.read_excel("/work/a.xlsx")');
   });
 
   it("injection in a file name stays a string", () => {
-    // ❌1 · negative · changed: name a"); import os #.csv
+    // Negative · changed: name a"); import os #.csv
     // Then: no code outside the literal · Demonstrates: file names can't run code
     const code = loadCode(createdCard('/work/a"); import os #.csv'));
     expect(code).toContain('pd.read_csv("/work/a\\"); import os #.csv")');
@@ -152,7 +150,7 @@ describe("PCD-1 Group 5 — Load code for a created file", () => {
   });
 
   it("downloaded card load code is unchanged", () => {
-    // ❌2 · negative · changed: origin downloaded
+    // Negative · changed: origin downloaded
     // Then: same output as today · Demonstrates: no regression
     const downloaded = dataset({ origin: "downloaded" });
     expect(loadCode(downloaded)).toBe('import pandas as pd\n\ndf = pd.read_csv("/work/datasets/iris/iris.csv")\ndf.head()\n');

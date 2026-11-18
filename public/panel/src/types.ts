@@ -1,4 +1,4 @@
-// Mirrors NotebookProps / DatasetProps in researchchat/workspace/service.py (plan §4.3).
+// Mirrors NotebookProps / DatasetProps in researchchat/workspace/service.py.
 // No fields are added or removed: the Python contract is unchanged.
 
 export type CellType = "code" | "markdown";
@@ -26,7 +26,7 @@ export interface ErrorProps {
 }
 
 export type DatasetStatus = "queued" | "downloading" | "ready" | "failed" | "missing";
-/** PCD-1: a catalog download, or a data file the project's own code wrote */
+/** A catalog download, or a data file the project's own code wrote */
 export type DatasetOrigin = "downloaded" | "created";
 
 export interface DatasetFile {
@@ -51,11 +51,11 @@ export interface DatasetProps {
   requested_at: string;
   files: DatasetFile[];
   error: string | null;
-  /** Other projects using the same stored copy (NB-4); deleting here then frees nothing */
+  /** Other projects using the same stored copy; deleting here then frees nothing */
   shared_with: number;
-  /** PCD-1 AC3: card layout. The server always sends it; optional here so existing test fixtures still type-check (absent = "downloaded") */
+  /** Card layout. The server always sends it; optional here so existing test fixtures still type-check (absent = "downloaded") */
   origin?: DatasetOrigin;
-  /** PCD-4 AC7: one line the assistant wrote after looking at the data; shown as "Described by the assistant" */
+  /** One line the assistant wrote after looking at the data; shown as "Described by the assistant" */
   assistant_description?: string | null;
 }
 
@@ -73,13 +73,13 @@ export interface NotebookProps {
   cells: CellProps[];
   error: ErrorProps | null;
   datasets: DatasetProps[];
-  /** Bumps on every dataset change; datasets come from the higher one (SEC16) */
+  /** Bumps on every dataset change; datasets come from the higher one */
   datasets_rev: number;
 }
 
 export type CallAction = (action: { name: string; payload: Record<string, unknown> }) => Promise<unknown>;
 
-/** The 17 actions the panel sends today (AC4) */
+/** The 17 actions the panel sends today */
 export type ActionName =
   | "nb_add_cell" | "nb_clear_cell_outputs" | "nb_clear_outputs" | "nb_create_project"
   | "nb_delete_cell" | "nb_duplicate_cell" | "nb_interrupt" | "nb_list_projects"
