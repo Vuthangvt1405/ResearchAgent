@@ -5,19 +5,29 @@ Files are written straight into root/<project>/files/ to stand in for kernel cod
 """
 
 import asyncio
+import gzip
 import json
+import os
 import shutil
+import time
 from itertools import count
 
+import openpyxl
+import pyarrow as pa
+import pyarrow.parquet as pq
 import pytest
+from openpyxl.worksheet._read_only import ReadOnlyWorksheet
 
 from researchchat.config import CREATED_DATA_EXTENSIONS
 from researchchat.workspace import ErrorCode, WorkspaceError, store
+from researchchat.workspace.datasets import created as created_module
+from researchchat.workspace.datasets import created_store as cds
 from researchchat.workspace.datasets import store as ds
 from researchchat.workspace.datasets.created import (
     CreatedDatasets,
     compare_with_stored,
     missing_notice,
+    read_columns,
 )
 from researchchat.workspace.datasets.created_store import CreatedDataset, FileSnapshot
 from researchchat.workspace.datasets.pool import DatasetPool, PoolEntry, PoolFile
@@ -793,3 +803,264 @@ def test_toast_strips_newlines_and_caps_names():
     assert "\n" not in notice and "\x1b" not in notice
     assert "evilname[31m.csv" in notice
     assert "y" * 79 + "…" in notice and "y" * 80 not in notice
+
+
+# ---- PCD-4 Group 7 — Created files get their column names  (Q4 option 2; AC2, AC6) · unit (real tmp folder)
+# Plan: docs/plans/PCD-4-reuse-existing-dataset-plan.md §7
+# Baseline: Given a new `files/data.csv` with an iris header · When the scan runs
+
+IRIS_COLUMNS = ["sepal_length", "sepal_width", "petal_length", "petal_width", "species"]
+IRIS_HEADER = ",".join(IRIS_COLUMNS) + "\n5.1,3.5,1.4,0.2,setosa\n"
+
+
+def stored_columns(created, project_id: str = "p") -> dict[str, list[str] | None]:
+    """path -> stored columns of the project's created rows."""
+    return {d.snapshot.path: d.columns for d in cds.load_created_datasets(project_id, created.root)}
+
+
+def write_bytes(root, path: str, data: bytes):
+    target = files_dir(root) / path
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(data)
+    return target
+
+
+def opened_paths(monkeypatch) -> list[str]:
+    """Spy on read_columns: the paths the scan asked it to read."""
+    asked: list[str] = []
+    real = created_module.read_columns
+
+    def spy(folder, path):
+        asked.append(path)
+        return real(folder, path)
+
+    monkeypatch.setattr(created_module, "read_columns", spy)
+    return asked
+
+
+def test_csv_header_is_stored_as_columns(root, created, datasets):
+    # ✅1 · Changed: —
+    # Then: five names stored and listed
+    write(root, "data.csv", IRIS_HEADER)
+    created.sync("p")
+    assert stored_columns(created) == {"data.csv": IRIS_COLUMNS}
+    [view] = datasets.list_for_model("p")
+    assert view["columns"] == IRIS_COLUMNS
+
+
+def test_tsv_and_csv_gz_headers_are_read(root, created):
+    # ✅2 · Changed: `.tsv`, `.csv.gz`
+    # Then: same
+    write(root, "data.tsv", IRIS_HEADER.replace(",", "\t"))
+    write_bytes(root, "data.csv.gz", gzip.compress(IRIS_HEADER.encode()))
+    write_bytes(root, "data.tsv.gz", gzip.compress(IRIS_HEADER.replace(",", "\t").encode()))
+    created.sync("p")
+    assert stored_columns(created) == {"data.csv.gz": IRIS_COLUMNS, "data.tsv": IRIS_COLUMNS, "data.tsv.gz": IRIS_COLUMNS}
+
+
+def test_json_and_jsonl_first_record_keys_are_read(root, created):
+    # ✅3 · Changed: `.jsonl`, `.json`
+    # Then: first record's keys
+    record = dict.fromkeys(IRIS_COLUMNS, 1)
+    write(root, "rows.jsonl", json.dumps(record) + "\n" + json.dumps({"other": 2}) + "\n")
+    write(root, "rows.json", json.dumps([record, {"other": 2}], indent=2))
+    created.sync("p")
+    assert stored_columns(created) == {"rows.json": IRIS_COLUMNS, "rows.jsonl": IRIS_COLUMNS}
+
+
+def test_quoted_header_cells_are_unquoted(root, created):
+    # ✅4 · Changed: quoted cells
+    # Then: unquoted names
+    write(root, "q.csv", '﻿"sepal length","species, name"\n1,a\n')
+    created.sync("p")
+    assert stored_columns(created) == {"q.csv": ["sepal length", "species, name"]}
+
+
+def test_resaved_file_with_new_header_updates_columns(root, created):
+    # ✅5 · Changed: rewritten
+    # Then: new columns
+    target = write(root, "data.csv", IRIS_HEADER)
+    created.sync("p")
+    target.write_text("a,b\n1,2\n3,4\n5,6\n")
+    created.sync("p")
+    assert stored_columns(created) == {"data.csv": ["a", "b"]}
+
+
+def test_row_from_before_this_change_gets_columns_on_next_scan(root, created, monkeypatch):
+    # ✅6 · Changed: `columns` NULL
+    # Then: read once
+    write(root, "data.csv", IRIS_HEADER)
+    monkeypatch.setattr(created_module, "read_columns", lambda folder, path: None)  # a scan from before PCD-4
+    created.sync("p")
+    assert stored_columns(created) == {"data.csv": None}
+    monkeypatch.undo()
+    asked = opened_paths(monkeypatch)
+    assert created.sync("p") is True  # the backfill counts as a change, so the panel refreshes
+    assert stored_columns(created) == {"data.csv": IRIS_COLUMNS}
+    created.sync("p")
+    assert asked == ["data.csv"]
+
+
+def test_parquet_schema_columns_are_read(root, created):
+    # ✅7 · Changed: `.parquet` with five columns
+    # Then: five names; no rows read
+    # Demonstrates: A6
+    table = pa.table({name: [1.0, 2.0] for name in IRIS_COLUMNS})
+    pq.write_table(table, files_dir(root) / "data.parquet")
+    created.sync("p")
+    assert stored_columns(created) == {"data.parquet": IRIS_COLUMNS}
+
+
+def test_xlsx_first_row_is_read(root, created):
+    # ✅8 · Changed: `.xlsx`, header in row 1 of the first sheet
+    # Then: five names
+    # Demonstrates: A6
+    workbook = openpyxl.Workbook()
+    workbook.active.append(IRIS_COLUMNS)
+    workbook.active.append([5.1, 3.5, 1.4, 0.2, "setosa"])
+    workbook.save(files_dir(root) / "data.xlsx")
+    created.sync("p")
+    assert stored_columns(created) == {"data.xlsx": IRIS_COLUMNS}
+
+
+def test_old_xls_gets_unknown_columns(root, created):
+    # ❌1 · Changed: `.xls`
+    # Then: `[]`
+    # Demonstrates: A10
+    write_bytes(root, "old.xls", b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1" + b"\0" * 512)
+    created.sync("p")
+    assert stored_columns(created) == {"old.xls": []}
+
+
+def test_empty_file_gets_unknown_columns(root, created):
+    # ❌2 · Changed: 0 bytes
+    # Then: `[]`
+    write(root, "empty.csv", "")
+    write(root, "empty.jsonl", "")
+    created.sync("p")
+    assert stored_columns(created) == {"empty.csv": [], "empty.jsonl": []}
+
+
+def test_header_longer_than_64kb_gets_unknown_columns(root, created):
+    # ❌3 · Changed: no newline in 64 KB
+    # Then: `[]`
+    # Demonstrates: S7
+    write(root, "wide.csv", "x," * 40_000 + "\n1\n")
+    created.sync("p")
+    assert stored_columns(created) == {"wide.csv": []}
+
+
+def test_columns_capped_at_50_names_of_60_chars(root, created):
+    # ❌4 · Changed: 80 columns
+    # Then: 50, cut
+    # Demonstrates: S3
+    names = ["n" * 200] + [f"c{i}" for i in range(79)]
+    write(root, "many.csv", ",".join(names) + "\n")
+    created.sync("p")
+    [columns] = stored_columns(created).values()
+    assert len(columns) == 50
+    assert len(columns[0]) == 60 and columns[0].endswith("…")
+    assert columns[1:] == [f"c{i}" for i in range(49)]
+
+
+def test_unchanged_file_is_not_read_again(root, created, monkeypatch):
+    # ❌5 · Changed: unchanged
+    # Then: not opened
+    # Demonstrates: S7
+    write(root, "data.csv", IRIS_HEADER)
+    asked = opened_paths(monkeypatch)
+    created.sync("p")
+    created.sync("p")
+    created.sync("p")
+    assert asked == ["data.csv"]
+
+
+def test_renamed_file_keeps_its_columns_without_reading(root, created, monkeypatch):
+    # ❌6 · Changed: rename
+    # Then: kept, not opened
+    target = write(root, "data.csv", IRIS_HEADER)
+    created.sync("p")
+    asked = opened_paths(monkeypatch)
+    target.rename(files_dir(root) / "iris.csv")
+    created.sync("p")
+    assert stored_columns(created) == {"iris.csv": IRIS_COLUMNS}
+    assert asked == []
+
+
+# ---- PCD-4 Group S2 — Reading columns never leaves `files/`  (S6, S7) · unit (real tmp folder)
+# Plan: docs/plans/PCD-4-reuse-existing-dataset-plan.md §7
+
+
+def test_linked_file_is_not_read(root, tmp_path):
+    # ❌1 · Changed: symlink to outside
+    # Then: `[]`; target never opened
+    secret = tmp_path / "secret.csv"
+    secret.write_text("password,token\n")
+    (files_dir(root)).mkdir(parents=True, exist_ok=True)
+    (files_dir(root) / "data.csv").symlink_to(secret)
+    before = secret.stat().st_atime_ns
+    assert read_columns(files_dir(root), "data.csv") == []
+    assert secret.stat().st_atime_ns == before
+
+
+def test_file_in_linked_folder_is_not_read(root, tmp_path):
+    # ❌2 · Changed: linked folder
+    # Then: `[]`
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "data.csv").write_text("password,token\n")
+    files_dir(root).mkdir(parents=True, exist_ok=True)
+    (files_dir(root) / "sub").symlink_to(outside, target_is_directory=True)
+    assert read_columns(files_dir(root), "sub/data.csv") == []
+    assert read_columns(files_dir(root), "../outside/data.csv") == []
+
+
+def test_gz_bomb_reads_at_most_64kb(root):
+    # ❌3 · Changed: 1 GB expansion
+    # Then: `[]`, ≤ 64 KB
+    target = files_dir(root) / "bomb.csv.gz"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    chunk = b"a" * (1 << 20)
+    with gzip.open(target, "wb", compresslevel=1) as out:
+        for _ in range(1024):
+            out.write(chunk)
+    started = time.monotonic()
+    assert read_columns(files_dir(root), "bomb.csv.gz") == []
+    assert time.monotonic() - started < 1
+
+
+def test_broken_parquet_or_xlsx_gets_unknown_columns(root, created):
+    # ❌4 · Changed: a `.parquet` / `.xlsx` with random bytes
+    # Then: `[]`; scan goes on
+    # Demonstrates: a bad file never breaks the scan
+    write_bytes(root, "bad.parquet", os.urandom(4096))
+    write_bytes(root, "bad.xlsx", b"PK\x03\x04" + os.urandom(4096))
+    write(root, "good.csv", IRIS_HEADER)
+    created.sync("p")
+    assert stored_columns(created) == {"bad.parquet": [], "bad.xlsx": [], "good.csv": IRIS_COLUMNS}
+
+
+def test_xlsx_reads_only_the_first_row(root, monkeypatch):
+    # ❌5 · Changed: 100,000-row sheet
+    # Then: only row 1 read (spy), fast
+    # Demonstrates: S7
+    workbook = openpyxl.Workbook(write_only=True)
+    sheet = workbook.create_sheet()
+    sheet.append(IRIS_COLUMNS)
+    for i in range(100_000):
+        sheet.append([i, i, i, i, "setosa"])
+    files_dir(root).mkdir(parents=True, exist_ok=True)
+    workbook.save(files_dir(root) / "big.xlsx")
+    rows_read = []
+    real = ReadOnlyWorksheet._cells_by_row
+
+    def counting(self, *args, **kwargs):
+        for row in real(self, *args, **kwargs):
+            rows_read.append(1)
+            yield row
+
+    monkeypatch.setattr(ReadOnlyWorksheet, "_cells_by_row", counting)
+    started = time.monotonic()
+    assert read_columns(files_dir(root), "big.xlsx") == IRIS_COLUMNS
+    assert len(rows_read) == 1
+    assert time.monotonic() - started < 2

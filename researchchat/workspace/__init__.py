@@ -26,6 +26,10 @@ class ErrorCode:
     DOWNLOAD_FAILED = "DOWNLOAD_FAILED"  # checksum, network, stall or disk full
     NOT_PASTED = "NOT_PASTED"  # a link that isn't in any of the user's own messages
     NOT_A_FILE = "NOT_A_FILE"  # a pasted link that opens a web page
+    # assistant-written dataset descriptions
+    NOT_NEEDED = "NOT_NEEDED"  # the dataset already says what it is, or isn't ready
+    BAD_DESCRIPTION = "BAD_DESCRIPTION"  # empty description
+    LOOK_FIRST = "LOOK_FIRST"  # a download while the project has undescribed data the assistant hasn't looked at
 
 
 class WorkspaceError(Exception):

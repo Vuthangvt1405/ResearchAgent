@@ -45,6 +45,9 @@ class CreatedDataset:
     snapshot: FileSnapshot  # path, size, mtime, inode at the last scan that changed it
     first_seen_at: str  # ISO 8601 UTC, project_datasets.requested_at; sort order
     changed_at: str  # ISO 8601 UTC, project_datasets.linked_at; "added 2 h ago"
+    columns: list[str] | None = None  # column names from the file's start; None = not read yet, [] = none found
+    created_by: str | None = None  # "assistant" / "user" (a cell run by either) or "upload"; None counts as an upload
+    assistant_description: str | None = None  # one line the assistant wrote after looking at the file
 
 
 def make_created_id(path: str, taken_ids: set[str]) -> str:
@@ -71,7 +74,8 @@ def load_created_datasets(project_id: str, root: Path = WORKSPACES_DIR) -> list[
         select(
             project_datasets.c.slug, project_datasets.c.path, project_datasets.c.size_bytes,
             project_datasets.c.mtime_ns, project_datasets.c.inode, project_datasets.c.requested_at,
-            project_datasets.c.linked_at,
+            project_datasets.c.linked_at, project_datasets.c.columns, project_datasets.c.created_by,
+            project_datasets.c.assistant_description,
         )
         .join(projects, projects.c.pk == project_datasets.c.project_pk)
         .where(projects.c.slug == project_id, project_datasets.c.origin == ORIGIN_CREATED)
@@ -90,7 +94,7 @@ def insert_created_dataset(project_id: str, dataset: CreatedDataset, root: Path 
         connection.execute(insert(project_datasets).values(
             project_pk=project_pk, slug=dataset.id, origin=ORIGIN_CREATED, position=_next_position(connection, project_pk),
             status=STORED_STATUS, requested_at=dataset.first_seen_at, linked_at=dataset.changed_at,
-            **_snapshot_columns(dataset.snapshot),
+            **_snapshot_columns(dataset.snapshot), **_description_columns(dataset),
         ))
 
 
@@ -100,7 +104,7 @@ def update_created_dataset(project_id: str, dataset: CreatedDataset, root: Path 
         connection.execute(
             update(project_datasets)
             .where(*_created_row_of(connection, project_id, dataset.id))
-            .values(linked_at=dataset.changed_at, **_snapshot_columns(dataset.snapshot))
+            .values(linked_at=dataset.changed_at, **_snapshot_columns(dataset.snapshot), **_description_columns(dataset))
         )
 
 
@@ -112,6 +116,14 @@ def delete_created_dataset(project_id: str, dataset_id: str, root: Path = WORKSP
 
 def _snapshot_columns(snapshot: FileSnapshot) -> dict[str, object]:
     return {"path": snapshot.path, "size_bytes": snapshot.size_bytes, "mtime_ns": snapshot.mtime_ns, "inode": snapshot.inode}
+
+
+def _description_columns(dataset: CreatedDataset) -> dict[str, object]:
+    """What the row says about the file's contents, and who created it."""
+    return {
+        "columns": dataset.columns, "created_by": dataset.created_by,
+        "assistant_description": dataset.assistant_description,
+    }
 
 
 def _created_row_of(connection: Connection, project_id: str, dataset_id: str) -> tuple:
@@ -144,7 +156,10 @@ def _created_dataset_from_row(row: Row) -> CreatedDataset | None:
         log.warning("Ignored a created dataset row that isn't valid: %r", str(row.slug)[:80])
         return None
     snapshot = FileSnapshot(path=row.path, size_bytes=row.size_bytes, mtime_ns=row.mtime_ns, inode=row.inode or 0)
-    return CreatedDataset(id=row.slug, snapshot=snapshot, first_seen_at=row.requested_at, changed_at=row.linked_at or "")
+    return CreatedDataset(
+        id=row.slug, snapshot=snapshot, first_seen_at=row.requested_at, changed_at=row.linked_at or "",
+        columns=row.columns, created_by=row.created_by, assistant_description=row.assistant_description,
+    )
 
 
 def _is_safe_path(path: str) -> bool:

@@ -57,7 +57,7 @@ def test_first_open_creates_database_at_head(root):
     engine = db.database_for(root)
 
     assert db.database_path(root).is_file()
-    assert current_revisions(engine) == ("0003",)
+    assert current_revisions(engine) == ("0004",)
     assert APP_TABLES <= table_names(engine)
 
 
@@ -75,7 +75,7 @@ def test_second_open_reuses_database_without_migrating(root):
     second = db.database_for(root)
 
     assert second is not first
-    assert current_revisions(second) == ("0003",)
+    assert current_revisions(second) == ("0004",)
     with second.connect() as connection:
         assert connection.execute(text("SELECT slug FROM projects")).scalars().all() == ["p1"]
 
@@ -350,7 +350,80 @@ def test_downgrade_refuses_with_link_rows(root):
     with pytest.raises(RuntimeError, match="pasted links"):
         migrate(engine, command.downgrade, "0002")
 
-    assert current_revisions(engine) == ("0003",)
+    assert current_revisions(engine) == ("0004",)
     with engine.connect() as connection:
         assert connection.execute(text("SELECT count(*) FROM pool_entries WHERE source = 'link'")).scalar() == 1
 
+
+# ---- PCD-4 Group 8 — Migration  · integration (real SQLite file)
+# Plan: docs/plans/PCD-4-reuse-existing-dataset-plan.md §7
+# Baseline: Given a database at `0003` with one pool entry and one created row · When upgraded to `0004`
+
+
+NEW_COLUMNS = {"pool_entries": {"description"}, "project_datasets": {"columns", "assistant_description", "created_by"}}
+
+
+def column_names(engine, table: str) -> set[str]:
+    return {column["name"] for column in inspect(engine).get_columns(table)}
+
+
+def seed_created_row(engine) -> None:
+    """A created file row in project p (seed_downloaded_dataset makes the project)."""
+    with engine.begin() as connection:
+        connection.execute(text(
+            "INSERT INTO project_datasets (project_pk, slug, position, status, origin, path, size_bytes, mtime_ns) "
+            "VALUES (1, 'file-iris-csv', 1, 'ready', 'created', 'Iris.csv', 10, 1)"
+        ))
+
+
+def at_0003_with_rows(root):
+    engine = db.database_for(root)
+    migrate(engine, command.downgrade, "0003")
+    seed_downloaded_dataset(engine)
+    seed_created_row(engine)
+    return engine
+
+
+def test_0004_adds_the_four_columns_as_null(root):
+    # ✅1 · Changed: —
+    # Then: four columns exist, rows NULL, other data unchanged; `created_by` check rejects other values
+    # Demonstrates: old projects keep working
+    engine = at_0003_with_rows(root)
+    assert not NEW_COLUMNS["project_datasets"] & column_names(engine, "project_datasets")
+
+    migrate(engine, command.upgrade, "head")
+
+    for table, names in NEW_COLUMNS.items():
+        assert names <= column_names(engine, table)
+    with engine.connect() as connection:
+        rows = connection.execute(text(
+            "SELECT slug, origin, columns, assistant_description, created_by FROM project_datasets ORDER BY position"
+        )).all()
+        entry = connection.execute(text("SELECT slug, description FROM pool_entries")).one()
+    assert [tuple(r) for r in rows] == [("hf-x", "downloaded", None, None, None), ("file-iris-csv", "created", None, None, None)]
+    assert tuple(entry) == ("hf-x@1", None)
+    assert file_list_paths(engine) == ["a.csv", "b.csv"]
+    with engine.begin() as connection:
+        for value in ('assistant', 'user', 'upload'):
+            connection.execute(text(f"UPDATE project_datasets SET created_by = '{value}' WHERE slug = 'file-iris-csv'"))
+    with pytest.raises(IntegrityError, match="created_by_known"), engine.begin() as connection:
+        connection.execute(text("UPDATE project_datasets SET created_by = 'model' WHERE slug = 'file-iris-csv'"))
+
+
+def test_0004_downgrade_drops_the_four_columns(root):
+    # ✅2 · Changed: downgrade
+    # Then: columns gone; rows intact
+    # Demonstrates: rollback
+    engine = at_0003_with_rows(root)
+    migrate(engine, command.upgrade, "head")
+    with engine.begin() as connection:
+        connection.execute(text("UPDATE project_datasets SET assistant_description = 'note', created_by = 'user'"))
+
+    migrate(engine, command.downgrade, "0003")
+
+    for table, names in NEW_COLUMNS.items():
+        assert not names & column_names(engine, table)
+    with engine.connect() as connection:
+        slugs = connection.execute(text("SELECT slug FROM project_datasets ORDER BY position")).scalars().all()
+    assert slugs == ["hf-x", "file-iris-csv"]
+    assert file_list_paths(engine) == ["a.csv", "b.csv"]

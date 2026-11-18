@@ -1,7 +1,8 @@
 """notebook_run tool: run Python in the project's notebook.
 
 Safe code runs at once. Risky code is shown in the chat with the
-reasons and Run / Skip buttons, and runs only on Run.
+reasons and Run / Skip buttons, and runs only on Run. Any file in the project
+may be read without asking the user (R54).
 """
 
 import chainlit as cl
@@ -17,7 +18,9 @@ DEFINITION = {
             "Run Python code in the user's project notebook (a Jupyter kernel "
             "with numpy, pandas and matplotlib; files live in the working "
             "folder). Variables persist between runs. The code is added as a "
-            "new cell. Returns the printed output, the last value or the error."
+            "new cell. Returns the printed output, the last value or the error. "
+            "Before writing a data file, check dataset_list: when the project already has "
+            "matching data, load it from its path; write a new copy only when the user asks for one."
         ),
         "parameters": {
             "type": "object",
@@ -31,6 +34,24 @@ DEFINITION = {
 
 APPROVAL_TIMEOUT_SECONDS = 120
 DECLINED = "User declined to run this code."
+
+
+def undescribed_named_in(code: str, views: list[dict]) -> list[dict]:
+    """Rows with describe "write" whose /work path or name appears in the code (any case)."""
+    lowered = code.lower()
+    return [v for v in views if v.get("describe") == "write" and (v["path"].lower() in lowered or v["name"].lower() in lowered)]
+
+
+def _remember_looks(code: str, datasets, project_id: str, session_id: str, looked) -> None:
+    """The assistant looked at these undescribed datasets in this chat: downloads may go ahead (AC7)."""
+    from researchchat.tools.dataset_describe import looked as chat_looks
+
+    try:
+        views = datasets.needs_description(project_id)
+    except WorkspaceError:
+        return
+    for view in undescribed_named_in(code, views):
+        (looked or chat_looks).allow(session_id, project_id, view["dataset_id"])
 
 
 def step_title(args: dict) -> str:
@@ -55,11 +76,21 @@ async def ask_approval(code: str, reasons: list[str]) -> bool:
     return bool(answer and answer.get("payload", {}).get("run"))
 
 
-async def run(args: dict, *, svc=None, project_id: str | None = None, approve=None) -> tuple[str, str]:
+async def run(
+    args: dict,
+    *,
+    svc=None,
+    project_id: str | None = None,
+    approve=None,
+    datasets=None,
+    session_id: str | None = None,
+    looked=None,
+) -> tuple[str, str]:
     """Return (text shown in the chat step, result sent to the model).
 
-    svc / project_id / approve default to the app's service, this chat's
-    project and the chat prompt; tests pass their own.
+    svc / project_id / approve / datasets / session_id / looked default to the
+    app's services, this chat, its prompt and the chat's looks; tests pass their
+    own (no `datasets`: looks aren't recorded).
     """
     code = str(args.get("code") or "")
     if not code.strip():
@@ -69,6 +100,8 @@ async def run(args: dict, *, svc=None, project_id: str | None = None, approve=No
 
         svc = svc or actions.service
         project_id = project_id or actions.session_project(cl.user_session)
+        datasets = datasets or actions.datasets
+        session_id = session_id or cl.context.session.id
     approve = approve or ask_approval
 
     reasons = risk.check(code)
@@ -79,4 +112,6 @@ async def run(args: dict, *, svc=None, project_id: str | None = None, approve=No
         result = await svc.run_for_model(project_id, code)
     except WorkspaceError as e:
         raise ValueError(e.message) from e
+    if datasets is not None:
+        _remember_looks(code, datasets, project_id, session_id or "", looked)
     return f"```python\n{code}\n```\n\n```\n{result}\n```", result

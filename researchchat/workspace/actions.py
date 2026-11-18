@@ -18,6 +18,7 @@ from researchchat.config import (
     DATASETS_PARALLEL_DOWNLOADS,
     DATASETS_STALL_TIMEOUT_SECONDS,
 )
+from researchchat.tools import dataset_describe
 from researchchat.workspace import ErrorCode, WorkspaceError, store
 from researchchat.workspace.datasets.created import missing_notice
 from researchchat.workspace.datasets.service import DatasetService, DatasetsSettings
@@ -278,3 +279,4 @@ def close_for_session() -> None:
     panels.unregister(session_id)
     chats.unregister(session_id)
     datasets.drop_notes(session_id)
+    dataset_describe.looked.forget(session_id)  # having looked at undescribed data lasts for its chat only

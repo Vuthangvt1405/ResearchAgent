@@ -12,11 +12,15 @@ or reads the Chainlit session; the run lock and the clock are injected (DIP).
 """
 
 import asyncio
+import csv
+import gzip
+import json
 import os
+import stat
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, BinaryIO, Literal
 
 from researchchat.clock import utc_now
 from researchchat.config import CREATED_DATA_EXTENSIONS, WORKSPACES_DIR
@@ -24,7 +28,11 @@ from researchchat.workspace import ErrorCode, WorkspaceError, store
 from researchchat.workspace.datasets import created_store as cds
 from researchchat.workspace.datasets import store as ds
 from researchchat.workspace.datasets.created_store import CreatedDataset, FileSnapshot
+from researchchat.workspace.datasets.describe import describe_need
+from researchchat.workspace.datasets.load_code import load_code
 from researchchat.workspace.service import DatasetPanelStatus, DatasetProps
+
+CreatedBy = Literal["assistant", "user", "upload"]  # a cell run by either, or put in by the user (no run)
 
 if TYPE_CHECKING:
     from researchchat.workspace.datasets.service import DatasetRecordView
@@ -36,6 +44,9 @@ POOL_LINKS_DIR = "datasets"  # files/datasets/: pool links, listed as downloaded
 NOTICE_NAME_MAX_CHARS = 80  # per file name in the toast
 CREATED_SOURCE = "created"  # DatasetProps.source; the panel shows "Created by myself"
 ELLIPSIS = "…"
+COLUMNS_READ_MAX_BYTES = 64 * 1024  # text files: at most this much (after decompressing) is read for the header
+COLUMNS_MAX = 50  # column names kept per file
+COLUMN_NAME_MAX_CHARS = 60  # per column name
 
 
 @dataclass
@@ -184,6 +195,100 @@ def _path_with_no_linked_folder(files_dir: Path, path: str) -> Path | None:
     return folder / parts[-1]
 
 
+# ---- column names -----------------------------------------------------------------
+
+
+def read_columns(files_dir: Path, path: str) -> list[str]:
+    """Column names of files/<path>, or [] when none can be read; never raises.
+
+    CSV / TSV (also .gz): the first line. JSON / JSONL: the keys of the first
+    record. Parquet: the schema from the footer (pyarrow). .xlsx: the first row
+    of the first sheet (openpyxl, read-only). .xls and anything else: [].
+    """
+    target = _path_with_no_linked_folder(files_dir, path)
+    if target is None:
+        return []
+    try:
+        fd = os.open(target, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except OSError:
+        return []  # a link (ELOOP), gone, or locked
+    try:
+        with os.fdopen(fd, "rb") as handle:
+            if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
+                return []
+            names = _names_from(handle, path.lower())
+    except Exception:  # noqa: BLE001 — a broken or hostile file must never break the scan
+        return []
+    return _clean_names(names)
+
+
+def _names_from(handle: BinaryIO, lowered_path: str) -> list:
+    """Raw column names from an open file, by its suffix."""
+    if lowered_path.endswith((".csv", ".tsv", ".csv.gz", ".tsv.gz")):
+        stream = gzip.GzipFile(fileobj=handle) if lowered_path.endswith(".gz") else handle
+        line = _first_line(stream)
+        delimiter = "\t" if ".tsv" in lowered_path else ","
+        return next(csv.reader([line], delimiter=delimiter), []) if line else []
+    if lowered_path.endswith(".jsonl"):
+        line = _first_line(handle)
+        record = json.loads(line) if line.strip() else None
+        return list(record) if isinstance(record, dict) else []
+    if lowered_path.endswith(".json"):
+        return _json_first_record_keys(handle.read(COLUMNS_READ_MAX_BYTES).decode("utf-8", "replace"))
+    if lowered_path.endswith(".parquet"):
+        import pyarrow.parquet as pq  # only the footer is read
+
+        return list(pq.read_schema(handle).names)
+    if lowered_path.endswith(".xlsx"):
+        return _xlsx_first_row(handle)
+    return []
+
+
+def _first_line(stream) -> str:
+    """The first line within COLUMNS_READ_MAX_BYTES; "" when none ends there (one huge line) or the file is empty."""
+    data = stream.read(COLUMNS_READ_MAX_BYTES + 1)
+    end = data.find(b"\n")
+    if end == -1:
+        if len(data) > COLUMNS_READ_MAX_BYTES:
+            return ""
+        end = len(data)
+    return data[:end].decode("utf-8", "replace").lstrip("\ufeff").rstrip("\r")
+
+
+def _json_first_record_keys(text: str) -> list:
+    """Keys of the first object in a JSON array of records, or of a top-level object; [] otherwise."""
+    text = text.lstrip("\ufeff \t\r\n")
+    decoder = json.JSONDecoder()
+    if text.startswith("["):
+        record, _ = decoder.raw_decode(text[1:].lstrip())
+    else:
+        record, _ = decoder.raw_decode(text)
+    return list(record) if isinstance(record, dict) else []
+
+
+def _xlsx_first_row(handle: BinaryIO) -> list:
+    import openpyxl  # read-only mode streams rows; only row 1 is asked for
+
+    workbook = openpyxl.load_workbook(handle, read_only=True, data_only=True)
+    try:
+        first_row = next(workbook.worksheets[0].iter_rows(min_row=1, max_row=1, values_only=True), ())
+    finally:
+        workbook.close()
+    return [value for value in first_row if value is not None]
+
+
+def _clean_names(names: list) -> list[str]:
+    """One printable line per name, ≤ COLUMN_NAME_MAX_CHARS, empty ones dropped, at most COLUMNS_MAX."""
+    cleaned = []
+    for name in names:
+        text = " ".join("".join(c if c.isprintable() else " " for c in str(name)).split())
+        if len(text) > COLUMN_NAME_MAX_CHARS:
+            text = text[: COLUMN_NAME_MAX_CHARS - 1] + ELLIPSIS
+        if text:
+            cleaned.append(text)
+    return cleaned[:COLUMNS_MAX]
+
+
 # ---- the missing-files toast text ---------------------------------------------------------
 
 
@@ -224,12 +329,17 @@ class CreatedDatasets:
         self.clock = clock
         self._own_locks: dict[str, asyncio.Lock] = {}  # used only when no run lock was injected (tests)
 
-    def sync(self, project_id: str) -> bool:
-        """Scan files/ and store what changed; True when any row changed (bump datasets_rev)."""
+    def sync(self, project_id: str, by: CreatedBy | None = None) -> bool:
+        """Scan files/ and store what changed; True when any row changed (bump datasets_rev).
+
+        `by` is whose run just ended; None (a scan with no run, e.g. a chat opening) means
+        new files were put there by the user: uploads.
+        """
         stored = cds.load_created_datasets(project_id, self.root)
         changes = compare_with_stored(stored, scan_data_files(self._files_dir(project_id), self.extensions))
-        self._store_changes(project_id, stored, changes)
-        return changes.has_changes
+        self._store_changes(project_id, stored, changes, by or "upload")
+        filled = self._fill_missing_columns(project_id, stored, changes)
+        return changes.has_changes or filled
 
     def panel_rows(self, project_id: str) -> list[DatasetProps]:
         """Created cards for NotebookProps.datasets: origin 'created', source 'created', no licence/url/shared."""
@@ -254,6 +364,13 @@ class CreatedDatasets:
             cds.delete_created_dataset(project_id, dataset_id, self.root)
         return freed_bytes
 
+    def save_description(self, project_id: str, dataset_id: str, text: str) -> None:
+        """Store the assistant's one-line description on one created row of this project."""
+        dataset = self._find(project_id, dataset_id)
+        if dataset is None:
+            raise WorkspaceError(ErrorCode.NOT_FOUND, "Unknown dataset.")
+        cds.update_created_dataset(project_id, replace(dataset, assistant_description=text), self.root)
+
     def missing_names(self, project_id: str) -> list[str]:
         """Paths of created files that can't be found, for the missing-files toast."""
         files_dir = self._files_dir(project_id)
@@ -277,15 +394,38 @@ class CreatedDatasets:
             return self.run_lock(project_id)
         return self._own_locks.setdefault(project_id, asyncio.Lock())
 
-    def _store_changes(self, project_id: str, stored: list[CreatedDataset], changes: ScanChanges) -> None:
+    def _store_changes(self, project_id: str, stored: list[CreatedDataset], changes: ScanChanges, by: CreatedBy) -> None:
+        """New files get their columns and who made them; a re-save re-reads the columns and drops the
+        assistant's note (it described the old contents); a rename keeps both without reading the file."""
         now = self.clock()
+        files_dir = self._files_dir(project_id)
         taken_ids = {dataset.id for dataset in stored}
         for snapshot in changes.new_files:
             dataset_id = cds.make_created_id(snapshot.path, taken_ids)
             taken_ids.add(dataset_id)
-            cds.insert_created_dataset(project_id, CreatedDataset(dataset_id, snapshot, now, now), self.root)
-        for dataset in changes.resaved + changes.renamed:
+            dataset = CreatedDataset(
+                dataset_id, snapshot, now, now, columns=read_columns(files_dir, snapshot.path), created_by=by,
+            )
+            cds.insert_created_dataset(project_id, dataset, self.root)
+        for dataset in changes.resaved:
+            columns = read_columns(files_dir, dataset.snapshot.path)
+            resaved = replace(dataset, changed_at=now, columns=columns, assistant_description=None)
+            cds.update_created_dataset(project_id, resaved, self.root)
+        for dataset in changes.renamed:
             cds.update_created_dataset(project_id, replace(dataset, changed_at=now), self.root)
+
+    def _fill_missing_columns(self, project_id: str, stored: list[CreatedDataset], changes: ScanChanges) -> bool:
+        """Rows stored before column names existed (columns None) are read once; True when any was filled."""
+        changed_ids = {dataset.id for dataset in changes.resaved + changes.renamed}
+        files_dir = self._files_dir(project_id)
+        filled = False
+        for dataset in stored:
+            if dataset.columns is None and dataset.id not in changed_ids and is_file_present(files_dir, dataset.snapshot.path):
+                cds.update_created_dataset(
+                    project_id, replace(dataset, columns=read_columns(files_dir, dataset.snapshot.path)), self.root,
+                )
+                filled = True
+        return filled
 
     def _status(self, project_id: str, dataset: CreatedDataset) -> DatasetPanelStatus:
         return "ready" if is_file_present(self._files_dir(project_id), dataset.snapshot.path) else "missing"
@@ -310,12 +450,13 @@ class CreatedDatasets:
             "error": None,
             "shared_with": 0,
             "origin": "created",
+            "assistant_description": dataset.assistant_description,
         }
 
     def _model_view(self, project_id: str, dataset: CreatedDataset) -> "DatasetRecordView":
         status = self._status(project_id, dataset)
         kernel_path = cds.kernel_file_path(dataset.snapshot.path)
-        return {
+        view: DatasetRecordView = {
             "dataset_id": dataset.id,
             "name": _display_name(dataset.snapshot.path),
             "status": status,
@@ -332,7 +473,13 @@ class CreatedDatasets:
             "error": None,
             "shared_with": 0,
             "origin": "created",
+            "description": None,
+            "columns": dataset.columns,
+            "assistant_description": dataset.assistant_description,
         }
+        view["describe"] = describe_need(view, created_by=dataset.created_by)
+        view["load_code"] = load_code(view)
+        return view
 
 
 def _display_name(path: str) -> str:

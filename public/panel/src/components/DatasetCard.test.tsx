@@ -216,3 +216,42 @@ describe("pasted-link card", () => {
     expect(within(el).getAllByText(hostile).length).toBeGreaterThan(0);
   });
 });
+
+// PCD-4 Group 12 — The card shows the assistant's description (AC7, SEC11 · component)
+// Plan: docs/plans/PCD-4-reuse-existing-dataset-plan.md §7
+// Baseline: Given a card with assistant_description "Model scores per run" · When rendered
+const described = (assistant_description: string | null) =>
+  dataset({ id: "results", name: "results.xls", origin: "created", source: "created", path: "/work/results.xls", assistant_description });
+
+async function showOpenCard(d = described("Model scores per run")) {
+  await showDatasets(props({ datasets_rev: 1, datasets: [d] }));
+  const el = card(d.id);
+  await openDetails(el);
+  return el;
+}
+
+describe("PCD-4 Group 12 — The card shows the assistant's description", () => {
+  it('shows "Described by the assistant" with the text', async () => {
+    // ✅1 · changed: —
+    // Then: the label and the text are visible · Demonstrates: the user sees what the assistant noted
+    const el = await showOpenCard();
+    expect(within(el).getByText("Described by the assistant")).toBeTruthy();
+    expect(within(el).getByText("Model scores per run")).toBeTruthy();
+  });
+
+  it("shows no description line when there is none", async () => {
+    // ❌1 · changed: assistant_description null
+    // Then: no "Described by the assistant" label
+    const el = await showOpenCard(described(null));
+    expect(within(el).queryByText("Described by the assistant")).toBeNull();
+  });
+
+  it("renders a description with HTML as plain text", async () => {
+    // ❌2 · changed: assistant_description '<img src=x onerror=alert(1)>'
+    // Then: shown as text, no img element · Demonstrates: a description can't run code in the panel (SEC11)
+    const hostile = "<img src=x onerror=alert(1)>";
+    const el = await showOpenCard(described(hostile));
+    expect(el.querySelector("img")).toBeNull();
+    expect(within(el).getByText(hostile)).toBeTruthy();
+  });
+});

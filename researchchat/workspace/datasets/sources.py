@@ -10,6 +10,7 @@ import asyncio
 import errno
 import fnmatch
 import hashlib
+import html
 import ipaddress
 import re
 from collections.abc import Awaitable, Callable
@@ -21,6 +22,7 @@ from urllib.parse import quote, urljoin, urlparse
 import httpx
 
 from researchchat.workspace import ErrorCode, WorkspaceError
+from researchchat.workspace.datasets.describe import one_line_description
 from researchchat.workspace.datasets.store import NAME_MAX, Source, safe_relpath
 
 MAX_REDIRECTS = 5
@@ -53,6 +55,7 @@ class DatasetPlan:
     url: str  # landing page
     license: str | None
     files: list[PlannedFile]  # after the `files` filter
+    description: str | None = None  # the catalog's one-line description (≤ DESCRIPTION_MAX); None when it gave none
 
 
 def _bad_ref(message: str = "Not a dataset ref. Use the `ref` from dataset_search, e.g. hf:org/name or zenodo:123.") -> WorkspaceError:
@@ -215,6 +218,26 @@ async def _get_json(client: httpx.AsyncClient, url: str, source: Source, missing
     return response
 
 
+def _hf_description(info: dict) -> str | None:
+    """The dataset's description from /api/datasets/<id>, as one plain line of at most DESCRIPTION_MAX chars."""
+    text = info.get("description") or (info.get("cardData") or {}).get("description")
+    return _one_line(text)
+
+
+def _zenodo_description(meta: dict) -> str | None:
+    """A Zenodo record's metadata.description (HTML) as one plain line of at most DESCRIPTION_MAX chars."""
+    return _one_line(meta.get("description"))
+
+
+def _one_line(text) -> str | None:
+    """Catalog text (may hold HTML) as one plain line; None when nothing is left."""
+    if not isinstance(text, str):
+        return None
+    text = html.unescape(re.sub(r"<[^>]+>", " ", text))
+    text = text.split("See the full description on the dataset page")[0]  # Hugging Face's cut-off marker
+    return one_line_description(text) or None
+
+
 def _clean(text, limit: int = NAME_MAX) -> str | None:
     """Catalog text for display: control characters removed, length capped."""
     if text is None:
@@ -358,6 +381,7 @@ async def resolve_huggingface(
         url=landing,
         license=_hf_license(info),
         files=planned,
+        description=_hf_description(info),
     )
 
 
@@ -405,6 +429,7 @@ async def resolve_zenodo(
         url=landing,
         license=_clean((meta.get("license") or {}).get("id"), 60),
         files=planned,
+        description=_zenodo_description(meta),
     )
 
 

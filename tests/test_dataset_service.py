@@ -72,6 +72,7 @@ class Catalog:
         self.fail_once: set[str] = set()
         self.requested: list[httpx.Request] = []
         self.gate = asyncio.Event()
+        self.description: str | None = None  # sent as the dataset info's description when set
 
     def add_repo(self, repo, files, revision=R1):
         self.repos[repo] = {"sha": revision, "revs": {revision: dict(files)}}
@@ -92,7 +93,10 @@ class Catalog:
             rest = path[len("/api/datasets/"):]
             for repo, data in self.repos.items():
                 if rest == repo:
-                    return httpx.Response(200, json={"id": repo, "sha": data["sha"], "private": False, "gated": False, "cardData": {"license": "mit", "pretty_name": "Secret Pretty Name"}})
+                    info = {"id": repo, "sha": data["sha"], "private": False, "gated": False, "cardData": {"license": "mit", "pretty_name": "Secret Pretty Name"}}
+                    if self.description is not None:
+                        info["description"] = self.description
+                    return httpx.Response(200, json=info)
                 if rest.startswith(repo + "/tree/"):
                     rev = rest.split("/tree/")[1]
                     files = data["revs"][rev]
@@ -1721,5 +1725,60 @@ def test_startup_cleanup_removes_views_of_unknown_projects(root):
         assert not stray.exists()
         assert view_tree(root, "p1") == both_files()
         assert env.pool_file("a.csv").read_bytes() == b"a,b\n1,2\n"
+
+    run(scenario())
+
+
+# ---- PCD-4 Group 6 — The catalog description is kept  (Q4 option 1; AC1) · unit with fake catalog responses — stored and listed
+# Plan: docs/plans/PCD-4-reuse-existing-dataset-plan.md §7
+# Baseline: Given a Hugging Face info response with `description` · When resolved and downloaded into project A
+
+IRIS_TEXT = "Iris flower measurements, 3 species, 150 rows"
+
+
+def test_hf_description_is_stored_and_listed(root):
+    # ✅1 · Changed: —
+    # Then: stored; in `dataset_list`
+    async def scenario():
+        env = Env(root)
+        env.catalog.description = IRIS_TEXT
+        svc = await env.start()
+        await svc.request("p1", "s1", "hf:org/name", approve=yes)
+        await svc.wait_idle()
+        [entry] = DatasetPool(root).load_index()
+        assert entry.description == IRIS_TEXT
+        [view] = svc.list_for_model("p1")
+        assert view["description"] == IRIS_TEXT
+
+    run(scenario())
+
+
+def test_entry_shared_by_two_projects_has_one_description(root):
+    # ✅3 · Changed: B downloads it too
+    # Then: both show it; stored once
+    async def scenario():
+        env = Env(root)
+        env.catalog.description = IRIS_TEXT
+        svc = await env.start()
+        for pid in ("p1", "p2"):
+            await svc.request(pid, "s1", "hf:org/name", approve=yes)
+            await svc.wait_idle()
+        assert [e.description for e in DatasetPool(root).load_index()] == [IRIS_TEXT]
+        assert [svc.list_for_model(pid)[0]["description"] for pid in ("p1", "p2")] == [IRIS_TEXT, IRIS_TEXT]
+
+    run(scenario())
+
+
+def test_link_dataset_has_no_description(root):
+    # ❌3 · Changed: pasted link
+    # Then: NULL
+    async def scenario():
+        env = Env(root, catalog=LinkSite())
+        await env.start()
+        await download_link(env)
+        [entry] = DatasetPool(root).load_index()
+        assert entry.description is None
+        [view] = env.svc.list_for_model("p1")
+        assert view["description"] is None
 
     run(scenario())

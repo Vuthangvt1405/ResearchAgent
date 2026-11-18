@@ -151,6 +151,7 @@ def test_integer_keys_never_reach_the_dataclasses(root, pool):
 
     assert [f.name for f in fields(ds.ProjectDataset)] == [
         "id", "pool_entry", "selection", "status", "files", "requested_at", "linked_at", "error",
+        "assistant_description",
     ]
     assert loaded.pool_entry == ENTRY
 

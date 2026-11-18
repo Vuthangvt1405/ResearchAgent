@@ -383,3 +383,35 @@ def test_parse_ref_other_scheme_refused():
             links.parse_dataset_ref(ref)
         assert e.value.code == ErrorCode.BAD_REF
 
+
+# ---- PCD-4 Group 6 — The catalog description is kept  (Q4 option 1; AC1) · unit with fake catalog responses — resolver level
+# Plan: docs/plans/PCD-4-reuse-existing-dataset-plan.md §7
+# Baseline: Given a Hugging Face info response with `description` · When resolved and downloaded into project A
+
+def test_zenodo_html_description_is_cleaned_to_one_line():
+    # ✅2 · Changed: HTML with newlines
+    # Then: plain one line
+    html_text = "<p>Credit card <b>transactions</b>\n\n from Europe &amp; more.</p>\r\n<ul><li>284,807 rows</li></ul>"
+    record = zenodo_record()
+    record["metadata"]["description"] = html_text
+    plan = zenodo_resolve(lambda request: httpx.Response(200, json=record))
+    assert plan.description == "Credit card transactions from Europe & more. 284,807 rows"
+
+
+def test_missing_description_is_stored_as_null():
+    # ❌1 · Changed: none given
+    # Then: NULL; download as today
+    plan = hf_resolve(HF())  # the fake API sends no description
+    assert plan.description is None
+    assert [f.path for f in plan.files] == ["README.md", "data/train.csv", "data/test.csv"]
+    assert hf_resolve(HF(info={"description": "   "})).description is None
+    assert zenodo_resolve(lambda request: httpx.Response(200, json=zenodo_record())).description is None
+
+
+def test_long_description_is_cut_to_300_chars():
+    # ❌2 · Changed: 2,000 chars
+    # Then: ≤ 300, "…"
+    # Demonstrates: S3
+    plan = hf_resolve(HF(info={"description": "word " * 400}))
+    assert len(plan.description) <= 300 and plan.description.endswith("…")
+    assert "\n" not in plan.description

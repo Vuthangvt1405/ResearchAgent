@@ -73,7 +73,7 @@ def test_list_tool_shows_status_and_progress():
     svc = FakeDatasetService()
     svc.records = [view("a", "ready"), view("b", "downloading", done=400), view("c", "queued", position=1)]
     shown, result = run(dataset_list.run({}, svc=svc, project_id="p1"))
-    data = json.loads(result)
+    data = json.loads(result)["datasets"]
     assert [(d["status"], d["done_bytes"], d["position_in_queue"]) for d in data] == [
         ("ready", None, None), ("downloading", 400, None), ("queued", None, 1)
     ]
@@ -187,7 +187,7 @@ def test_dataset_list_line_says_created_in_this_project(tmp_path):
 
     assert shown.splitlines()[1] == "- Iris.csv · ready · 4.6 KB · created in this project · `/work/Iris.csv`"
     assert shown.splitlines()[0].startswith("- hf-x · ready")
-    assert [d["origin"] for d in json.loads(result)] == ["downloaded", "created"]
+    assert [d["origin"] for d in json.loads(result)["datasets"]] == ["downloaded", "created"]
     assert "created in this project" in dataset_list.DEFINITION["function"]["description"]
 
 PASTED_LINK = "https://example.org/data/iris.csv"
