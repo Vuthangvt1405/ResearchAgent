@@ -4,7 +4,7 @@
 
 # SillyTherin
 
-### 🐍☕ *"If You Are Need Analyst With Data In Jupyter, I Think Maybe You Need This :D"*
+### *If You Are Need Analyst With Data In Jupyter, I Think Maybe You Need This :D*
 
 **A friendly research assistant that thinks, searches the web, finds datasets and runs notebook code, all from one chat.**
 
@@ -20,17 +20,17 @@
 
 ---
 
-## ✨ Features
+## Features
 
-- 🧠 **Thinks before answering:** pick a thinking level and watch the reasoning stream into its own step.
-- 🔎 **Web search and page reading:** searches the web (DuckDuckGo) and reads public pages, showing every step in the chat.
-- 📚 **Dataset discovery:** finds datasets on Hugging Face, Zenodo and DataCite, merged and ranked.
-- ⬇️ **Background dataset downloads:** downloads run while you keep chatting, are checked (size + md5/sha256) and shared between projects, so each dataset is stored once.
-- 📓 **Per-project notebook:** every project gets its own notebook and Python kernel in a sandboxed Docker container, plus a side panel to see it.
-- 🛡️ **Safe by default:** risky code asks before it runs, deletes always ask, only public HTTPS hosts are contacted, and a project's kernel can read only its own datasets.
-- 🔌 **Any model on OpenRouter:** the settings panel only shows what the chosen model supports.
+- **Thinks before answering:** pick a thinking level and watch the reasoning stream into its own step.
+- **Web search and page reading:** searches the web (DuckDuckGo) and reads public pages, showing every step in the chat.
+- **Dataset discovery:** finds datasets on Hugging Face, Zenodo and DataCite, merged and ranked.
+- **Background dataset downloads:** downloads run while you keep chatting, are checked (size + md5/sha256) and shared between projects, so each dataset is stored once.
+- **Per-project notebook:** every project gets its own notebook and Python kernel in a sandboxed Docker container, plus a side panel to see it.
+- **Safe by default:** risky code asks before it runs, deletes always ask, only public HTTPS hosts are contacted, and a project's kernel can read only its own datasets.
+- **Any model on OpenRouter:** the settings panel only shows what the chosen model supports.
 
-## 🚀 Quick start
+## Quick start
 
 ### Requirements
 
