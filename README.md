@@ -14,7 +14,7 @@
 [![Docker](https://img.shields.io/badge/notebook-Docker-2496ED?logo=docker&logoColor=white)](https://www.docker.com/)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](#-contributing)
 
-[Features](#-features) · [Quick start](#-quick-start) · [Configuration](#-configuration) · [How it works](#-how-it-works) · [Contributing](#-contributing)
+[Features](#features) · [Quick start](#quick-start) · [Configuration](#-configuration) · [How it works](#-how-it-works) · [Contributing](#-contributing)
 
 </div>
 
@@ -43,8 +43,8 @@
 **Linux / macOS**
 
 ```bash
-git clone https://github.com/Vuthangvt1405/ResearchAgent.git
-cd ResearchAgent
+git clone https://github.com/Vuthangvt1405/SillyTherin.git
+cd SillyTherin
 scripts/setup.sh
 ```
 
