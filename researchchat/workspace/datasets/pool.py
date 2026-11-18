@@ -1,14 +1,17 @@
 """The shared dataset pool.
 
 workspaces/
-    .dataset-pool/<entry>/<path>   the bytes, stored once; mounted read-only in every kernel
+    .dataset-pool/<entry>/<path>   the bytes, stored once; never mounted in a kernel as a whole
+    .dataset-views/<project>/      hard links to the files that project lists (views.py); mounted
+                                   read-only at /.dataset-pool in that project's kernel
     researchchat.db                the pool index: pool_entries + pool_files (not visible to kernels)
     .dataset-partial/job-<n>/      downloads in progress, app-wide
     <project>/files/datasets/<id>/ relative links → ../../../../.dataset-pool/<entry>/<path>
 
 The links are relative so they point at the same bytes on the host and in the
 kernel: on the host they climb to workspaces/, in the kernel (/work/datasets/…)
-they climb to / where the pool is mounted read-only at /.dataset-pool. The app
+they climb to / where the project's own view is mounted read-only at
+/.dataset-pool, so they reach only that project's files. The app
 never trusts a link it finds: it compares the link text with the one it would
 write and reads sizes from the pool folder itself.
 

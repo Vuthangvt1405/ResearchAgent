@@ -83,6 +83,7 @@ datasets = DatasetService(
 service.datasets = datasets.panel_state  # panel props include the datasets
 service.after_run = datasets.sync_created  # every cell run lists the data files it wrote
 datasets.created.run_lock = service.run_lock  # a created-file delete waits for the running cell
+kernels.before_start = datasets.sync_view  # a kernel mounts only its project's datasets
 
 SESSION_KEY = "project_id"
 
