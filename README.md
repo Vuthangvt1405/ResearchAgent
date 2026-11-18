@@ -43,8 +43,8 @@
 **Linux / macOS**
 
 ```bash
-git clone https://github.com/Vuthangvt1405/ResearchAgent.git
-cd ResearchAgent
+git clone https://github.com/Vuthangvt1405/SillyTherin.git
+cd SillyTherin
 scripts/setup.sh
 ```
 
