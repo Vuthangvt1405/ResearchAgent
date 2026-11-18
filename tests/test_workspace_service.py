@@ -549,7 +549,7 @@ def file_created_in_q(root, project_p, monkeypatch):
 
     store.create_project("Q", root, project_id="q")
     datasets = DatasetService(root=root)
-    monkeypatch.setattr(actions, "datasets", datasets)  # never the real workspaces/ (see tests/test_dataset_service.py)
+    monkeypatch.setattr(actions, "datasets", datasets)  # never the real workspaces/ (see tests/datasets/test_dataset_service.py)
     created_file = store.project_dir("q", root) / store.FILES_DIR / "Iris.csv"
     created_file.write_text("a,b\n")
     datasets.sync_created("q")

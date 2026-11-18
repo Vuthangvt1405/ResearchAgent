@@ -12,7 +12,7 @@ from researchchat.tools import dataset_describe
 from researchchat.workspace import ErrorCode, store
 from researchchat.workspace.datasets import sources as src
 from tests.conftest import fake_lookup
-from tests.test_dataset_service import R2, Env, yes
+from tests.datasets.test_dataset_service import R2, Env, yes
 
 NOTE = "Model scores per run, 12 columns"
 

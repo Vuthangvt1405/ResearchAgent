@@ -18,7 +18,7 @@ from researchchat.workspace.datasets import store as ds
 from researchchat.workspace.datasets.pool import DatasetPool, PoolEntry, PoolFile
 from researchchat.workspace.kernels import KernelRegistry
 from tests.conftest import fake_lookup
-from tests.test_dataset_service import (
+from tests.datasets.test_dataset_service import (
     R1,
     R2,
     Catalog,

@@ -14,7 +14,7 @@ import pytest
 
 import researchchat.config  # noqa: F401 — loads .env, so the key there counts
 from tests.conftest import FakeDatasetService
-from tests.test_dataset_reuse import (
+from tests.datasets.test_dataset_reuse import (
     IRIS_COLUMNS,
     SEARCH_RESULTS,
     created_record,

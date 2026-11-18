@@ -1295,7 +1295,7 @@ def test_no_code_references_removed_formats():
     # Changed: grep the package for datasets.json, .dataset-pool.json, load_records, migrate_project (vulture runs separately)
     # Then: no hits
     # Demonstrates: the removal is complete
-    package = Path(__file__).resolve().parent.parent / "researchchat"
+    package = Path(__file__).resolve().parents[2] / "researchchat"
     hits = [
         f"{path.relative_to(package)}: {name}"
         for path in package.rglob("*.py")

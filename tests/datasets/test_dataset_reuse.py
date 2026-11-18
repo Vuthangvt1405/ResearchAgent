@@ -236,7 +236,7 @@ def ws(tmp_path, monkeypatch):
 
 async def with_iris(root, project_id="p1", *, fail=False):
     """A DatasetService whose project has hf-scikit-learn--iris (ready, or failed when `fail`)."""
-    from tests.test_dataset_service import Catalog, Env, yes
+    from tests.datasets.test_dataset_service import Catalog, Env, yes
 
     env = Env(root, catalog=Catalog({"iris.csv": b"a,b\n1,2\n"}, repo="scikit-learn/iris"))
     env.catalog.description = IRIS_TEXT
@@ -318,7 +318,7 @@ def test_created_and_link_rows_never_mark_results(ws):
     # Then: unmarked
     # Demonstrates: exact catalog matches only
     async def scenario():
-        from tests.test_dataset_service import Env, LinkSite, download_link
+        from tests.datasets.test_dataset_service import Env, LinkSite, download_link
 
         env = Env(ws, catalog=LinkSite())
         svc = await env.start()
