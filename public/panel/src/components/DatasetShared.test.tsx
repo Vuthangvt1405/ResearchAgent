@@ -1,5 +1,4 @@
-// NB-4 AC25 — a dataset other projects use says so, and deleting it here frees nothing
-// Plan: docs/plans/done/NB-4-dataset-pool-plan.md (AC25)
+// A dataset other projects use says so, and deleting it here frees nothing
 // Baseline: Given a ready dataset · When its details and the delete confirm are opened
 import { describe, it, expect } from "vitest";
 import { act, fireEvent } from "@testing-library/react";
@@ -20,9 +19,9 @@ const confirmDelete = async (card: HTMLElement) => {
   await act(async () => fireEvent.click(button));
 };
 
-describe("NB-4 — shared datasets", () => {
+describe("shared datasets", () => {
   it("shared_dataset_says_who_else_uses_it", async () => {
-    // ✅1 · changed: shared_with = 2 · Then: details and confirm name the other projects; frees 0 MB here
+    // Positive · changed: shared_with = 2 · Then: details and confirm name the other projects; frees 0 MB here
     const card = await openCard(2);
     expect(card.textContent).toContain("Also used by 2 other projects");
     await confirmDelete(card);
@@ -30,7 +29,7 @@ describe("NB-4 — shared datasets", () => {
   });
 
   it("unshared_dataset_shows_the_space_it_frees", async () => {
-    // ✅2 · changed: shared_with = 0 · Then: no "Also used by"; confirm shows the size freed
+    // Positive · changed: shared_with = 0 · Then: no "Also used by"; confirm shows the size freed
     const card = await openCard(0);
     expect(card.textContent).not.toContain("Also used by");
     await confirmDelete(card);

@@ -1,5 +1,4 @@
-// Group S1 — Rendering stays safe (SEC1 · component + source scan)
-// Plan: docs/plans/done/panel-react-build-plan.md §7
+// Rendering stays safe (component + source scan)
 // Baseline: none (negatives only)
 import { describe, it, expect } from "vitest";
 import { render } from "@testing-library/react";
@@ -8,9 +7,9 @@ import { renderMarkdown } from "@/lib/markdown";
 // Every non-test source file in src/, as text (Vite's import.meta.glob)
 const SOURCES = import.meta.glob(["./**/*.{ts,tsx}", "!./**/*.test.*", "!./test/**"], { query: "?raw", import: "default", eager: true }) as Record<string, string>;
 
-describe("Group S1 — Rendering stays safe", () => {
+describe("Rendering stays safe", () => {
   it("note_html_rendered_as_text", () => {
-    // ❌1 · changed: the note contains <img onerror=…>
+    // Negative · changed: the note contains <img onerror=…>
     // Then: the text shows literally, no element · Demonstrates: no XSS
     const { container } = render(<div>{renderMarkdown('hi <img src=x onerror="alert(1)">')}</div>);
     expect(container.querySelector("img")).toBeNull();
@@ -18,7 +17,7 @@ describe("Group S1 — Rendering stays safe", () => {
   });
 
   it("javascript_link_not_linked", () => {
-    // ❌2 · changed: [x](javascript:alert(1))
+    // Negative · changed: [x](javascript:alert(1))
     // Then: plain text, no <a> · Demonstrates: safeHref holds
     const { container } = render(<div>{renderMarkdown("[x](javascript:alert(1)) and [ok](https://example.com)")}</div>);
     const links = container.querySelectorAll("a");
@@ -28,7 +27,7 @@ describe("Group S1 — Rendering stays safe", () => {
   });
 
   it("no_dangerouslySetInnerHTML_in_src", () => {
-    // ❌3 · changed: grep over src/
+    // Negative · changed: grep over src/
     // Then: 0 hits · Demonstrates: rule enforced
     expect(Object.keys(SOURCES).length).toBeGreaterThan(10);
     const hits = Object.entries(SOURCES).filter(([, text]) => /dangerouslySetInnerHTML|\.innerHTML\s*=/.test(text));

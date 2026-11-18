@@ -1,5 +1,5 @@
 // Vendor copy of Chainlit 2.12's own shadcn/ui select (from its frontend source map), so every
-// Tailwind class here is one Chainlit's prebuilt CSS already contains (A2, AC9).
+// Tailwind class here is one Chainlit's prebuilt CSS already contains.
 import { cn } from '@/lib/utils';
 import * as SelectPrimitive from '@radix-ui/react-select';
 import { Check, ChevronDown, ChevronUp } from 'lucide-react';

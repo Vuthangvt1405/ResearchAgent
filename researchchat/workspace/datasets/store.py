@@ -134,11 +134,6 @@ def path_inside(folder: Path, relpath: str) -> Path:
     return path
 
 
-def file_path(project_id: str, dataset_id: str, relpath: str, root: Path = WORKSPACES_DIR) -> Path:
-    """One file of files/datasets/<id>/, resolved; must stay under it."""
-    return path_inside(dataset_dir(project_id, dataset_id, root), relpath)
-
-
 def kernel_path(dataset_id: str, relpath: str = "") -> str:
     """/work/datasets/<id>/<relpath>: the path the model and the kernel use."""
     return f"{KERNEL_ROOT}/{dataset_id}" + (f"/{relpath}" if relpath else "")

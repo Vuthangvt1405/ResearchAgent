@@ -1,6 +1,6 @@
 """The Python that loads a dataset, the same as the panel's "Copy load code".
 
-Kept equal to public/panel/src/lib/loadCode.ts by tests (G2✅3): a pandas
+Kept equal to public/panel/src/lib/loadCode.ts by tests (tests/datasets/test_load_code.py): a pandas
 reader per file extension, at most five tables, a folder listing when there
 is no table file. Paths are written as quoted string literals, so a file name
 can never become code.

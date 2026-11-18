@@ -15,8 +15,10 @@ import chainlit as cl
 import httpx
 
 from researchchat.config import DATASET_MAX_RESULTS
+from researchchat.tools.services import ProjectDatasetLookup, UndescribedDatasets
 from researchchat.tools.titles import shorten
 from researchchat.workspace import WorkspaceError
+from researchchat.workspace.datasets.describe import look_first_message
 
 DEFINITION = {
     "type": "function",
@@ -258,7 +260,9 @@ def mark_in_project(results: list[dict], refs: dict[str, dict]) -> list[dict]:
     return marked
 
 
-def _chat_project(svc, project_id: str | None) -> tuple:
+def _chat_project(
+    svc: ProjectDatasetLookup | None, project_id: str | None
+) -> tuple[ProjectDatasetLookup | None, str | None]:
     """(dataset service, project id) of this chat; (None, None) outside a chat (tests, or no session)."""
     if svc is not None and project_id is not None:
         return svc, project_id
@@ -271,7 +275,7 @@ def _chat_project(svc, project_id: str | None) -> tuple:
         return None, None
 
 
-def _project_refs(svc, project_id: str | None) -> dict[str, dict]:
+def _project_refs(svc: ProjectDatasetLookup | None, project_id: str | None) -> dict[str, dict]:
     """The project's catalog refs; {} without a project."""
     if svc is None:
         return {}
@@ -281,7 +285,7 @@ def _project_refs(svc, project_id: str | None) -> dict[str, dict]:
         return {}
 
 
-def _undescribed_note(svc, project_id: str | None) -> str | None:
+def _undescribed_note(svc: UndescribedDatasets | None, project_id: str | None) -> str | None:
     """A reminder when the project has ready data that says nothing about itself (describe "write")."""
     if svc is None:
         return None
@@ -289,14 +293,10 @@ def _undescribed_note(svc, project_id: str | None) -> str | None:
         names = [v["name"] for v in svc.needs_description(project_id)]
     except WorkspaceError:
         return None
-    if not names:
-        return None
-    return (f"The project already has data that says nothing about itself: {', '.join(names[:5])}. "
-            "Before you download anything, look at its first rows with notebook_run (dataset_list has its "
-            "load_code): it may be what the user wants.")
+    return look_first_message(names) if names else None
 
 
-async def run(args: dict, *, svc=None, project_id: str | None = None) -> tuple[str, str]:
+async def run(args: dict, *, svc: ProjectDatasetLookup | None = None, project_id: str | None = None) -> tuple[str, str]:
     """Return (text shown in the chat step, result sent to the model).
 
     svc / project_id: the dataset service and this chat's project, so results the

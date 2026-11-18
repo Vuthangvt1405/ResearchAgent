@@ -47,9 +47,9 @@ def test_dataset_paths_stay_inside_dataset_folder(root):
             ds.dataset_dir("p1", bad_id, root)
     for bad_path in ("../x", "a/../../x", "/etc/passwd", "a\\b", "C:/x", "a\x00b", "", "  ", ".", 5):
         with pytest.raises(WorkspaceError):
-            ds.file_path("p1", "hf-org--name", bad_path, root)
+            ds.path_inside(ds.dataset_dir("p1", "hf-org--name", root), bad_path)
     assert ds.safe_relpath("data/./train.csv") == "data/train.csv"
-    inside = ds.file_path("p1", "hf-org--name", "data/train.csv", root)
+    inside = ds.path_inside(ds.dataset_dir("p1", "hf-org--name", root), "data/train.csv")
     assert inside.is_relative_to(ds.dataset_dir("p1", "hf-org--name", root))
     assert sorted(p.name for p in root.iterdir() if not p.name.startswith(DATABASE_FILE)) == ["p1"]
 

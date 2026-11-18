@@ -1,5 +1,4 @@
-// Group 3 — Progress re-renders only one card (AC2 · component)
-// Plan: docs/plans/done/panel-react-build-plan.md §7
+// Progress re-renders only one card (component)
 // Baseline: Given 3 datasets with one downloading at 10% · When props arrive with that dataset at 40%
 import { describe, it, expect } from "vitest";
 import { act, fireEvent, screen, within } from "@testing-library/react";
@@ -26,9 +25,9 @@ async function showDatasets(first = three(10, 3)) {
 
 const card = (id: string) => document.querySelector(`[data-dataset-id="${id}"]`) as HTMLElement;
 
-describe("Group 3 — Progress re-renders only one card", () => {
+describe("Progress re-renders only one card", () => {
   it("progress_updates_bar", async () => {
-    // ✅1 · changed: —
+    // Positive · changed: —
     // Then: the bar shows 40%, the badge says 40% · Demonstrates: progress is visible
     const h = await showDatasets();
     await h.push(three(40, 4));
@@ -38,7 +37,7 @@ describe("Group 3 — Progress re-renders only one card", () => {
   });
 
   it("only_changed_card_renders", async () => {
-    // ✅2 · changed: render counters on all cards
+    // Positive · changed: render counters on all cards
     // Then: only the changed card +1 · Demonstrates: cheap updates
     const h = await showDatasets();
     const before = { ...cardRenders };
@@ -49,7 +48,7 @@ describe("Group 3 — Progress re-renders only one card", () => {
   });
 
   it("queued_shows_position", async () => {
-    // ✅3 · changed: status queued, position 2
+    // Positive · changed: status queued, position 2
     // Then: 2nd in queue, bar at 0 · Demonstrates: ported behaviour
     await showDatasets(three(10, 3, { status: "queued", position_in_queue: 2 }));
     expect(within(card("big")).getByText("2nd in queue")).toBeTruthy();
@@ -57,7 +56,7 @@ describe("Group 3 — Progress re-renders only one card", () => {
   });
 
   it("zero_size_shows_zero_percent", async () => {
-    // ❌1 · changed: size_bytes = 0
+    // Negative · changed: size_bytes = 0
     // Then: 0%, no NaN · Demonstrates: no divide-by-zero
     await showDatasets(three(10, 3, { size_bytes: 0 }));
     expect(within(card("big")).getByText("0%")).toBeTruthy();
@@ -66,8 +65,7 @@ describe("Group 3 — Progress re-renders only one card", () => {
   });
 });
 
-// PCD-1 Group 8 — One list, two kinds (AC3 · component)
-// Plan: docs/plans/PCD-1-created-datasets-plan.md §7
+// One list, two kinds (component)
 // Baseline: Given downloaded hf-scikit-learn--iris and created Iris.csv · When the cards render with details open
 const downloadedIris = () => dataset({ id: "hf-scikit-learn--iris", name: "iris", shared_with: 2 });
 const createdIris = (over = {}) =>
@@ -84,10 +82,10 @@ async function showBoth(created = createdIris()) {
   return h;
 }
 
-describe("PCD-1 Group 8 — One list, two kinds", () => {
+describe("One list, two kinds", () => {
   it("created card shows Created by myself and no licence or source", async () => {
-    // ✅2 · edge · changed: —
-    // Then: label shown; no Licence, Source link or "Also used by" · Demonstrates: AC3
+    // Positive · edge · changed: —
+    // Then: label shown; no Licence, Source link or "Also used by" · Demonstrates: a created file has its own card layout
     await showBoth();
     const created = within(card("file-iris-csv"));
     expect(created.getByText("Created by myself")).toBeTruthy();
@@ -98,7 +96,7 @@ describe("PCD-1 Group 8 — One list, two kinds", () => {
   });
 
   it("downloaded card looks as before", async () => {
-    // ✅3 · edge · changed: origin downloaded
+    // Positive · edge · changed: origin downloaded
     // Then: same text and rows as today · Demonstrates: no regression
     await showBoth();
     const downloaded = within(card("hf-scikit-learn--iris"));
@@ -110,12 +108,12 @@ describe("PCD-1 Group 8 — One list, two kinds", () => {
   });
 });
 
-// PCD-1 Group 9 — Delete warns that it's the only copy (AC8 · component)
+// Delete warns that it's the only copy (component)
 // Baseline: Given created Iris.csv listed with details open · When the user presses Delete
-describe("PCD-1 Group 9 — Delete a created file", () => {
+describe("Delete a created file", () => {
   it("created delete confirm says the app keeps no copy", async () => {
-    // ✅2 · edge · changed: —
-    // Then: text says removed for good, no other copy, can be made again · Demonstrates: AC8 wording
+    // Positive · edge · changed: —
+    // Then: text says removed for good, no other copy, can be made again · Demonstrates: the warning wording
     await showBoth();
     const created = within(card("file-iris-csv"));
     await act(async () => fireEvent.click(created.getByTitle("Delete this dataset")));
@@ -124,8 +122,8 @@ describe("PCD-1 Group 9 — Delete a created file", () => {
   });
 
   it("cancel keeps the card", async () => {
-    // ✅3 · edge · changed: Keep pressed
-    // Then: no ds_delete call; card still there · Demonstrates: AC8 Cancel
+    // Positive · edge · changed: Keep pressed
+    // Then: no ds_delete call; card still there · Demonstrates: Keep cancels
     const h = await showBoth();
     const created = within(card("file-iris-csv"));
     await act(async () => fireEvent.click(created.getByTitle("Delete this dataset")));
@@ -135,11 +133,11 @@ describe("PCD-1 Group 9 — Delete a created file", () => {
   });
 });
 
-// PCD-1 Group S3 — Names are shown as text (SEC6 · component)
+// Names are shown as text (component)
 // Baseline: negatives only (injection payloads), no baseline row
-describe("PCD-1 Group S3 — Names are shown as text", () => {
+describe("Names are shown as text", () => {
   it("file name with html renders as text", async () => {
-    // ❌1 · negative · changed: name <img src=x onerror=alert(1)>.csv
+    // Negative · changed: name <img src=x onerror=alert(1)>.csv
     // Then: literal text, no element · Demonstrates: no XSS
     const hostile = "<img src=x onerror=alert(1)>.csv";
     await showBoth(createdIris({ name: hostile, path: `/work/${hostile}` }));
@@ -217,8 +215,7 @@ describe("pasted-link card", () => {
   });
 });
 
-// PCD-4 Group 12 — The card shows the assistant's description (AC7, SEC11 · component)
-// Plan: docs/plans/PCD-4-reuse-existing-dataset-plan.md §7
+// The card shows the assistant's description (component)
 // Baseline: Given a card with assistant_description "Model scores per run" · When rendered
 const described = (assistant_description: string | null) =>
   dataset({ id: "results", name: "results.xls", origin: "created", source: "created", path: "/work/results.xls", assistant_description });
@@ -230,9 +227,9 @@ async function showOpenCard(d = described("Model scores per run")) {
   return el;
 }
 
-describe("PCD-4 Group 12 — The card shows the assistant's description", () => {
+describe("The card shows the assistant's description", () => {
   it('shows "Described by the assistant" with the text', async () => {
-    // ✅1 · changed: —
+    // Positive · changed: —
     // Then: the label and the text are visible · Demonstrates: the user sees what the assistant noted
     const el = await showOpenCard();
     expect(within(el).getByText("Described by the assistant")).toBeTruthy();
@@ -240,15 +237,15 @@ describe("PCD-4 Group 12 — The card shows the assistant's description", () => 
   });
 
   it("shows no description line when there is none", async () => {
-    // ❌1 · changed: assistant_description null
+    // Negative · changed: assistant_description null
     // Then: no "Described by the assistant" label
     const el = await showOpenCard(described(null));
     expect(within(el).queryByText("Described by the assistant")).toBeNull();
   });
 
   it("renders a description with HTML as plain text", async () => {
-    // ❌2 · changed: assistant_description '<img src=x onerror=alert(1)>'
-    // Then: shown as text, no img element · Demonstrates: a description can't run code in the panel (SEC11)
+    // Negative · changed: assistant_description '<img src=x onerror=alert(1)>'
+    // Then: shown as text, no img element · Demonstrates: a description can't run code in the panel
     const hostile = "<img src=x onerror=alert(1)>";
     const el = await showOpenCard(described(hostile));
     expect(el.querySelector("img")).toBeNull();

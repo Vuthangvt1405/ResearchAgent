@@ -1,5 +1,5 @@
 // Library build: one ES module + one CSS file in public/build/ with fixed names,
-// loaded same-origin by public/custom.js (plan §4.1, SEC3).
+// loaded same-origin by public/custom.js.
 import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 import { resolve } from "node:path";

@@ -8,6 +8,7 @@ import json
 import chainlit as cl
 
 from researchchat.tools.dataset_download import error_json
+from researchchat.tools.services import ApproveDelete, DatasetDeleter
 from researchchat.workspace import ErrorCode, WorkspaceError
 from researchchat.workspace.datasets.service import human_size
 
@@ -59,7 +60,8 @@ async def ask_approval(name: str, frees_bytes: int, shared_with: int) -> bool:
 
 
 async def run(
-    args: dict, *, svc=None, project_id: str | None = None, approve=None
+    args: dict, *, svc: DatasetDeleter | None = None, project_id: str | None = None,
+    approve: ApproveDelete | None = None,
 ) -> tuple[str, str]:
     """Return (text shown in the chat step, JSON {deleted, freed_bytes, still_used_by})."""
     dataset_id = args.get("dataset_id")

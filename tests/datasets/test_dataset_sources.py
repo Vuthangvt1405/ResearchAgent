@@ -384,12 +384,11 @@ def test_parse_ref_other_scheme_refused():
         assert e.value.code == ErrorCode.BAD_REF
 
 
-# ---- PCD-4 Group 6 — The catalog description is kept  (Q4 option 1; AC1) · unit with fake catalog responses — resolver level
-# Plan: docs/plans/PCD-4-reuse-existing-dataset-plan.md §7
+# ---- The catalog description is kept · unit with fake catalog responses — resolver level
 # Baseline: Given a Hugging Face info response with `description` · When resolved and downloaded into project A
 
 def test_zenodo_html_description_is_cleaned_to_one_line():
-    # ✅2 · Changed: HTML with newlines
+    # Positive · Changed: HTML with newlines
     # Then: plain one line
     html_text = "<p>Credit card <b>transactions</b>\n\n from Europe &amp; more.</p>\r\n<ul><li>284,807 rows</li></ul>"
     record = zenodo_record()
@@ -399,7 +398,7 @@ def test_zenodo_html_description_is_cleaned_to_one_line():
 
 
 def test_missing_description_is_stored_as_null():
-    # ❌1 · Changed: none given
+    # Negative · Changed: none given
     # Then: NULL; download as today
     plan = hf_resolve(HF())  # the fake API sends no description
     assert plan.description is None
@@ -409,9 +408,9 @@ def test_missing_description_is_stored_as_null():
 
 
 def test_long_description_is_cut_to_300_chars():
-    # ❌2 · Changed: 2,000 chars
+    # Negative · Changed: 2,000 chars
     # Then: ≤ 300, "…"
-    # Demonstrates: S3
+    # Demonstrates: a long catalog description can't flood the list
     plan = hf_resolve(HF(info={"description": "word " * 400}))
     assert len(plan.description) <= 300 and plan.description.endswith("…")
     assert "\n" not in plan.description

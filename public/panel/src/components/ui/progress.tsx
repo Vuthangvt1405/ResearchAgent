@@ -1,5 +1,5 @@
 // Vendor copy of Chainlit 2.12's own shadcn/ui progress (from its frontend source map), so every
-// Tailwind class here is one Chainlit's prebuilt CSS already contains (A2, AC9).
+// Tailwind class here is one Chainlit's prebuilt CSS already contains.
 import { cn } from '@/lib/utils';
 import * as ProgressPrimitive from '@radix-ui/react-progress';
 import * as React from 'react';

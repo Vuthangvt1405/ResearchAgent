@@ -1,5 +1,5 @@
 // Zustand store: the merged props and the UI state that used to live on
-// window.__rcNotebook (plan §4.1). The React root never unmounts now, so this only
+// window.__rcNotebook. The React root never unmounts now, so this only
 // holds state that outside code (the shim) feeds in, or that several parts share.
 import { create } from "zustand";
 import { newer } from "@/lib/newer";
@@ -13,7 +13,7 @@ export interface PanelState {
   tab: "notebook" | "datasets";
   /** cell id -> unsaved text */
   drafts: Record<string, string>;
-  /** cell id with an active IME composition (AC10) */
+  /** cell id with an active IME composition */
   composing: string | null;
   /** where the cursor should go when a new or inserted cell mounts */
   focus: Focus | null;

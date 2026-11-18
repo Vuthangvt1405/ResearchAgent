@@ -7,14 +7,25 @@ first. Unknown arguments are ignored, so {"approved": true} can't skip a prompt.
 """
 
 import json
+from typing import TYPE_CHECKING
 
 import chainlit as cl
 
+from researchchat.tools.services import (
+    ConfirmRetry,
+    DatasetDownloader,
+    ProjectDatasetLookup,
+    UndescribedDatasets,
+)
 from researchchat.tools.titles import shorten
 from researchchat.workspace import ErrorCode, WorkspaceError
 from researchchat.workspace.datasets import links
-from researchchat.workspace.datasets.service import REF_PREFIXES, human_size
+from researchchat.workspace.datasets.describe import look_first_message
+from researchchat.workspace.datasets.service import REF_PREFIXES, Approve, human_size
 from researchchat.workspace.datasets.sources import DatasetPlan
+
+if TYPE_CHECKING:
+    from researchchat.tools.dataset_describe import ChatLooks
 
 DEFINITION = {
     "type": "function",
@@ -148,8 +159,10 @@ async def ask_retry(name: str, reason: str | None) -> bool:
     return bool(answer and answer.get("payload", {}).get("download"))
 
 
-def undescribed_not_looked_at(svc, project_id: str, session_id: str, ref: str, looked=None) -> list[dict]:
-    """Ready rows with describe "write" the assistant hasn't looked at in this chat (AC7); none for a pasted link."""
+def undescribed_not_looked_at(
+    svc: UndescribedDatasets, project_id: str, session_id: str, ref: str, looked: "ChatLooks | None" = None
+) -> list[dict]:
+    """Ready rows with describe "write" the assistant hasn't looked at in this chat, so no download yet; none for a pasted link."""
     from researchchat.tools.dataset_describe import looked as chat_looks
 
     try:
@@ -159,10 +172,10 @@ def undescribed_not_looked_at(svc, project_id: str, session_id: str, ref: str, l
     except WorkspaceError:
         return []  # the request reports a bad ref or project
     seen = looked or chat_looks
-    return [v for v in views if not seen.is_allowed(session_id, project_id, v["dataset_id"])]
+    return [v for v in views if not seen.has_looked(session_id, project_id, v["dataset_id"])]
 
 
-def broken_copy(svc, project_id: str, ref: str) -> dict | None:
+def broken_copy(svc: ProjectDatasetLookup, project_id: str, ref: str) -> dict | None:
     """The project's own copy of this catalog entry when it is failed or missing; None otherwise (links too)."""
     try:
         source, source_id = links.parse_dataset_ref(ref)
@@ -186,13 +199,13 @@ def error_json(err: WorkspaceError) -> str:
 async def run(
     args: dict,
     *,
-    svc=None,
+    svc: DatasetDownloader | None = None,
     project_id: str | None = None,
     session_id: str | None = None,
-    approve=None,
+    approve: Approve | None = None,
     pasted_links: frozenset[str] | None = None,
-    confirm_retry=None,
-    looked=None,
+    confirm_retry: ConfirmRetry | None = None,
+    looked: "ChatLooks | None" = None,
 ) -> tuple[str, str]:
     """Return (text shown in the chat step, JSON DownloadStarted for the model).
 
@@ -212,12 +225,9 @@ async def run(
             pasted_links = pasted_links_in_chat()
     not_looked_at = undescribed_not_looked_at(svc, project_id, session_id, ref, looked)
     if not_looked_at:
-        names = ", ".join(v["name"] for v in not_looked_at[:5])
         error = WorkspaceError(
             ErrorCode.LOOK_FIRST,
-            f"The project already has data that says nothing about itself: {names}. Look at its first rows with "
-            "notebook_run (its load_code is in dataset_list) before downloading anything: it may be what the user "
-            "wants. If it isn't, download after that.",
+            look_first_message([v["name"] for v in not_looked_at]),
             {"datasets": [v["dataset_id"] for v in not_looked_at]},
         )
         raise ValueError(error_json(error))

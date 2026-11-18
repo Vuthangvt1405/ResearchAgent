@@ -1,5 +1,5 @@
 // Bundle entry: creates the persistent root once and exposes window.__rcPanel for the
-// Notebook.jsx shim (plan §4.2). Loaded same-origin by public/custom.js.
+// Notebook.jsx shim. Loaded same-origin by public/custom.js.
 import { createRoot, type Root } from "react-dom/client";
 import { App } from "@/components/App";
 import { createOverlay } from "@/overlay";

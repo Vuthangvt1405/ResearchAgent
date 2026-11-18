@@ -5,6 +5,8 @@ Read-only: it never runs the user's cells.
 
 import chainlit as cl
 
+from researchchat.tools.services import NotebookReader
+
 DEFINITION = {
     "type": "function",
     "function": {
@@ -23,7 +25,7 @@ def step_title(args: dict) -> str:
     return "Notebook: read"
 
 
-async def run(args: dict, *, svc=None, project_id: str | None = None) -> tuple[str, str]:
+async def run(args: dict, *, svc: NotebookReader | None = None, project_id: str | None = None) -> tuple[str, str]:
     """Return (text shown in the chat step, result sent to the model)."""
     if svc is None or project_id is None:
         from researchchat.workspace import actions

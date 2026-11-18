@@ -1,5 +1,5 @@
-// Calls to the Python nb_* / ds_* actions (AC4). Payloads are the same as the old
-// Notebook.jsx sent. Busy and error state come from TanStack Query (AC8, D4).
+// Calls to the Python nb_* / ds_* actions. Payloads are the same as the old
+// Notebook.jsx sent. Busy and error state come from TanStack Query.
 import { useRef } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { usePanel } from "@/store";
@@ -29,7 +29,7 @@ export interface Runner {
 
 /**
  * One mutation for the panel's buttons. A second click while one is pending is
- * dropped (G5❌2), and a rejected call clears the busy state and shows the error (G5❌1).
+ * dropped, and a rejected call clears the busy state and shows the error.
  */
 export function useRunner(): Runner {
   const inFlight = useRef(false);
@@ -62,7 +62,7 @@ export function useRunner(): Runner {
   };
 }
 
-/** nb_list_projects as a query, refetched when the project changes (D4) */
+/** nb_list_projects as a query, refetched when the project changes */
 export function useProjects(projectId: string | undefined, enabled: boolean) {
   return useQuery({
     queryKey: ["projects", projectId],

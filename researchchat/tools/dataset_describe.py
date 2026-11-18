@@ -1,7 +1,7 @@
 """dataset_describe tool: save one line about what a dataset holds, when it says nothing itself.
 
 Rows marked describe "write" in dataset_list are saved at once. Every file in
-the project may be read without asking the user (R54).
+the project may be read without asking the user, whoever added it.
 """
 
 import json
@@ -9,6 +9,7 @@ import json
 import chainlit as cl
 
 from researchchat.tools.dataset_download import error_json
+from researchchat.tools.services import DatasetDescriber
 from researchchat.workspace import ErrorCode, WorkspaceError
 
 DEFINITION = {
@@ -34,30 +35,30 @@ DEFINITION = {
     },
 }
 
-class ChatPermissions:
-    """Datasets marked per chat (memory only, forgotten when the chat ends)."""
+class ChatLooks:
+    """Undescribed datasets the assistant ran code on, per chat (memory only, forgotten when the chat ends)."""
 
     def __init__(self) -> None:
-        self._allowed: dict[str, set[tuple[str, str]]] = {}  # session_id -> {(project_id, dataset_id)}
+        self._looked: dict[str, set[tuple[str, str]]] = {}  # session_id -> {(project_id, dataset_id)}
 
-    def allow(self, session_id: str, project_id: str, dataset_id: str) -> None:
-        self._allowed.setdefault(session_id, set()).add((project_id, dataset_id))
+    def remember(self, session_id: str, project_id: str, dataset_id: str) -> None:
+        self._looked.setdefault(session_id, set()).add((project_id, dataset_id))
 
-    def is_allowed(self, session_id: str, project_id: str, dataset_id: str) -> bool:
-        return (project_id, dataset_id) in self._allowed.get(session_id, set())
+    def has_looked(self, session_id: str, project_id: str, dataset_id: str) -> bool:
+        return (project_id, dataset_id) in self._looked.get(session_id, set())
 
     def forget(self, session_id: str) -> None:
-        """The chat ended: its Allow clicks no longer count."""
-        self._allowed.pop(session_id, None)
+        """The chat ended: what the assistant looked at in it no longer counts."""
+        self._looked.pop(session_id, None)
 
 
-looked = ChatPermissions()  # undescribed datasets the assistant looked at (notebook_run), per chat; lets downloads go
+looked = ChatLooks()  # undescribed datasets the assistant looked at (notebook_run), per chat; lets downloads go
 
 
 async def run(
     args: dict,
     *,
-    svc=None,
+    svc: DatasetDescriber | None = None,
     project_id: str | None = None,
 ) -> tuple[str, str]:
     """Return (text shown in the chat step, JSON for the model).

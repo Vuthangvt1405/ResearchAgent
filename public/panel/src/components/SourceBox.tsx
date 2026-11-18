@@ -1,5 +1,5 @@
 // The cell and note text box (port of SourceBox). The panel root never unmounts or
-// moves, so focus, the cursor and an IME composition simply stay (AC5, AC10).
+// moves, so focus, the cursor and an IME composition simply stay.
 import { useEffect, useRef } from "react";
 import { usePanel } from "@/store";
 import { autoIndent, indentSelection, toggleComment, type Edit } from "@/lib/editing";

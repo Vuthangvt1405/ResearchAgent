@@ -1,5 +1,4 @@
-// Group 6 — Bundle load fallback (AC7 · shim unit)
-// Plan: docs/plans/done/panel-react-build-plan.md §7
+// Bundle load fallback (shim unit)
 // Baseline: Given the shim mounts · When __rcPanelReady never resolves
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { connectShim, FALLBACK_TEXT, READY_TIMEOUT_MS } from "@/shim";
@@ -19,9 +18,9 @@ function setup() {
 
 afterEach(() => vi.useRealTimers());
 
-describe("Group 6 — Bundle load fallback", () => {
+describe("Bundle load fallback", () => {
   it("shows_fallback_after_timeout", () => {
-    // ✅1 · changed: —
+    // Positive · changed: —
     // Then: Panel failed to load after 10 s (fake timers) · Demonstrates: no blank sidebar
     vi.useFakeTimers();
     const { win, slot, callAction } = setup();
@@ -35,7 +34,7 @@ describe("Group 6 — Bundle load fallback", () => {
   });
 
   it("late_bundle_replaces_fallback", async () => {
-    // ✅2 · changed: it resolves at 3 s
+    // Positive · changed: it resolves at 3 s
     // Then: the app is attached, no fallback · Demonstrates: slow networks are fine
     vi.useFakeTimers();
     const { win, slot, callAction } = setup();
@@ -54,7 +53,7 @@ describe("Group 6 — Bundle load fallback", () => {
   });
 
   it("bundle_throws_shows_fallback", async () => {
-    // ❌1 · changed: attach throws
+    // Negative · changed: attach throws
     // Then: fallback shown, error logged · Demonstrates: a crash stays inside the panel
     const { win, slot, callAction } = setup();
     const log = vi.spyOn(console, "error").mockImplementation(() => {});

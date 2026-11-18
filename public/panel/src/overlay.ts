@@ -1,4 +1,4 @@
-// The persistent root and where it lives (plan §4.1, D3 revised by D9).
+// The persistent root and where it lives.
 //
 // Chainlit remounts the sidebar element on every props push, but only the element
 // itself: its container (#side-view-content, inside the sidebar on desktop or the

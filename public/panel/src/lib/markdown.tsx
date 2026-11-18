@@ -1,4 +1,4 @@
-// Markdown for notes (AC15, SEC6 of the notebook plan; SEC1 here). Builds React
+// Markdown for notes, rendered safely. Builds React
 // elements only: raw HTML stays text, and links must be http(s).
 import type { ReactNode } from "react";
 import { safeHref } from "@/lib/safeHref";

@@ -1295,7 +1295,7 @@ def test_no_code_references_removed_formats():
     # Changed: grep the package for datasets.json, .dataset-pool.json, load_records, migrate_project (vulture runs separately)
     # Then: no hits
     # Demonstrates: the removal is complete
-    package = Path(__file__).resolve().parent.parent / "researchchat"
+    package = Path(__file__).resolve().parents[2] / "researchchat"
     hits = [
         f"{path.relative_to(package)}: {name}"
         for path in package.rglob("*.py")
@@ -1729,15 +1729,14 @@ def test_startup_cleanup_removes_views_of_unknown_projects(root):
     run(scenario())
 
 
-# ---- PCD-4 Group 6 — The catalog description is kept  (Q4 option 1; AC1) · unit with fake catalog responses — stored and listed
-# Plan: docs/plans/PCD-4-reuse-existing-dataset-plan.md §7
+# ---- The catalog description is kept · unit with fake catalog responses — stored and listed
 # Baseline: Given a Hugging Face info response with `description` · When resolved and downloaded into project A
 
 IRIS_TEXT = "Iris flower measurements, 3 species, 150 rows"
 
 
 def test_hf_description_is_stored_and_listed(root):
-    # ✅1 · Changed: —
+    # Positive · Changed: —
     # Then: stored; in `dataset_list`
     async def scenario():
         env = Env(root)
@@ -1754,7 +1753,7 @@ def test_hf_description_is_stored_and_listed(root):
 
 
 def test_entry_shared_by_two_projects_has_one_description(root):
-    # ✅3 · Changed: B downloads it too
+    # Positive · Changed: B downloads it too
     # Then: both show it; stored once
     async def scenario():
         env = Env(root)
@@ -1770,7 +1769,7 @@ def test_entry_shared_by_two_projects_has_one_description(root):
 
 
 def test_link_dataset_has_no_description(root):
-    # ❌3 · Changed: pasted link
+    # Negative · Changed: pasted link
     # Then: NULL
     async def scenario():
         env = Env(root, catalog=LinkSite())

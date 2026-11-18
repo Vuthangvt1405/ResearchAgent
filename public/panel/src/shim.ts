@@ -1,4 +1,4 @@
-// What the public/elements/Notebook.jsx shim does on each Chainlit mount (AC7).
+// What the public/elements/Notebook.jsx shim does on each Chainlit mount.
 // Chainlit compiles Notebook.jsx itself and it can't import this bundle, so the shim
 // carries a plain-JS copy of connectShim; keep the two in step (a Python test checks
 // that the shim still uses the same window names and timeout).

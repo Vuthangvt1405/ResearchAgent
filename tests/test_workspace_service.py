@@ -549,7 +549,7 @@ def file_created_in_q(root, project_p, monkeypatch):
 
     store.create_project("Q", root, project_id="q")
     datasets = DatasetService(root=root)
-    monkeypatch.setattr(actions, "datasets", datasets)  # never the real workspaces/ (see tests/test_dataset_service.py)
+    monkeypatch.setattr(actions, "datasets", datasets)  # never the real workspaces/ (see tests/datasets/test_dataset_service.py)
     created_file = store.project_dir("q", root) / store.FILES_DIR / "Iris.csv"
     created_file.write_text("a,b\n")
     datasets.sync_created("q")
@@ -574,7 +574,7 @@ def test_delete_other_projects_created_file_is_not_found(root, file_created_in_q
 def test_payload_project_field_is_ignored(root, file_created_in_q, service_factory):
     # negative
     # Changed: payload adds `project_id: "q"`
-    # Then: same as ❌1
+    # Then: same as the test above
     # Demonstrates: project comes from the session
     session = FakeSession(project_id="p")
     payload = {"dataset_id": "file-iris-csv", "project_id": "q"}
@@ -586,8 +586,7 @@ def test_payload_project_field_is_ignored(root, file_created_in_q, service_facto
     assert file_created_in_q.exists()
 
 
-# ---- PCD-4 Group 9 — Who created a file  (AC7, AC8; S12) · unit (`test_workspace_service.py` with fake kernels)
-# Plan: docs/plans/PCD-4-reuse-existing-dataset-plan.md §7
+# ---- Who created a file · unit (`test_workspace_service.py` with fake kernels)
 # Baseline: Given a project · When a run writes `files/out.csv` and the scan follows
 
 
@@ -604,7 +603,7 @@ def run_user_cell(service, code: str) -> None:
 
 
 def test_file_written_by_notebook_run_is_the_assistants(wired):
-    # ✅1 · Changed: run via `run_for_model`
+    # Positive · Changed: run via `run_for_model`
     # Then: `created_by = "assistant"`
     # Demonstrates: the assistant's own files are known
     service, datasets, _pushed = wired
@@ -613,7 +612,7 @@ def test_file_written_by_notebook_run_is_the_assistants(wired):
 
 
 def test_file_written_by_a_panel_cell_is_the_users(wired):
-    # ✅2 · Changed: `run_cell`
+    # Positive · Changed: `run_cell`
     # Then: `"user"`
     service, datasets, _pushed = wired
     run_user_cell(service, "write:out.csv")
@@ -621,7 +620,7 @@ def test_file_written_by_a_panel_cell_is_the_users(wired):
 
 
 def test_run_all_from_the_panel_is_the_users(wired):
-    # ✅3 · Changed: `run_all`
+    # Positive · Changed: `run_all`
     # Then: `"user"`
     service, datasets, _pushed = wired
     props = run(service.add_cell("p", run(service.props("p"))["version"], None, "code"))
@@ -631,7 +630,7 @@ def test_run_all_from_the_panel_is_the_users(wired):
 
 
 def test_rename_keeps_who_created_it(wired):
-    # ✅4 · Changed: assistant file renamed by a user cell
+    # Positive · Changed: assistant file renamed by a user cell
     # Then: still `"assistant"`
     # Demonstrates: a rename isn't a new file
     service, datasets, _pushed = wired
@@ -641,8 +640,8 @@ def test_rename_keeps_who_created_it(wired):
 
 
 def test_file_found_when_a_chat_opens_is_an_upload(wired, root):
-    # ❌1 · Changed: file appears with no run (session open scan)
-    # Then: `"upload"` (L2: the user put it there themselves)
+    # Negative · Changed: file appears with no run (session open scan)
+    # Then: `"upload"` (the user put it there themselves)
     # Demonstrates: unknown origin never skips the question
     _service, datasets, _pushed = wired
     (store.project_dir("p", root) / store.FILES_DIR / "dropped.csv").write_text("a,b\n")
@@ -651,8 +650,8 @@ def test_file_found_when_a_chat_opens_is_an_upload(wired, root):
 
 
 def test_row_from_before_this_change_is_read_freely(wired, root):
-    # ❌2 · Changed: `created_by` NULL
-    # Then: `describe_need` → `"write"` (R54)
+    # Negative · Changed: `created_by` NULL
+    # Then: `describe_need` → `"write"` (any project file may be read)
     from sqlalchemy import text
 
     from researchchat.db.engine import database_for
@@ -663,4 +662,4 @@ def test_row_from_before_this_change_is_read_freely(wired, root):
     with database_for(root).begin() as connection:
         connection.execute(text("UPDATE project_datasets SET created_by = NULL"))
     [view] = datasets.list_for_model("p")
-    assert view["describe"] == "write"  # R54: no permission needed, whoever added it
+    assert view["describe"] == "write"  # no permission needed, whoever added it

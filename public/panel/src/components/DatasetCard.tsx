@@ -1,6 +1,6 @@
 // One dataset row: name, source, size; the chevron opens details and actions
 // (port of DatasetCard). Memoised on the dataset's content, so a progress push
-// re-renders only the card whose numbers changed (AC2).
+// re-renders only the card whose numbers changed.
 import { memo, useEffect, useRef, useState } from "react";
 import { Check, ChevronDown, Code2, Copy, Database, FileCode2, Trash2, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -15,12 +15,12 @@ import type { DatasetProps } from "@/types";
 const DS_BADGE: Record<string, string> = { queued: "Queued", downloading: "Downloading", failed: "Failed", missing: "Files missing" };
 const SOURCES: Record<string, string> = { huggingface: "Hugging Face", zenodo: "Zenodo", kaggle: "Kaggle", created: "Created by myself" };
 
-/** PCD-1: a file the project's own code wrote (AC3) */
+/** A file the project's own code wrote */
 export function isCreated(d: DatasetProps): boolean {
   return d.origin === "created";
 }
 
-/** PCD-1 AC8: the Delete confirmation for a created file: permanent, no other copy, can be made again */
+/** The Delete confirmation for a created file: permanent, no other copy, can be made again */
 /** A file downloaded from a link the user pasted */
 export function isLink(d: DatasetProps): boolean {
   return d.source === "link";
@@ -58,7 +58,7 @@ export function createdDeleteText(d: DatasetProps): string {
   return `Delete ${d.name}? The file is removed from this project for good, and the app keeps no other copy. You can make it again by re-running the code or asking the assistant.`;
 }
 
-/** PCD-1 AC7: the red line on a missing created card (the download text doesn't fit: nothing to re-download) */
+/** The red line on a missing created card (the download text doesn't fit: nothing to re-download) */
 export function createdMissingText(d: DatasetProps): string {
   return `${d.name} was deleted or renamed outside the Datasets tab and can't be found.`;
 }
@@ -71,10 +71,10 @@ const downloadDeleteText = (d: DatasetProps) =>
     ? `Delete ${d.name} from this project? ${alsoUsedBy(d.shared_with)}: frees 0 MB here.`
     : `Delete ${d.name} and free ${fmtBytes(d.size_bytes)}?`;
 
-/** Renders per card id, for the "only the changed card re-renders" test (G3✅2) */
+/** Renders per card id, for the "only the changed card re-renders" test */
 export const cardRenders: Record<string, number> = {};
 
-/** "Also used by 1 other project" / "…by 2 other projects" (NB-4 AC25) */
+/** "Also used by 1 other project" / "…by 2 other projects" */
 export const alsoUsedBy = (n: number) => `Also used by ${n} other project${n === 1 ? "" : "s"}`;
 
 export interface DatasetCardProps {
@@ -107,7 +107,7 @@ function DatasetCardView({ d, inserting, onCancel, onDelete, onInsert }: Dataset
   const files = d.files || [];
   const detailsId = `rcds-details-${d.id}`;
   const created = isCreated(d);
-  const shownPath = created ? d.path : `${d.path}/`; // a created dataset is one file, not a folder (AC1)
+  const shownPath = created ? d.path : `${d.path}/`; // a created dataset is one file, not a folder
   return (
     <Card className={`rcds-card ${d.status}${open ? " open" : ""}`} data-dataset-id={d.id}>
       <div className="rcds-row">
@@ -159,7 +159,7 @@ function DatasetCardView({ d, inserting, onCancel, onDelete, onInsert }: Dataset
             )}
             {d.assistant_description && (
               <>
-                {/* PCD-4 AC7: one line the assistant wrote after looking; React renders it as text, never HTML */}
+                {/* One line the assistant wrote after looking; React renders it as text, never HTML */}
                 <dt>Described by the assistant</dt>
                 <dd>{d.assistant_description}</dd>
               </>

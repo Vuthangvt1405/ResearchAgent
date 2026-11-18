@@ -477,7 +477,7 @@ class CreatedDatasets:
             "columns": dataset.columns,
             "assistant_description": dataset.assistant_description,
         }
-        view["describe"] = describe_need(view, created_by=dataset.created_by)
+        view["describe"] = describe_need(view)
         view["load_code"] = load_code(view)
         return view
 

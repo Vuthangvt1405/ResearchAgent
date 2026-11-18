@@ -1,5 +1,5 @@
 // Dataset sort: a shadcn Select (port of DatasetSortSelect). It stays open across
-// pushes because nothing remounts it (G1✅2).
+// pushes because nothing remounts it.
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { usePanel } from "@/store";
 

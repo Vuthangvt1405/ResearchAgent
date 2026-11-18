@@ -4,6 +4,8 @@ import json
 
 import chainlit as cl
 
+from researchchat.tools.services import DatasetLister
+from researchchat.workspace.datasets.describe import one_line
 from researchchat.workspace.datasets.service import human_size
 
 DEFINITION = {
@@ -42,17 +44,10 @@ REUSE_RULES = (
 NAME_MAX_CHARS = 120  # per name in a line; longer ones are cut with "…"
 TEXT_MAX_CHARS = 300  # per description in a line
 PATH_MAX_CHARS = 120  # per path in a chat line; the JSON keeps the exact path for code
-ELLIPSIS = "…"
 
 
 def step_title(args: dict) -> str:
     return "List datasets"
-
-
-def one_line(text, limit: int) -> str:
-    """Printable characters only, on one line, at most `limit` chars: a name or description can't add lines."""
-    line = " ".join("".join(c if c.isprintable() else " " for c in str(text)).split())
-    return line if len(line) <= limit else line[: limit - 1] + ELLIPSIS
 
 
 def _about(v: dict) -> list[str]:
@@ -98,7 +93,7 @@ def _safe_view(v: dict) -> dict:
     return safe
 
 
-async def run(args: dict, *, svc=None, project_id: str | None = None) -> tuple[str, str]:
+async def run(args: dict, *, svc: DatasetLister | None = None, project_id: str | None = None) -> tuple[str, str]:
     """Return (text shown in the chat step, JSON {"datasets": [DatasetRecordView], "note": reuse rules})."""
     if svc is None or project_id is None:
         from researchchat.workspace import actions

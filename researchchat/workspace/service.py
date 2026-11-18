@@ -106,8 +106,8 @@ class NotebookProps(TypedDict):
 
 Notify = Callable[[str, NotebookProps], Awaitable[None]]
 DatasetState = Callable[[str], tuple[list[DatasetProps], int]]  # project_id -> (datasets, datasets_rev)
-AfterRun = Callable[..., None]  # (project_id, by) -> scan its files/ for created datasets; called after every cell run
 RunBy = Literal["assistant", "user"]  # who started a run: notebook_run, or a cell run from the panel
+AfterRun = Callable[[str, RunBy | None], None]  # (project_id, by) -> scan its files/ for created datasets; called after every cell run
 
 
 # ---- output conversion ----------------------------------------------------------
