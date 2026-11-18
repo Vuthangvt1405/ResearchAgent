@@ -21,7 +21,7 @@ def test_normal_data_code_is_safe():
 
 
 def test_web_download_is_safe():
-    # Demonstrates: reading the web is allowed (Q8)
+    # Demonstrates: reading the web is allowed
     assert check('import requests\nhtml = requests.get("https://example.com").text') == []
 
 

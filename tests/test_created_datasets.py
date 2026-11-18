@@ -805,8 +805,7 @@ def test_toast_strips_newlines_and_caps_names():
     assert "y" * 79 + "…" in notice and "y" * 80 not in notice
 
 
-# ---- PCD-4 Group 7 — Created files get their column names  (Q4 option 2; AC2, AC6) · unit (real tmp folder)
-# Plan: docs/plans/PCD-4-reuse-existing-dataset-plan.md §7
+# ---- Created files get their column names · unit (real tmp folder)
 # Baseline: Given a new `files/data.csv` with an iris header · When the scan runs
 
 IRIS_COLUMNS = ["sepal_length", "sepal_width", "petal_length", "petal_width", "species"]
@@ -839,7 +838,7 @@ def opened_paths(monkeypatch) -> list[str]:
 
 
 def test_csv_header_is_stored_as_columns(root, created, datasets):
-    # ✅1 · Changed: —
+    # Positive · Changed: —
     # Then: five names stored and listed
     write(root, "data.csv", IRIS_HEADER)
     created.sync("p")
@@ -849,7 +848,7 @@ def test_csv_header_is_stored_as_columns(root, created, datasets):
 
 
 def test_tsv_and_csv_gz_headers_are_read(root, created):
-    # ✅2 · Changed: `.tsv`, `.csv.gz`
+    # Positive · Changed: `.tsv`, `.csv.gz`
     # Then: same
     write(root, "data.tsv", IRIS_HEADER.replace(",", "\t"))
     write_bytes(root, "data.csv.gz", gzip.compress(IRIS_HEADER.encode()))
@@ -859,7 +858,7 @@ def test_tsv_and_csv_gz_headers_are_read(root, created):
 
 
 def test_json_and_jsonl_first_record_keys_are_read(root, created):
-    # ✅3 · Changed: `.jsonl`, `.json`
+    # Positive · Changed: `.jsonl`, `.json`
     # Then: first record's keys
     record = dict.fromkeys(IRIS_COLUMNS, 1)
     write(root, "rows.jsonl", json.dumps(record) + "\n" + json.dumps({"other": 2}) + "\n")
@@ -869,7 +868,7 @@ def test_json_and_jsonl_first_record_keys_are_read(root, created):
 
 
 def test_quoted_header_cells_are_unquoted(root, created):
-    # ✅4 · Changed: quoted cells
+    # Positive · Changed: quoted cells
     # Then: unquoted names
     write(root, "q.csv", '﻿"sepal length","species, name"\n1,a\n')
     created.sync("p")
@@ -877,7 +876,7 @@ def test_quoted_header_cells_are_unquoted(root, created):
 
 
 def test_resaved_file_with_new_header_updates_columns(root, created):
-    # ✅5 · Changed: rewritten
+    # Positive · Changed: rewritten
     # Then: new columns
     target = write(root, "data.csv", IRIS_HEADER)
     created.sync("p")
@@ -887,10 +886,10 @@ def test_resaved_file_with_new_header_updates_columns(root, created):
 
 
 def test_row_from_before_this_change_gets_columns_on_next_scan(root, created, monkeypatch):
-    # ✅6 · Changed: `columns` NULL
+    # Positive · Changed: `columns` NULL
     # Then: read once
     write(root, "data.csv", IRIS_HEADER)
-    monkeypatch.setattr(created_module, "read_columns", lambda folder, path: None)  # a scan from before PCD-4
+    monkeypatch.setattr(created_module, "read_columns", lambda folder, path: None)  # a scan from before column names were read
     created.sync("p")
     assert stored_columns(created) == {"data.csv": None}
     monkeypatch.undo()
@@ -902,7 +901,7 @@ def test_row_from_before_this_change_gets_columns_on_next_scan(root, created, mo
 
 
 def test_parquet_schema_columns_are_read(root, created):
-    # ✅7 · Changed: `.parquet` with five columns
+    # Positive · Changed: `.parquet` with five columns
     # Then: five names; no rows read
     # Demonstrates: A6
     table = pa.table({name: [1.0, 2.0] for name in IRIS_COLUMNS})
@@ -912,7 +911,7 @@ def test_parquet_schema_columns_are_read(root, created):
 
 
 def test_xlsx_first_row_is_read(root, created):
-    # ✅8 · Changed: `.xlsx`, header in row 1 of the first sheet
+    # Positive · Changed: `.xlsx`, header in row 1 of the first sheet
     # Then: five names
     # Demonstrates: A6
     workbook = openpyxl.Workbook()
@@ -924,7 +923,7 @@ def test_xlsx_first_row_is_read(root, created):
 
 
 def test_old_xls_gets_unknown_columns(root, created):
-    # ❌1 · Changed: `.xls`
+    # Negative · Changed: `.xls`
     # Then: `[]`
     # Demonstrates: A10
     write_bytes(root, "old.xls", b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1" + b"\0" * 512)
@@ -933,7 +932,7 @@ def test_old_xls_gets_unknown_columns(root, created):
 
 
 def test_empty_file_gets_unknown_columns(root, created):
-    # ❌2 · Changed: 0 bytes
+    # Negative · Changed: 0 bytes
     # Then: `[]`
     write(root, "empty.csv", "")
     write(root, "empty.jsonl", "")
@@ -942,18 +941,18 @@ def test_empty_file_gets_unknown_columns(root, created):
 
 
 def test_header_longer_than_64kb_gets_unknown_columns(root, created):
-    # ❌3 · Changed: no newline in 64 KB
+    # Negative · Changed: no newline in 64 KB
     # Then: `[]`
-    # Demonstrates: S7
+    # Demonstrates: a huge header is never read whole
     write(root, "wide.csv", "x," * 40_000 + "\n1\n")
     created.sync("p")
     assert stored_columns(created) == {"wide.csv": []}
 
 
 def test_columns_capped_at_50_names_of_60_chars(root, created):
-    # ❌4 · Changed: 80 columns
+    # Negative · Changed: 80 columns
     # Then: 50, cut
-    # Demonstrates: S3
+    # Demonstrates: a file can't flood the list with column names
     names = ["n" * 200] + [f"c{i}" for i in range(79)]
     write(root, "many.csv", ",".join(names) + "\n")
     created.sync("p")
@@ -964,9 +963,9 @@ def test_columns_capped_at_50_names_of_60_chars(root, created):
 
 
 def test_unchanged_file_is_not_read_again(root, created, monkeypatch):
-    # ❌5 · Changed: unchanged
+    # Negative · Changed: unchanged
     # Then: not opened
-    # Demonstrates: S7
+    # Demonstrates: an unchanged file is not read again
     write(root, "data.csv", IRIS_HEADER)
     asked = opened_paths(monkeypatch)
     created.sync("p")
@@ -976,7 +975,7 @@ def test_unchanged_file_is_not_read_again(root, created, monkeypatch):
 
 
 def test_renamed_file_keeps_its_columns_without_reading(root, created, monkeypatch):
-    # ❌6 · Changed: rename
+    # Negative · Changed: rename
     # Then: kept, not opened
     target = write(root, "data.csv", IRIS_HEADER)
     created.sync("p")
@@ -987,12 +986,11 @@ def test_renamed_file_keeps_its_columns_without_reading(root, created, monkeypat
     assert asked == []
 
 
-# ---- PCD-4 Group S2 — Reading columns never leaves `files/`  (S6, S7) · unit (real tmp folder)
-# Plan: docs/plans/PCD-4-reuse-existing-dataset-plan.md §7
+# ---- Reading columns never leaves `files/` · unit (real tmp folder)
 
 
 def test_linked_file_is_not_read(root, tmp_path):
-    # ❌1 · Changed: symlink to outside
+    # Negative · Changed: symlink to outside
     # Then: `[]`; target never opened
     secret = tmp_path / "secret.csv"
     secret.write_text("password,token\n")
@@ -1004,7 +1002,7 @@ def test_linked_file_is_not_read(root, tmp_path):
 
 
 def test_file_in_linked_folder_is_not_read(root, tmp_path):
-    # ❌2 · Changed: linked folder
+    # Negative · Changed: linked folder
     # Then: `[]`
     outside = tmp_path / "outside"
     outside.mkdir()
@@ -1016,7 +1014,7 @@ def test_file_in_linked_folder_is_not_read(root, tmp_path):
 
 
 def test_gz_bomb_reads_at_most_64kb(root):
-    # ❌3 · Changed: 1 GB expansion
+    # Negative · Changed: 1 GB expansion
     # Then: `[]`, ≤ 64 KB
     target = files_dir(root) / "bomb.csv.gz"
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -1030,7 +1028,7 @@ def test_gz_bomb_reads_at_most_64kb(root):
 
 
 def test_broken_parquet_or_xlsx_gets_unknown_columns(root, created):
-    # ❌4 · Changed: a `.parquet` / `.xlsx` with random bytes
+    # Negative · Changed: a `.parquet` / `.xlsx` with random bytes
     # Then: `[]`; scan goes on
     # Demonstrates: a bad file never breaks the scan
     write_bytes(root, "bad.parquet", os.urandom(4096))
@@ -1041,9 +1039,9 @@ def test_broken_parquet_or_xlsx_gets_unknown_columns(root, created):
 
 
 def test_xlsx_reads_only_the_first_row(root, monkeypatch):
-    # ❌5 · Changed: 100,000-row sheet
+    # Negative · Changed: 100,000-row sheet
     # Then: only row 1 read (spy), fast
-    # Demonstrates: S7
+    # Demonstrates: a big sheet is never read whole
     workbook = openpyxl.Workbook(write_only=True)
     sheet = workbook.create_sheet()
     sheet.append(IRIS_COLUMNS)

@@ -173,23 +173,23 @@ def _rule_body(css: str, selector: str) -> str:
 
 
 def test_panel_css_has_no_hardcoded_hex_colours():
-    # A✅1 baseline, A❌1 negative (a stray #2383e2 is reintroduced).
+    # baseline, negative (a stray #2383e2 is reintroduced).
     # Then: no #rgb/#rrggbb literal in the CSS or DS_CSS blocks (or KERNEL map).
     # Demonstrates: every colour follows the theme.
     assert _hex_colours() == []
-    # A❌1: a stray hex colour would be caught
+    # negative: a stray hex colour would be caught
     assert _hex_colours(".x { color: #2383e2; }") == ["#2383e2"]
 
 
 def test_panel_css_allows_hex_only_in_the_documented_allowlist():
-    # A✅2 edge: a hex literal in an allow-listed place (e.g. a data-URI) still passes.
+    # edge: a hex literal in an allow-listed place (e.g. a data-URI) still passes.
     # Demonstrates: the guard is not a blanket ban.
     css = ".x { background: url(data:image/svg+xml;utf8,#fff); }\n" + PANEL_CSS.read_text(encoding="utf-8")
     assert _hex_colours(css) == []
 
 
 def test_panel_defines_a_light_and_a_dark_value_for_every_semantic_colour():
-    # A✅3 edge: --rc-info, --rc-warn, --rc-ok, --rc-danger each have a light value
+    # edge: --rc-info, --rc-warn, --rc-ok, --rc-danger each have a light value
     # on .rcnb and an override under .dark.
     # Demonstrates: status colours stay legible in both themes.
     css = _css_blocks()
@@ -202,7 +202,7 @@ def test_panel_defines_a_light_and_a_dark_value_for_every_semantic_colour():
 
 
 def test_semantic_colours_are_defined_for_both_themes():
-    # A❌2 negative: the .dark block is dropped, only the light value exists -> fails.
+    # negative: the .dark block is dropped, only the light value exists -> fails.
     # Demonstrates: dark mode cannot silently lose a colour.
     css = PANEL_CSS.read_text(encoding="utf-8")
     dark = _rule_body(css, DARK)
@@ -212,7 +212,7 @@ def test_semantic_colours_are_defined_for_both_themes():
 
 
 def test_semantic_colours_are_not_taken_from_chart_tokens():
-    # A❌3 negative: a status colour uses var(--chart-N) -> fails.
+    # negative: a status colour uses var(--chart-N) -> fails.
     # Demonstrates: chart tokens change meaning between themes.
     assert "--chart-" not in _css_blocks()
 
@@ -222,7 +222,7 @@ def test_semantic_colours_are_not_taken_from_chart_tokens():
 
 
 def test_panel_uses_the_chainlit_font_variables():
-    # B✅1 baseline, B❌1 negative (font-family: ui-sans-serif, … is reintroduced).
+    # baseline, negative (font-family: ui-sans-serif, … is reintroduced).
     # Then: every font-family is var(--font-sans), var(--font-mono) or inherit.
     # Demonstrates: the panel and the chat share a typeface.
     bad = [f for f in _font_families(_css_blocks()) if not FONT_OK.match(f)]
@@ -230,14 +230,14 @@ def test_panel_uses_the_chainlit_font_variables():
 
 
 def test_no_font_family_is_declared_outside_the_panel():
-    # B✅2 edge: public/custom.js declares no font family of its own (only var(--font-sans)).
+    # edge: public/custom.js declares no font family of its own (only var(--font-sans)).
     # Demonstrates: what remains in custom.js inherits Chainlit's font.
     bad = [f for f in _font_families(CUSTOM_JS.read_text(encoding="utf-8")) if not FONT_OK.match(f)]
     assert bad == []
 
 
 def test_no_theme_json_is_added():
-    # B❌2 negative: a public/theme.json appears -> fails.
+    # negative: a public/theme.json appears -> fails.
     # Demonstrates: the panel cannot change the app-wide font.
     assert not (ROOT / "public" / "theme.json").exists()
 
@@ -247,24 +247,24 @@ def test_no_theme_json_is_added():
 
 
 def test_every_allowlisted_tailwind_class_exists_in_chainlits_css():
-    # C✅1 baseline, C❌1 negative (a purged class such as shadow-xl is added).
+    # baseline, negative (a purged class such as shadow-xl is added).
     # Then: each class selector is found in chainlit/frontend/dist/assets/index-*.css;
     # a missing one fails, naming the class.
     # Demonstrates: no class is silently dropped by Tailwind's purge.
     css = _chainlit_css()
     classes = sorted(set(TAILWIND_ALLOWLIST) | _panel_tailwind_classes(_panel()))
     assert _missing_classes(classes, css) == []
-    # C❌1: a purged class is reported by name
+    # negative: a purged class is reported by name
     assert _missing_classes(["shadow-xl", "ring-offset-2"], css) == ["shadow-xl", "ring-offset-2"]
 
 
 def test_the_allowlist_is_not_empty():
-    # C✅2 edge. Demonstrates: the class check actually tests something.
+    # edge. Demonstrates: the class check actually tests something.
     assert TAILWIND_ALLOWLIST
 
 
 def test_the_chainlit_css_file_is_found():
-    # C❌2: when Chainlit's built CSS is missing, _chainlit_css() SKIPS with a clear
+    # negative: when Chainlit's built CSS is missing, _chainlit_css() SKIPS with a clear
     # reason instead of failing.
     assert ".bg-card" in _chainlit_css()
 
@@ -275,25 +275,25 @@ def test_the_chainlit_css_file_is_found():
 
 
 def test_every_imported_module_is_exposed_by_chainlit():
-    # D✅1 baseline, D❌1 negative (@/components/ui/alert-dialog is imported).
+    # baseline, negative (@/components/ui/alert-dialog is imported).
     # Then: each specifier is in Chainlit's Imports map; a missing one fails, naming it.
     # Demonstrates: the panel cannot fail with "Module not found".
     exposed = _chainlit_import_map()
     shim = SHIM.read_text(encoding="utf-8")
     assert _imports(shim), "the shim's imports were not found"
     assert [m for m in _imports(shim) if m not in exposed] == []
-    # D❌1: a module Chainlit doesn't expose is reported by name
+    # negative: a module Chainlit doesn't expose is reported by name
     assert "@/components/ui/alert-dialog" not in exposed
 
 
 def test_the_helper_cn_is_not_imported():
-    # D✅2 edge: @/lib/utils is not imported by the shim (the bundle has its own cn()).
+    # edge: @/lib/utils is not imported by the shim (the bundle has its own cn()).
     # Demonstrates: the shim does not rely on a helper Chainlit doesn't give it.
     assert "@/lib/utils" not in _imports(SHIM.read_text(encoding="utf-8"))
 
 
 def test_no_new_dependencies_are_added():
-    # D❌2 negative: a package.json appears at the repo root or in public/ -> fails.
+    # negative: a package.json appears at the repo root or in public/ -> fails.
     # npm packages are allowed only inside public/panel, pinned.
     # Demonstrates: dependencies stay in one reviewed place.
     assert not (ROOT / "package.json").exists()
@@ -306,27 +306,27 @@ def test_no_new_dependencies_are_added():
 
 
 def test_panel_never_uses_dangerously_set_inner_html():
-    # E✅1 baseline, E❌1 negative (raw HTML for a badge is introduced).
+    # baseline, negative (raw HTML for a badge is introduced).
     # Demonstrates: catalog text stays text.
     src = _panel()
     assert "dangerouslySetInnerHTML" not in src
     assert "innerHTML" not in src
-    # E❌1: the check sees it when it is added
+    # negative: the check sees it when it is added
     assert "dangerouslySetInnerHTML" in src + "<span dangerouslySetInnerHTML={{ __html: d.license }} />"
 
 
 def test_every_href_still_goes_through_safe_href():
-    # E✅2 baseline, E❌2 negative (a raw d.url href is used).
+    # baseline, negative (a raw d.url href is used).
     # Demonstrates: javascript: URLs cannot appear.
     src = _panel()
     assert re.search(r"href=\{\w+\}", src), "the panel's links were not found"
     assert _hrefs_are_safe(src)
-    # E❌2: a raw dataset URL is caught
+    # negative: a raw dataset URL is caught
     assert not _hrefs_are_safe(src + '<a href={d.url}>x</a>')
 
 
 def test_project_names_are_rendered_as_react_text():
-    # E✅3 baseline, E❌4 negative (the picker builds HTML from a name).
+    # baseline, negative (the picker builds HTML from a name).
     # Then: no innerHTML / dangerouslySetInnerHTML near p.name; custom.js no longer
     # renders project names at all.
     # Demonstrates: the moved picker cannot inject HTML.
@@ -338,18 +338,18 @@ def test_project_names_are_rendered_as_react_text():
 
 
 def test_no_new_external_stylesheet_or_script_is_fetched():
-    # E✅4 baseline, E❌3 negative (a font CDN URL is added).
+    # baseline, negative (a font CDN URL is added).
     # Demonstrates: no new supply-chain surface.
     for path in (SHIM, *_panel_files(), PANEL_CSS, CUSTOM_JS):
         src = path.read_text(encoding="utf-8")
         assert _fetched_urls(src) == [], path.name
         assert "@import" not in src and "<link" not in src, path.name
-    # E❌3: a font CDN would be caught
+    # negative: a font CDN would be caught
     assert _fetched_urls('@import url("https://fonts.googleapis.com/css2?family=Inter");')
 
 
 def test_the_rc_event_bridge_is_gone():
-    # E❌5 negative: a stale rc:switch-project / rc:create-project / rc:projects /
+    # negative: a stale rc:switch-project / rc:create-project / rc:projects /
     # rc:projects-request name survives in either file -> fails.
     # Demonstrates: the picker move leaves no half-removed bridge behind.
     for path in (SHIM, *_panel_files(), CUSTOM_JS):

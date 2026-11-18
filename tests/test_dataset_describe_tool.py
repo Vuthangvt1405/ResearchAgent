@@ -1,4 +1,4 @@
-"""PCD-4: dataset_describe saves the assistant's one-line description, asking the user when it must.
+"""dataset_describe saves the assistant's one-line description, asking the user when it must.
 
 Fake chat permissions, real DatasetService on tmp_path.
 """
@@ -63,21 +63,20 @@ def view_of(svc, dataset_id: str, project_id: str = "p1") -> dict:
     return next(v for v in svc.list_for_model(project_id) if v["dataset_id"] == dataset_id)
 
 
-# ---- PCD-4 Group 11 — `dataset_describe` saves the description, asking when it must  (AC7, AC8; S2, S9, S10) · unit (real service)
-# Plan: docs/plans/PCD-4-reuse-existing-dataset-plan.md §7
+# ---- `dataset_describe` saves the description, asking when it must · unit (real service)
 # Baseline: Given an assistant file `results.xls` (`describe: "write"`) · When `dataset_describe({"dataset_id": id, "description": "Model scores per run, 12 columns"})`
 
 
 def test_write_row_is_saved_without_asking(root):
-    # ✅1 · Changed: —
+    # Positive · Changed: —
     # Then: saved; `dataset_list` shows "described by the assistant"; no question
-    # Demonstrates: AC7
+    # Demonstrates: data that says nothing about itself is described without asking
     async def scenario():
         _env, svc = await service(root)
         file_id = make_file(root, "results.parquet", "assistant", svc)
         _shown, result = await describe(svc, {"dataset_id": file_id, "description": NOTE})
         assert json.loads(result) == {"saved": file_id, "description": NOTE}
-        user_cell_id = make_file(root, "mine.parquet", "user", svc)  # the user's own cell: no question either (L2.1)
+        user_cell_id = make_file(root, "mine.parquet", "user", svc)  # the user's own cell: no question either
         _shown, result = await describe(svc, {"dataset_id": user_cell_id, "description": NOTE})
         assert json.loads(result)["saved"] == user_cell_id
         view = view_of(svc, file_id)
@@ -89,9 +88,9 @@ def test_write_row_is_saved_without_asking(root):
 
 
 def test_upload_is_saved_without_asking(root):
-    # ✅2 · Changed: a file the user put in themselves (no cell run)
+    # Positive · Changed: a file the user put in themselves (no cell run)
     # Then: saved at once
-    # Demonstrates: AC8 (R54): uploads are described like any other file
+    # Demonstrates: uploads are described like any other file
     async def scenario():
         _env, svc = await service(root)
         file_id = make_file(root, "upload.parquet", None, svc)
@@ -103,9 +102,9 @@ def test_upload_is_saved_without_asking(root):
 
 
 def test_description_is_cut_to_one_line_of_300_chars(root):
-    # ✅3 · Changed: multi-line 1,000-char text
+    # Positive · Changed: multi-line 1,000-char text
     # Then: one line, ≤ 300
-    # Demonstrates: S2
+    # Demonstrates: a description can't add lines to what the model reads
     async def scenario():
         _env, svc = await service(root)
         file_id = make_file(root, "results.parquet", "assistant", svc)
@@ -119,7 +118,7 @@ def test_description_is_cut_to_one_line_of_300_chars(root):
 
 
 def test_resaving_a_created_file_clears_its_assistant_description(root):
-    # ✅4 · Changed: file rewritten after describing
+    # Positive · Changed: file rewritten after describing
     # Then: description gone; `describe` back
     # Demonstrates: a note never outlives the data it described
     async def scenario():
@@ -136,7 +135,7 @@ def test_resaving_a_created_file_clears_its_assistant_description(root):
 
 
 def test_updating_a_download_clears_its_assistant_description(root):
-    # ✅5 · Changed: update to a new version
+    # Positive · Changed: update to a new version
     # Then: description gone
     async def scenario():
         env, svc = await service(root)
@@ -153,7 +152,7 @@ def test_updating_a_download_clears_its_assistant_description(root):
 
 
 def test_only_an_id_says_what_to_do_next(root):
-    # ❌1 · Changed: only dataset_id (an upload)
+    # Negative · Changed: only dataset_id (an upload)
     # Then: nothing saved; the result says to look at its first rows, no permission needed
     async def scenario():
         _env, svc = await service(root)
@@ -167,7 +166,7 @@ def test_only_an_id_says_what_to_do_next(root):
 
 
 def test_row_that_needs_none_is_refused(root):
-    # ❌3 · Changed: download with a catalog description
+    # Negative · Changed: download with a catalog description
     # Then: `NOT_NEEDED`; unchanged
     async def scenario():
         _env, svc = await service(root, description="Iris flower measurements")
@@ -182,9 +181,9 @@ def test_row_that_needs_none_is_refused(root):
 
 
 def test_unknown_or_other_projects_id_is_not_found(root):
-    # ❌4 · Changed: id from project B / made up
+    # Negative · Changed: id from project B / made up
     # Then: `NOT_FOUND`, same message
-    # Demonstrates: S10
+    # Demonstrates: another project's dataset can't be described from here
     async def scenario():
         _env, svc = await service(root)
         other_id = make_file(root, "results.parquet", "assistant", svc, project_id="p2")
@@ -200,7 +199,7 @@ def test_unknown_or_other_projects_id_is_not_found(root):
 
 
 def test_missing_or_failed_row_is_refused(root):
-    # ❌5 · Changed: `missing` row
+    # Negative · Changed: `missing` row
     # Then: `NOT_NEEDED`
     async def scenario():
         _env, svc = await service(root)
@@ -215,7 +214,7 @@ def test_missing_or_failed_row_is_refused(root):
 
 
 def test_empty_description_is_refused(root):
-    # ❌6 · Changed: `"   "`
+    # Negative · Changed: `"   "`
     # Then: `BAD_DESCRIPTION`; nothing saved
     async def scenario():
         _env, svc = await service(root)

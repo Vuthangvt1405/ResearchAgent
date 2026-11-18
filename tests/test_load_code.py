@@ -1,4 +1,4 @@
-"""PCD-4: the app's load code is the same as the panel's "Copy load code" (loadCode.ts).
+"""The app's load code is the same as the panel's "Copy load code" (loadCode.ts).
 """
 
 import json
@@ -26,13 +26,12 @@ def panel_readers() -> list[tuple[str, str]]:
     return re.findall(r"\[/(.+?)\$/i, \(p\) => `(.+?)`\]", text)
 
 
-# ---- PCD-4 Group 2 — Load code is the same as the tab's  (Q2) · unit
-# Plan: docs/plans/PCD-4-reuse-existing-dataset-plan.md §7
+# ---- Load code is the same as the tab's · unit
 # Baseline: Given a ready download with `iris.csv` · When `load_code(view)`
 
 
 def test_download_csv_load_code_matches_the_panel():
-    # ✅1 · Changed: —
+    # Positive · Changed: —
     # Then: `import pandas as pd\n\ndf = pd.read_csv("/work/datasets/hf-scikit-learn--iris/iris.csv")\ndf.head()\n`
     # Demonstrates: same code as the tab
     assert load_code(download("iris.csv")) == (
@@ -41,13 +40,13 @@ def test_download_csv_load_code_matches_the_panel():
 
 
 def test_created_file_load_code_reads_its_work_path():
-    # ✅2 · Changed: created `/work/data.csv`
+    # Positive · Changed: created `/work/data.csv`
     # Then: `pd.read_csv("/work/data.csv")`
     assert load_code(created("/work/data.csv")) == 'import pandas as pd\n\ndf = pd.read_csv("/work/data.csv")\ndf.head()\n'
 
 
 def test_every_panel_reader_is_used():
-    # ✅3 · Changed: `.tsv`, `.tsv.gz`, `.parquet`, `.jsonl`, `.json`, `.xlsx`, `.feather`
+    # Positive · Changed: `.tsv`, `.tsv.gz`, `.parquet`, `.jsonl`, `.json`, `.xlsx`, `.feather`
     # Then: same reader as `loadCode.ts`
     # Demonstrates: no format loads differently from the tab
     readers = panel_readers()
@@ -61,7 +60,7 @@ def test_every_panel_reader_is_used():
 
 
 def test_more_than_five_tables_adds_a_comment():
-    # ✅4 · Changed: 7 CSVs
+    # Positive · Changed: 7 CSVs
     # Then: 5 `df` lines + `# 2 more data files in …/`
     code = load_code(download(*[f"t{i}.csv" for i in range(7)]))
     lines = code.splitlines()
@@ -71,12 +70,12 @@ def test_more_than_five_tables_adds_a_comment():
 
 
 def test_download_without_data_files_lists_the_folder():
-    # ❌1 · Changed: only `.txt`
+    # Negative · Changed: only `.txt`
     # Then: `os.listdir` code
     assert load_code(download("README.txt")) == f'import os\n\nfolder = "{IRIS}"\nprint(sorted(os.listdir(folder)))\n'
 
 
 def test_created_non_table_file_prints_its_start():
-    # ❌2 · Changed: unknown extension
+    # Negative · Changed: unknown extension
     # Then: `print(open("/work/x").read(2000))`
     assert load_code(created("/work/x")) == 'print(open("/work/x").read(2000))\n'

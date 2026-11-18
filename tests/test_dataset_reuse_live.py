@@ -1,4 +1,4 @@
-"""PCD-4 live checks: the real assistant follows the reuse rules (AC1–AC8).
+"""Live checks: the real assistant follows the reuse rules.
 
 Talks to the configured model through OpenRouter with fake tools that record
 calls. Opt-in only: `pytest -m live` (pytest.ini deselects them by default);
@@ -161,15 +161,14 @@ class FirstRows:
         return FIRST_ROWS
 
 
-# ---- PCD-4 Group 5 — The real assistant follows the rules  (AC1–AC8) · live, opt-in `@pytest.mark.live` (Q3: yes)
-# Plan: docs/plans/PCD-4-reuse-existing-dataset-plan.md §7
+# ---- The real assistant follows the rules · live, opt-in `@pytest.mark.live`
 # Baseline: scripted chat with the configured model, fake tools that record calls, project with iris ready (with description) · run with `pytest -m live`; skipped without `OPENROUTER_API_KEY`
 
 
 def test_live_ready_dataset_is_reused():
-    # ✅1 · Changed: "create an iris dataset"
+    # Positive · Changed: "create an iris dataset"
     # Then: `dataset_list` before any `dataset_search`; no download / file write; path in reply
-    # Demonstrates: AC1, and that it looks first unprompted
+    # Demonstrates: a matching dataset is reused, and it looks first unprompted
     chat = Chat([record()])
     reply = run(chat.ask("create an iris dataset"))
     names = chat.names()
@@ -181,9 +180,9 @@ def test_live_ready_dataset_is_reused():
 
 
 def test_live_created_file_is_reused():
-    # ✅2 · Changed: only created `Iris.csv`
+    # Positive · Changed: only created `Iris.csv`
     # Then: `/work/Iris.csv`; no new file
-    # Demonstrates: AC2
+    # Demonstrates: a created file is reused too
     chat = Chat([created_record("Iris.csv")])
     reply = run(chat.ask("get me the iris data"))
     chat.assert_nothing_new()
@@ -191,9 +190,9 @@ def test_live_created_file_is_reused():
 
 
 def test_live_request_in_other_words_finds_it():
-    # ✅3 · Changed: "get me the flower petal measurements"
+    # Positive · Changed: "get me the flower petal measurements"
     # Then: iris path; no download
-    # Demonstrates: Q1
+    # Demonstrates: a request in other words still finds the data
     chat = Chat([record()])
     reply = run(chat.ask("get me the flower petal measurements"))
     chat.assert_nothing_new()
@@ -201,7 +200,7 @@ def test_live_request_in_other_words_finds_it():
 
 
 def test_live_neutral_file_found_by_columns():
-    # ✅4 · Changed: `data.csv` with iris columns
+    # Positive · Changed: `data.csv` with iris columns
     # Then: `/work/data.csv`
     # Demonstrates: columns work end to end
     chat = Chat([created_record("data.csv", columns=IRIS_COLUMNS)])
@@ -211,9 +210,9 @@ def test_live_neutral_file_found_by_columns():
 
 
 def test_live_assistant_file_is_looked_at_and_described():
-    # ✅5 · Changed: assistant `data.xls`, nothing known
+    # Positive · Changed: assistant `data.xls`, nothing known
     # Then: `notebook_run` reading first rows, then `dataset_describe` with text, no ask
-    # Demonstrates: AC7
+    # Demonstrates: data that says nothing about itself is looked at and described
     chat = Chat([created_record("data.xls", columns=[], describe="write")])
     run(chat.ask("I need the iris flower data for a quick analysis"))
     names = chat.names()
@@ -224,18 +223,18 @@ def test_live_assistant_file_is_looked_at_and_described():
 
 
 def test_live_no_match_searches_as_today():
-    # ✅6 · Changed: empty project
+    # Positive · Changed: empty project
     # Then: `dataset_search` called
-    # Demonstrates: AC3
+    # Demonstrates: with no match, it searches as before
     chat = Chat([])
     run(chat.ask("find me an iris dataset"))
     assert "dataset_search" in chat.names(), chat.calls
 
 
 def test_live_failed_match_offers_download():
-    # ❌1 · Changed: iris `failed`; the fake retry question answers No
-    # Then: no file write; either it asks in words, or it calls `dataset_download` and the app asks (L1 b)
-    # Demonstrates: AC4
+    # Negative · Changed: iris `failed`; the fake retry question answers No
+    # Then: no file write; either it asks in words, or it calls `dataset_download` and the app asks
+    # Demonstrates: a broken copy is not downloaded again without a yes
     chat = Chat([record(status="failed", error="Download failed: connection lost", ref="hf:scikit-learn/iris")])
     reply = run(chat.ask("get me the iris data"))
     chat.assert_nothing_new()  # a download call is fine: the app asked "Download again?" and the fake user said No
@@ -246,18 +245,18 @@ def test_live_failed_match_offers_download():
 
 
 def test_live_explicit_new_copy_is_made():
-    # ✅7 · Changed: "make a new iris file anyway"
+    # Positive · Changed: "make a new iris file anyway"
     # Then: `notebook_run` or `dataset_download`
-    # Demonstrates: AC5
+    # Demonstrates: a new copy is made when the user asks for one
     chat = Chat([record()])
     run(chat.ask("I know I already have iris. Make a new iris file anyway, saved as /work/iris_copy.csv."))
     assert "notebook_run" in chat.names() or "dataset_download" in chat.names(), chat.calls
 
 
 def test_live_two_matches_asks_which():
-    # ❌2 · Changed: download + created iris
+    # Negative · Changed: download + created iris
     # Then: names both; nothing created
-    # Demonstrates: AC6
+    # Demonstrates: with two matches, it asks which
     chat = Chat([record(), created_record("Iris.csv")])
     reply = run(chat.ask("get me the iris data"))
     chat.assert_nothing_new()
@@ -265,9 +264,9 @@ def test_live_two_matches_asks_which():
 
 
 def test_live_uploaded_file_is_read_without_asking():
-    # ❌3 · Changed: a file the user put in, `upload.xls`, nothing known
+    # Negative · Changed: a file the user put in, `upload.xls`, nothing known
     # Then: the assistant opens it with notebook_run (no question exists) before any download, and describes it
-    # Demonstrates: AC8 (R54): every file in the project is already allowed
+    # Demonstrates: every file in the project is already allowed
     chat = Chat([created_record("upload.xls", columns=[], describe="write")])
     run(chat.ask("Is there any iris flower data in my project I can use?"))
     names = chat.names()

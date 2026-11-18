@@ -355,8 +355,7 @@ def test_downgrade_refuses_with_link_rows(root):
         assert connection.execute(text("SELECT count(*) FROM pool_entries WHERE source = 'link'")).scalar() == 1
 
 
-# ---- PCD-4 Group 8 — Migration  · integration (real SQLite file)
-# Plan: docs/plans/PCD-4-reuse-existing-dataset-plan.md §7
+# ---- Migration · integration (real SQLite file)
 # Baseline: Given a database at `0003` with one pool entry and one created row · When upgraded to `0004`
 
 
@@ -385,7 +384,7 @@ def at_0003_with_rows(root):
 
 
 def test_0004_adds_the_four_columns_as_null(root):
-    # ✅1 · Changed: —
+    # Positive · Changed: —
     # Then: four columns exist, rows NULL, other data unchanged; `created_by` check rejects other values
     # Demonstrates: old projects keep working
     engine = at_0003_with_rows(root)
@@ -411,7 +410,7 @@ def test_0004_adds_the_four_columns_as_null(root):
 
 
 def test_0004_downgrade_drops_the_four_columns(root):
-    # ✅2 · Changed: downgrade
+    # Positive · Changed: downgrade
     # Then: columns gone; rows intact
     # Demonstrates: rollback
     engine = at_0003_with_rows(root)
