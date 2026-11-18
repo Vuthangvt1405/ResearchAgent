@@ -12,6 +12,7 @@ if TYPE_CHECKING:
 
 DescribeNeed = Literal["write"]
 DESCRIPTION_MAX = 300  # one line, like catalog descriptions
+ELLIPSIS = "…"
 
 
 def describe_need(view: "DatasetRecordView") -> DescribeNeed | None:
@@ -26,10 +27,18 @@ def describe_need(view: "DatasetRecordView") -> DescribeNeed | None:
     return "write"
 
 
-def one_line_description(text: str) -> str:
-    """Printable characters only, whitespace runs as one space, at most DESCRIPTION_MAX chars ("…" when cut)."""
+def one_line(text: object, limit: int) -> str:
+    """Printable characters only, whitespace runs as one space, at most `limit` chars ("…" when cut).
+
+    Names and descriptions go into what the model reads, so stored text must never add lines to it.
+    """
     printable = "".join(c if c.isprintable() else " " for c in str(text))
     line = " ".join(printable.split())
-    if len(line) <= DESCRIPTION_MAX:
+    if len(line) <= limit:
         return line
-    return line[: DESCRIPTION_MAX - 1].rstrip() + "…"
+    return line[: limit - 1].rstrip() + ELLIPSIS
+
+
+def one_line_description(text: str) -> str:
+    """A description as one line of at most DESCRIPTION_MAX chars."""
+    return one_line(text, DESCRIPTION_MAX)
