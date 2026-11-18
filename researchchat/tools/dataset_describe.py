@@ -9,6 +9,7 @@ import json
 import chainlit as cl
 
 from researchchat.tools.dataset_download import error_json
+from researchchat.tools.services import DatasetDescriber
 from researchchat.workspace import ErrorCode, WorkspaceError
 
 DEFINITION = {
@@ -57,7 +58,7 @@ looked = ChatLooks()  # undescribed datasets the assistant looked at (notebook_r
 async def run(
     args: dict,
     *,
-    svc=None,
+    svc: DatasetDescriber | None = None,
     project_id: str | None = None,
 ) -> tuple[str, str]:
     """Return (text shown in the chat step, JSON for the model).

@@ -4,6 +4,7 @@ import json
 
 import chainlit as cl
 
+from researchchat.tools.services import DatasetLister
 from researchchat.workspace.datasets.describe import one_line
 from researchchat.workspace.datasets.service import human_size
 
@@ -92,7 +93,7 @@ def _safe_view(v: dict) -> dict:
     return safe
 
 
-async def run(args: dict, *, svc=None, project_id: str | None = None) -> tuple[str, str]:
+async def run(args: dict, *, svc: DatasetLister | None = None, project_id: str | None = None) -> tuple[str, str]:
     """Return (text shown in the chat step, JSON {"datasets": [DatasetRecordView], "note": reuse rules})."""
     if svc is None or project_id is None:
         from researchchat.workspace import actions

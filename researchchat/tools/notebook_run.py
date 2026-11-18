@@ -5,10 +5,16 @@ reasons and Run / Skip buttons, and runs only on Run. Any file in the project
 may be read without asking the user, whoever added it.
 """
 
+from typing import TYPE_CHECKING
+
 import chainlit as cl
 
 from researchchat.config import MODEL_AUTO_RUN, RISKY_CODE_NEEDS_APPROVAL
+from researchchat.tools.services import ApproveRun, NotebookRunner, UndescribedDatasets
 from researchchat.workspace import WorkspaceError, risk
+
+if TYPE_CHECKING:
+    from researchchat.tools.dataset_describe import ChatLooks
 
 DEFINITION = {
     "type": "function",
@@ -42,7 +48,9 @@ def undescribed_named_in(code: str, views: list[dict]) -> list[dict]:
     return [v for v in views if v.get("describe") == "write" and (v["path"].lower() in lowered or v["name"].lower() in lowered)]
 
 
-def _remember_looks(code: str, datasets, project_id: str, session_id: str, looked) -> None:
+def _remember_looks(
+    code: str, datasets: UndescribedDatasets, project_id: str, session_id: str, looked: "ChatLooks | None"
+) -> None:
     """The assistant looked at these undescribed datasets in this chat: downloads may go ahead."""
     from researchchat.tools.dataset_describe import looked as chat_looks
 
@@ -79,12 +87,12 @@ async def ask_approval(code: str, reasons: list[str]) -> bool:
 async def run(
     args: dict,
     *,
-    svc=None,
+    svc: NotebookRunner | None = None,
     project_id: str | None = None,
-    approve=None,
-    datasets=None,
+    approve: ApproveRun | None = None,
+    datasets: UndescribedDatasets | None = None,
     session_id: str | None = None,
-    looked=None,
+    looked: "ChatLooks | None" = None,
 ) -> tuple[str, str]:
     """Return (text shown in the chat step, result sent to the model).
 
