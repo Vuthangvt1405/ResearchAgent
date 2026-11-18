@@ -13,6 +13,7 @@ import chainlit as cl
 from researchchat.tools.titles import shorten
 from researchchat.workspace import ErrorCode, WorkspaceError
 from researchchat.workspace.datasets import links
+from researchchat.workspace.datasets.describe import look_first_message
 from researchchat.workspace.datasets.service import REF_PREFIXES, human_size
 from researchchat.workspace.datasets.sources import DatasetPlan
 
@@ -212,12 +213,9 @@ async def run(
             pasted_links = pasted_links_in_chat()
     not_looked_at = undescribed_not_looked_at(svc, project_id, session_id, ref, looked)
     if not_looked_at:
-        names = ", ".join(v["name"] for v in not_looked_at[:5])
         error = WorkspaceError(
             ErrorCode.LOOK_FIRST,
-            f"The project already has data that says nothing about itself: {names}. Look at its first rows with "
-            "notebook_run (its load_code is in dataset_list) before downloading anything: it may be what the user "
-            "wants. If it isn't, download after that.",
+            look_first_message([v["name"] for v in not_looked_at]),
             {"datasets": [v["dataset_id"] for v in not_looked_at]},
         )
         raise ValueError(error_json(error))

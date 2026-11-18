@@ -17,6 +17,7 @@ import httpx
 from researchchat.config import DATASET_MAX_RESULTS
 from researchchat.tools.titles import shorten
 from researchchat.workspace import WorkspaceError
+from researchchat.workspace.datasets.describe import look_first_message
 
 DEFINITION = {
     "type": "function",
@@ -289,11 +290,7 @@ def _undescribed_note(svc, project_id: str | None) -> str | None:
         names = [v["name"] for v in svc.needs_description(project_id)]
     except WorkspaceError:
         return None
-    if not names:
-        return None
-    return (f"The project already has data that says nothing about itself: {', '.join(names[:5])}. "
-            "Before you download anything, look at its first rows with notebook_run (dataset_list has its "
-            "load_code): it may be what the user wants.")
+    return look_first_message(names) if names else None
 
 
 async def run(args: dict, *, svc=None, project_id: str | None = None) -> tuple[str, str]:

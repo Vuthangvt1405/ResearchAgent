@@ -42,3 +42,14 @@ def one_line(text: object, limit: int) -> str:
 def one_line_description(text: str) -> str:
     """A description as one line of at most DESCRIPTION_MAX chars."""
     return one_line(text, DESCRIPTION_MAX)
+
+
+LOOK_FIRST_NAMES_SHOWN = 5  # enough to recognise the data; the full list is in dataset_list
+
+
+def look_first_message(names: list[str]) -> str:
+    """Tells the model to look at the project's undescribed data before it fetches new data."""
+    shown = ", ".join(names[:LOOK_FIRST_NAMES_SHOWN])
+    return (f"The project already has data that says nothing about itself: {shown}. Look at its first rows with "
+            "notebook_run (its load_code is in dataset_list) before downloading anything: it may be what the user "
+            "wants. If it isn't, download after that.")
