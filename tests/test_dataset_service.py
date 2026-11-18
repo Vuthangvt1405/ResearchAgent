@@ -7,8 +7,10 @@ awaited with wait_idle().
 """
 
 import asyncio
+import errno
 import hashlib
 import json
+import os
 import re
 from pathlib import Path
 from types import SimpleNamespace
@@ -22,6 +24,7 @@ from researchchat.workspace.datasets import store as ds
 from researchchat.workspace.datasets.pool import DatasetPool, PoolEntry, PoolFile
 from researchchat.workspace.datasets.service import DatasetService, DatasetsSettings
 from researchchat.workspace.datasets.sources import DatasetPlan, PlannedFile
+from researchchat.workspace.datasets.views import VIEW_FAILED_MESSAGE, VIEWS_DIR
 from researchchat.workspace.service import NotebookService
 from tests.conftest import FakeChats, FakeFreeDisk, FakeKernels, fake_lookup
 
@@ -1597,5 +1600,126 @@ def test_link_never_asks_before_download(root):
         approver = Approver(False)
         started = await svc.request("p1", "s1", LINK, approve=approver, pasted_links=PASTED)
         assert approver.calls == [] and started["status"] == "queued"
+
+    run(scenario())
+
+
+# ---- Kernel views follow the tab
+# Baseline: B (p2) has the dataset ready in the pool; A (p1) downloads it.
+
+ENTRY_R1, ENTRY_R2 = f"hf-org--name@{R1[:7]}", f"hf-org--name@{R2[:7]}"
+
+
+def view_tree(root, pid):
+    view = root / VIEWS_DIR / pid
+    return sorted(p.relative_to(view).as_posix() for p in view.rglob("*") if p.is_file()) if view.exists() else []
+
+
+def both_files(entry_id=ENTRY_R1):
+    return [f"{entry_id}/a.csv", f"{entry_id}/b.csv"]
+
+
+def test_reusing_pooled_dataset_adds_it_to_the_view_at_once(root):
+    # Then: no download starts and A's view holds the files
+    # Demonstrates: reuse keeps working and is readable straight away
+    async def scenario():
+        env = Env(root)
+        await env.start()
+        await download(env, pid="p2", session="s2")
+        before = len(env.catalog.file_requests())
+        started = await env.svc.request("p1", "s1", "hf:org/name", approve=yes)
+        assert started["from_pool"] and len(env.catalog.file_requests()) == before
+        assert view_tree(root, "p1") == both_files()
+        assert os.path.samefile(root / VIEWS_DIR / "p1" / ENTRY_R1 / "a.csv", env.pool_file("a.csv"))
+
+    run(scenario())
+
+
+def test_joining_a_running_download_adds_files_as_they_finish(root):
+    # Changed: B is still downloading
+    # Then: A's view gains each file as it is committed
+    # Demonstrates: joining keeps working; no kernel restart is needed
+    async def scenario():
+        env = Env(root)
+        env.catalog.behaviours["a.csv"] = "block"
+        await env.start()
+        await env.svc.request("p2", "s2", "hf:org/name", approve=yes)
+        await env.svc.request("p1", "s1", "hf:org/name", approve=yes)
+        assert len(env.svc.active_jobs()) == 1
+        assert f"{ENTRY_R1}/a.csv" not in view_tree(root, "p1")
+        env.catalog.gate.set()
+        await env.svc.wait_idle()
+        assert view_tree(root, "p1") == both_files() == view_tree(root, "p2")
+
+    run(scenario())
+
+
+def test_update_to_new_version_switches_view_to_new_entry(root):
+    # Changed: A updates to a new revision
+    # Then: A's view holds only the new entry
+    # Demonstrates: an update doesn't leave the old version readable
+    async def scenario():
+        env = Env(root)
+        await env.start()
+        await download(env)
+        await download(env, pid="p2", session="s2")
+        env.catalog.new_revision("org/name", R2, {"a.csv": b"new-a", "b.csv": b"new-b"})
+        await download(env, update=True)
+        assert view_tree(root, "p1") == both_files(ENTRY_R2)
+        assert view_tree(root, "p2") == both_files(ENTRY_R1)
+
+    run(scenario())
+
+
+def test_delete_removes_view_files(root):
+    # Changed: A deletes the dataset
+    # Then: A's view is empty and B's is unchanged
+    # Demonstrates: deleting from one tab revokes only that project's reading
+    async def scenario():
+        env = Env(root)
+        await env.start()
+        await download(env)
+        await download(env, pid="p2", session="s2")
+        await env.svc.delete("p1", "hf-org--name")
+        assert view_tree(root, "p1") == []
+        assert view_tree(root, "p2") == both_files()
+
+    run(scenario())
+
+
+def test_failed_view_sync_marks_dataset_failed(root, monkeypatch):
+    # Changed: syncing the view raises
+    # Then: the row is failed with the reason and the view holds nothing partial
+    # Demonstrates: a view failure is visible, never silent
+    def cross_device(source, target):
+        raise OSError(errno.EXDEV, "Invalid cross-device link")
+
+    async def scenario():
+        env = Env(root)
+        await env.start()
+        monkeypatch.setattr(os, "link", cross_device)
+        await download(env)
+        [record] = records(root, "p1")
+        assert record.status == "failed" and record.error == VIEW_FAILED_MESSAGE
+        assert view_tree(root, "p1") == []
+
+    run(scenario())
+
+
+def test_startup_cleanup_removes_views_of_unknown_projects(root):
+    # Changed: a stray view folder for a project that no longer exists
+    # Then: startup cleanup removes it and the pool is intact
+    # Demonstrates: leftovers don't keep bytes alive
+    async def scenario():
+        env = Env(root)
+        await env.start()
+        await download(env)
+        stray = root / VIEWS_DIR / "gone"
+        stray.mkdir()
+        os.link(env.pool_file("a.csv"), stray / "a.csv")
+        await env.start()
+        assert not stray.exists()
+        assert view_tree(root, "p1") == both_files()
+        assert env.pool_file("a.csv").read_bytes() == b"a,b\n1,2\n"
 
     run(scenario())

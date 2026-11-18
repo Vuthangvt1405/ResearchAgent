@@ -40,7 +40,8 @@ from researchchat.config import (
     WORKSPACES_DIR,
 )
 from researchchat.workspace import ErrorCode, WorkspaceError
-from researchchat.workspace.datasets.pool import KERNEL_POOL_ROOT, POOL_DIR
+from researchchat.workspace.datasets.pool import KERNEL_POOL_ROOT
+from researchchat.workspace.datasets.views import VIEWS_DIR
 
 CONTAINER_PREFIX = "rc-kernel-"
 SCOPE_LABEL = "researchchat.scope"  # which workspaces folder a container belongs to
@@ -84,7 +85,7 @@ class ContainerMounts:
 
     files_dir: Path  # → /work, read-write
     conn_dir: Path  # → /conn, read-only
-    pool_dir: Path  # → /.dataset-pool, read-only
+    dataset_view_dir: Path  # → /.dataset-pool, read-only; only the project's own datasets
 
 
 @dataclass
@@ -177,6 +178,8 @@ class KernelRegistry:
         self._starting: dict[str, asyncio.Lock] = {}
         self._unavailable = False
         self._reaper: asyncio.Task | None = None
+        # Set at the entry point: builds the project's dataset view and returns the folder to mount
+        self.before_start: Callable[[str], Awaitable[Path]] | None = None
 
     # ---- status ----
 
@@ -218,6 +221,7 @@ class KernelRegistry:
     async def _start_container(self, project_id: str, files_dir: Path) -> None:
         name = self.container_name(project_id)
         await docker("rm", "-f", name)
+        dataset_view_dir = await self._dataset_view_dir(project_id)
 
         conn_dir = self.root / CONN_DIR / project_id
         conn_dir.mkdir(parents=True, exist_ok=True)
@@ -233,9 +237,7 @@ class KernelRegistry:
         (conn_dir / "kernel.json").write_text(json.dumps({**info, "ip": "0.0.0.0"}), encoding="utf-8")
 
         files_dir.mkdir(parents=True, exist_ok=True)
-        pool_dir = self.root / POOL_DIR
-        pool_dir.mkdir(parents=True, exist_ok=True)  # docker refuses to bind a missing folder
-        mounts = ContainerMounts(files_dir.resolve(), conn_dir.resolve(), pool_dir.resolve())
+        mounts = ContainerMounts(files_dir.resolve(), conn_dir.resolve(), dataset_view_dir.resolve())
         result = await docker(*self.run_arguments(name, project_id, mounts, (shell, iopub, stdin, control, hb)), timeout=120)
         if result.returncode != 0:
             shutil.rmtree(conn_dir, ignore_errors=True)
@@ -254,8 +256,18 @@ class KernelRegistry:
             raise WorkspaceError(ErrorCode.KERNEL_DEAD, "The kernel didn't start in time.") from e
         kernel.state = "idle"
 
+    async def _dataset_view_dir(self, project_id: str) -> Path:
+        """The project's own dataset view, rebuilt now so a project made before views existed works as is.
+
+        Without a view builder the kernel gets an empty folder: the whole pool is never mounted."""
+        if self.before_start is not None:
+            return await self.before_start(project_id)
+        empty_view = self.root / VIEWS_DIR / project_id
+        empty_view.mkdir(parents=True, exist_ok=True)  # docker refuses to bind a missing folder
+        return empty_view
+
     def run_arguments(self, name: str, project_id: str, mounts: ContainerMounts, ports: tuple[int, ...]) -> list[str]:
-        """The `docker run` arguments for one kernel: /work read-write, /conn and the dataset pool read-only."""
+        """The `docker run` arguments for one kernel: /work read-write, /conn and the project's dataset view read-only."""
         published = [arg for p in ports for arg in ("-p", f"127.0.0.1:{p}:{p}")]
         return [
             "run", "-d", "--rm", "--init", "--name", name,
@@ -268,7 +280,7 @@ class KernelRegistry:
             "--mount", f"type=bind,source={mounts.files_dir},target={WORK_DIR}",
             "--mount", f"type=bind,source={mounts.conn_dir},target=/conn,readonly",
             # Project links into the pool are relative and land here (datasets/pool.py)
-            "--mount", f"type=bind,source={mounts.pool_dir},target={KERNEL_POOL_ROOT},readonly",
+            "--mount", f"type=bind,source={mounts.dataset_view_dir},target={KERNEL_POOL_ROOT},readonly",
             "-w", WORK_DIR,
             *published,
             self.docker.image,

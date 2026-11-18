@@ -35,6 +35,7 @@ from researchchat.workspace.datasets.created import CreatedDatasets
 from researchchat.workspace.datasets.pool import DatasetPool, PoolEntry, PoolFile
 from researchchat.workspace.datasets.sources import DatasetPlan, PlannedFile
 from researchchat.workspace.datasets.store import DatasetStatus, ProjectDataset, Source
+from researchchat.workspace.datasets.views import ProjectViews, visible_pool_files
 from researchchat.workspace.service import (
     DatasetOrigin,
     DatasetProps,
@@ -268,6 +269,7 @@ class DatasetService:
         progress_interval: float = PROGRESS_INTERVAL,
         pool: DatasetPool | None = None,
         created: CreatedDatasets | None = None,
+        views: ProjectViews | None = None,
     ):
         # Only stores dependencies: actions.py builds this at import time.
         self.settings = settings or DatasetsSettings()
@@ -282,6 +284,7 @@ class DatasetService:
         self.progress_interval = progress_interval
         self.pool = pool or DatasetPool(root)  # index, links, and the one lock for both
         self.created = created or CreatedDatasets(root)  # files the project's own code wrote
+        self.views = views or ProjectViews(self.pool, root)  # what each project's kernel may read
         self.rev = 0  # datasets_rev for NotebookProps
         self._datasets: dict[str, list[ProjectDataset]] = {}  # project_id -> datasets (cache of its database rows)
         self._jobs: list[Job] = []  # app-wide, in queue order (running ones included)
@@ -553,6 +556,7 @@ class DatasetService:
             dataset.status, dataset.error = "ready", None
             if newly_linked or dataset.linked_at is None:
                 dataset.linked_at = utc_now()
+        self._refresh_view(project_id, dataset)  # after the status, so a view failure is what the card shows
         return newly_linked
 
     def _queue_downloads(self, request: DownloadRequest, dataset: ProjectDataset, fetch: FetchPlan) -> Job | None:
@@ -663,6 +667,7 @@ class DatasetService:
         self.pool.link_files(project_id, dataset.id, entry, wanted)
         self.pool.save_index()  # the new version may be new to the index; the project row points to it (FK)
         self._save(project_id)
+        self._refresh_view(project_id, dataset)
         self._remove_entry_if_unused(old_entry)
 
     @staticmethod
@@ -717,6 +722,29 @@ class DatasetService:
             "origin": "downloaded",
         }
 
+    async def sync_view(self, project_id: str) -> Path:
+        """Rebuild the project's kernel view from its tab under the pool lock; returns the folder to mount."""
+        async with self._lock:
+            return self._sync_view(project_id, self._load(project_id))
+
+    def _sync_view(self, project_id: str, datasets: list[ProjectDataset]) -> Path:
+        return self.views.sync(project_id, visible_pool_files(datasets, self.pool.entries()))
+
+    def _refresh_view(self, project_id: str, changed: ProjectDataset | None = None) -> None:
+        """Under the lock: the project's kernel view follows its tab at once, so no restart is needed.
+
+        When the view can't take the changed dataset, that dataset is marked failed and left out of
+        the view, so the project never reads half of it and the rest of the tab stays readable."""
+        datasets = self._load(project_id)
+        try:
+            self._sync_view(project_id, datasets)
+        except WorkspaceError as error:
+            if changed is None:
+                raise
+            changed.status, changed.error = "failed", str(error)[:200]
+            self._save(project_id)
+            self._sync_view(project_id, [d for d in datasets if d is not changed])
+
     def sync_created(self, project_id: str) -> None:
         """NotebookService.after_run: scan the project's files/ and bump datasets_rev when created rows changed."""
         if self.created.sync(project_id):
@@ -751,6 +779,7 @@ class DatasetService:
             self.pool.unlink_dataset(project_id, dataset.id)
             datasets.remove(dataset)
             self._save(project_id)
+            self._refresh_view(project_id)
             freed = self._remove_entry_if_unused(dataset.pool_entry)
             still_used_by = len(self.pool.projects_using(dataset.pool_entry))
         await self._push(project_id)
@@ -812,6 +841,7 @@ class DatasetService:
             self.pool.unlink_dataset(project_id, dataset_id)
             datasets.remove(dataset)
         self._save(project_id)
+        self._refresh_view(project_id)
 
     # ---- background side ----
 
@@ -823,6 +853,7 @@ class DatasetService:
                 ds.remove_tree(self.pool.partial_dir())
                 for project in store.list_projects(self.root):
                     self._fail_stale(project.id)
+                self.views.prune({project.id for project in store.list_projects(self.root)})
         finally:
             self._ready.set()
 
@@ -950,6 +981,7 @@ class DatasetService:
                 dataset = ds.find_project_dataset(self._load(project_id), waiter.dataset_id)
                 if dataset is not None and not waiter.switches_entry and f.path in waiter.paths:
                     self.pool.link_files(project_id, dataset.id, entry, [f.path])
+                    self._refresh_view(project_id, dataset)
 
     async def _finish_ready(self, job: Job) -> None:
         async with self._lock:
@@ -978,7 +1010,8 @@ class DatasetService:
             self._switch_entry(project_id, dataset, entry, sorted(waiter.paths))
         dataset.status, dataset.error, dataset.linked_at = "ready", None, utc_now()
         self._save(project_id)
-        return True
+        self._refresh_view(project_id, dataset)  # a view failure turns the card failed, not ready
+        return dataset.status == "ready"
 
     async def _finish_failed(self, job: Job, reason: str) -> None:
         async with self._lock:
