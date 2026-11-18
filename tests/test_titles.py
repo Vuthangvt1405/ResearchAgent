@@ -40,3 +40,15 @@ def test_step_titles_use_short_forms():
     long_url = "https://example.com/" + "a" * 300
     assert len(read_page.step_title({"url": long_url})) < 80
     assert len(web_search.step_title({"query": "q " * 200})) < 80
+
+
+def test_every_registered_tool_has_a_step_title():
+    # Negative · Changed: a tool module without step_title
+    # Then: each tool the model can call gives a non-empty chat step title, even with no arguments
+    # Demonstrates: run_tool_call never fails on the title before the tool runs
+    from researchchat.tools import _BY_NAME
+
+    for name, module in _BY_NAME.items():
+        assert callable(getattr(module, "step_title", None)), name
+        title = module.step_title({})
+        assert isinstance(title, str) and title.strip(), name

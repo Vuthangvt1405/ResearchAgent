@@ -35,6 +35,11 @@ DEFINITION = {
     },
 }
 
+
+def step_title(args: dict) -> str:
+    return "Describe dataset"
+
+
 class ChatLooks:
     """Undescribed datasets the assistant ran code on, per chat (memory only, forgotten when the chat ends)."""
 
