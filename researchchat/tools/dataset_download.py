@@ -1,8 +1,9 @@
 """dataset_download tool: start a background download into the project.
 
 Quick checks happen here; the transfer runs in the background and the tool
-returns at once. Downloads above ask_above_mb show Download / Skip.
-Unknown arguments are ignored, so {"approved": true} can't skip the prompt.
+returns at once. Downloads above ask_above_mb show Download / Skip, and a
+dataset whose copy in the project failed or is missing shows "Download again?"
+first. Unknown arguments are ignored, so {"approved": true} can't skip a prompt.
 """
 
 import json
@@ -12,7 +13,7 @@ import chainlit as cl
 from researchchat.tools.titles import shorten
 from researchchat.workspace import ErrorCode, WorkspaceError
 from researchchat.workspace.datasets import links
-from researchchat.workspace.datasets.service import human_size
+from researchchat.workspace.datasets.service import REF_PREFIXES, human_size
 from researchchat.workspace.datasets.sources import DatasetPlan
 
 DEFINITION = {
@@ -30,7 +31,9 @@ DEFINITION = {
             "(names or globs like \"*.csv\") for big datasets. Set `update` only "
             "when the user asks to update to the newest version. Data other "
             "projects already have is ready at once. Dataset files are read-only: "
-            "copy a file elsewhere in /work before changing it."
+            "copy a file elsewhere in /work before changing it. Check dataset_list first: "
+            "when the project already has matching data, use it; download a new copy only "
+            "when the user asks for one or for a different version."
         ),
         "parameters": {
             "type": "object",
@@ -126,6 +129,50 @@ async def ask_approval(plan: DatasetPlan, download_bytes: int) -> bool:
     return bool(answer and answer.get("payload", {}).get("download"))
 
 
+BROKEN_STATUSES = ("failed", "missing")  # a copy the project can't use; downloading it again needs the user's yes
+
+
+async def ask_retry(name: str, reason: str | None) -> bool:
+    """Download again / Skip for a copy that can't be used; False on Skip or timeout."""
+    why = f" ({reason})" if reason else ""
+    ask = cl.AskActionMessage(
+        content=f"This project's copy of **{name}** can't be used{why}. Download it again?",
+        actions=[
+            cl.Action(name="download_again", payload={"download": True}, label="Download again"),
+            cl.Action(name="skip", payload={"download": False}, label="Skip"),
+        ],
+        timeout=APPROVAL_TIMEOUT_SECONDS,
+    )
+    ask.parent_id = None  # don't hide the question inside the collapsed tool group
+    answer = await ask.send()
+    return bool(answer and answer.get("payload", {}).get("download"))
+
+
+def undescribed_not_looked_at(svc, project_id: str, session_id: str, ref: str, looked=None) -> list[dict]:
+    """Ready rows with describe "write" the assistant hasn't looked at in this chat (AC7); none for a pasted link."""
+    from researchchat.tools.dataset_describe import looked as chat_looks
+
+    try:
+        if links.parse_dataset_ref(ref)[0] == links.LINK_SOURCE:
+            return []  # the user pasted it: their explicit wish
+        views = svc.needs_description(project_id)
+    except WorkspaceError:
+        return []  # the request reports a bad ref or project
+    seen = looked or chat_looks
+    return [v for v in views if not seen.is_allowed(session_id, project_id, v["dataset_id"])]
+
+
+def broken_copy(svc, project_id: str, ref: str) -> dict | None:
+    """The project's own copy of this catalog entry when it is failed or missing; None otherwise (links too)."""
+    try:
+        source, source_id = links.parse_dataset_ref(ref)
+    except WorkspaceError:
+        return None  # the request reports the bad ref
+    prefix = REF_PREFIXES.get(source)
+    own = svc.project_refs(project_id).get(f"{prefix}:{source_id}") if prefix else None
+    return own if own and own["status"] in BROKEN_STATUSES else None
+
+
 def download_size_text(download_bytes: int) -> str:
     """The size to download, or "size unknown" when a linked website sent none (a download is never 0 B)."""
     return human_size(download_bytes) if download_bytes else "size unknown"
@@ -144,12 +191,15 @@ async def run(
     session_id: str | None = None,
     approve=None,
     pasted_links: frozenset[str] | None = None,
+    confirm_retry=None,
+    looked=None,
 ) -> tuple[str, str]:
     """Return (text shown in the chat step, JSON DownloadStarted for the model).
 
     svc / project_id / session_id / approve / pasted_links default to
     actions.datasets, this chat's project, cl.context.session.id, the chat
-    prompt and the links in the user's messages; tests pass fakes.
+    prompt and the links in the user's messages; tests pass fakes (confirm_retry:
+    the "Download again?" prompt).
     """
     ref, files, update = read_args(args)
     if svc is None or project_id is None or session_id is None:
@@ -160,6 +210,25 @@ async def run(
         session_id = session_id or cl.context.session.id
         if pasted_links is None:
             pasted_links = pasted_links_in_chat()
+    not_looked_at = undescribed_not_looked_at(svc, project_id, session_id, ref, looked)
+    if not_looked_at:
+        names = ", ".join(v["name"] for v in not_looked_at[:5])
+        error = WorkspaceError(
+            ErrorCode.LOOK_FIRST,
+            f"The project already has data that says nothing about itself: {names}. Look at its first rows with "
+            "notebook_run (its load_code is in dataset_list) before downloading anything: it may be what the user "
+            "wants. If it isn't, download after that.",
+            {"datasets": [v["dataset_id"] for v in not_looked_at]},
+        )
+        raise ValueError(error_json(error))
+    broken = broken_copy(svc, project_id, ref)
+    if broken and not await (confirm_retry or ask_retry)(broken["name"], broken.get("error")):
+        declined = WorkspaceError(
+            ErrorCode.DECLINED,
+            "The user chose not to download it again. Don't download it or any other copy now; tell the user "
+            "the project's copy can't be used and stop.",
+        )
+        return f"Skipped: **{broken['name']}** was not downloaded again.", error_json(declined)
     try:
         started = await svc.request(
             project_id, session_id, ref, files, update, approve=approve or ask_approval,

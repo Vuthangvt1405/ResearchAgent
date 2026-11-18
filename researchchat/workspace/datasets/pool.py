@@ -77,6 +77,7 @@ class PoolEntry:
     license: str | None  # shown in the details
     files: list[PoolFile] = field(default_factory=list)
     created_at: str = ""  # ISO 8601 UTC; "downloaded …" in details
+    description: str | None = None  # the catalog's one-line description; the same for every project using it
 
     def file(self, path: str) -> PoolFile | None:
         return next((f for f in self.files if f.path == path), None)
@@ -327,6 +328,7 @@ def _entry_from_row(row: Row, file_rows: list[Row]) -> PoolEntry | None:
     return PoolEntry(
         id=row.slug, source=row.source, source_id=row.source_id, revision=row.revision,
         name=row.name[: ds.NAME_MAX], url=row.url, license=row.license, files=files, created_at=row.created_at,
+        description=row.description,
     )
 
 
@@ -335,6 +337,7 @@ def _upsert_entry(connection: Connection, entry: PoolEntry) -> int:
     values = {
         "source": entry.source, "source_id": entry.source_id, "revision": entry.revision, "name": entry.name,
         "url": entry.url, "license": entry.license, "created_at": entry.created_at,
+        "description": entry.description,
     }
     statement = (
         sqlite_insert(pool_entries)

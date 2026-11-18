@@ -23,7 +23,7 @@ def test_each_switch_adds_its_own_tools():
     names = lambda s: [t["function"]["name"] for t in chosen_tools(s)]
     assert names({}) == []
     assert names({"web_search": True}) == ["web_search", "read_page", "dataset_search"]
-    notebook = ["notebook_read", "notebook_run", "dataset_download", "dataset_list", "dataset_delete"]
+    notebook = ["notebook_read", "notebook_run", "dataset_download", "dataset_list", "dataset_delete", "dataset_describe"]
     assert names({"notebook": True}) == notebook
     assert names({"web_search": True, "notebook": True}) == ["web_search", "read_page", "dataset_search"] + notebook
 

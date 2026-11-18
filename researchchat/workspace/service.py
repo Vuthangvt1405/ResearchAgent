@@ -90,6 +90,7 @@ class DatasetProps(TypedDict):
     error: str | None  # red line when failed
     shared_with: int  # other projects using the same pool entry; "Also used by N other projects"
     origin: DatasetOrigin  # which card layout to use, catalog details or "Created by myself"
+    assistant_description: str | None  # "Described by the assistant: …" line; None when the assistant wrote none
 
 
 class NotebookProps(TypedDict):
@@ -105,7 +106,8 @@ class NotebookProps(TypedDict):
 
 Notify = Callable[[str, NotebookProps], Awaitable[None]]
 DatasetState = Callable[[str], tuple[list[DatasetProps], int]]  # project_id -> (datasets, datasets_rev)
-AfterRun = Callable[[str], None]  # project_id -> scan its files/ for created datasets; called after every cell run
+AfterRun = Callable[..., None]  # (project_id, by) -> scan its files/ for created datasets; called after every cell run
+RunBy = Literal["assistant", "user"]  # who started a run: notebook_run, or a cell run from the panel
 
 
 # ---- output conversion ----------------------------------------------------------
@@ -303,8 +305,8 @@ class NotebookService:
         await self._run(project_id, cell_id)
         return await self.props(project_id)
 
-    async def _run(self, pid: str, cell_id: str) -> RunResult | None:
-        """Run one saved code cell; returns None if it vanished meanwhile."""
+    async def _run(self, pid: str, cell_id: str, by: RunBy = "user") -> RunResult | None:
+        """Run one saved code cell; returns None if it vanished meanwhile. `by` goes to the created-file scan."""
         self._queued.setdefault(pid, []).append(cell_id)
         await self._push(pid, await self.props(pid))
         try:
@@ -343,7 +345,7 @@ class NotebookService:
                     self._running.pop(pid, None)
                     self._live.pop(cell_id, None)
 
-                self._scan_created_datasets(pid)  # before save_result's push, so that push shows the new card
+                self._scan_created_datasets(pid, by)  # before save_result's push, so that push shows the new card
 
                 def save_result(nb: NotebookNode) -> None:
                     try:
@@ -360,12 +362,12 @@ class NotebookService:
             if cell_id in self._queued.get(pid, []):
                 self._queued[pid].remove(cell_id)
 
-    def _scan_created_datasets(self, pid: str) -> None:
+    def _scan_created_datasets(self, pid: str, by: RunBy | None = None) -> None:
         """Let the after-run hook list files the cell wrote; a scan problem never fails the run."""
         if self.after_run is None:
             return
         try:
-            self.after_run(pid)
+            self.after_run(pid, by)
         except Exception:
             log.exception("Scanning %s for created datasets failed", pid)
 
@@ -441,7 +443,7 @@ class NotebookService:
             added["id"] = cell.id
 
         await self._change(project_id, None, add)
-        result = await self._run(project_id, added["id"])
+        result = await self._run(project_id, added["id"], by="assistant")  # files it writes are the assistant's
         if result is None:
             return "The cell was deleted before it ran."
         text = outputs_as_text([output_props(o) for o in result.outputs])

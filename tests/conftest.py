@@ -152,6 +152,14 @@ class FakeDatasetService:
         self.calls.append(("list", project_id))
         return self.records
 
+    def needs_description(self, project_id):
+        """Records with describe "write" (no call recorded: it's a read-only check)."""
+        return [r for r in self.records if r.get("describe") == "write"]
+
+    def project_refs(self, project_id):
+        """ref -> record, for records that carry a `ref` (catalog downloads)."""
+        return {r["ref"]: r for r in self.records if r.get("ref")}
+
     def describe(self, project_id, dataset_id):
         self.calls.append(("describe", project_id, dataset_id))
         return next(r for r in self.records if r["dataset_id"] == dataset_id)

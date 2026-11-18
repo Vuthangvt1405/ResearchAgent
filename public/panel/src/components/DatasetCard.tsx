@@ -157,6 +157,13 @@ function DatasetCardView({ d, inserting, onCancel, onDelete, onInsert }: Dataset
                 <dd>{licenceText(d)}</dd>
               </>
             )}
+            {d.assistant_description && (
+              <>
+                {/* PCD-4 AC7: one line the assistant wrote after looking; React renders it as text, never HTML */}
+                <dt>Described by the assistant</dt>
+                <dd>{d.assistant_description}</dd>
+              </>
+            )}
             <dt>Files</dt>
             <dd>{d.file_count}</dd>
             {!created && d.shared_with > 0 && (

@@ -34,6 +34,7 @@ SOURCES = ("huggingface", "zenodo", "link")  # two catalogs, and file links the 
 STORED_STATUSES = ("queued", "downloading", "ready", "failed")  # "missing" is computed, never stored
 ORIGINS = ("downloaded", "created")  # catalog download, or a file the project's own code wrote
 CREATED_PATH_MAX = 1024  # same limit as datasets.store.PATH_MAX
+CREATED_BY = ("assistant", "user", "upload")  # who added a created file: a cell run by either, or the user from outside; NULL counts as an upload
 # A row is wholly one kind: a download linked to a pool entry, or a created file with its path and stat
 ORIGIN_SHAPE = (
     "(origin = 'downloaded' AND pool_entry_pk IS NOT NULL AND path IS NULL)"
@@ -64,6 +65,7 @@ pool_entries = Table(
     Column("name", Text, nullable=False),  # title for people
     Column("url", Text, nullable=True),  # landing page
     Column("license", Text, nullable=True),
+    Column("description", Text, nullable=True),  # the catalog's one-line description; NULL when it gave none
     Column("created_at", Text, nullable=False, server_default=""),  # newest-first order in find_entries
     CheckConstraint(f"source IN {SOURCES}", name="source_known"),
     Index(None, "source", "source_id"),  # find_entries, on every dataset request
@@ -102,11 +104,15 @@ project_datasets = Table(
     Column("size_bytes", BigInteger, nullable=True),  # created only: size at the last scan
     Column("mtime_ns", BigInteger, nullable=True),  # created only: spots a re-save without reading the file
     Column("inode", BigInteger, nullable=True),  # created only: a rename keeps it (rename match)
+    Column("columns", JSON, nullable=True),  # created only: column names; NULL = not read yet, [] = none found
+    Column("assistant_description", Text, nullable=True),  # one line the assistant wrote after looking at the data
+    Column("created_by", Text, nullable=True),  # created only: "assistant", "user" (cell runs) or "upload"; NULL counts as an upload
     UniqueConstraint("project_pk", "slug"),  # unique within a project; the pool is shared
     UniqueConstraint("project_pk", "path"),  # one created card per path; NULLs (downloads) don't clash
     CheckConstraint(f"status IN {STORED_STATUSES}", name="status_known"),
     CheckConstraint(f"origin IN {ORIGINS}", name="origin_known"),
     CheckConstraint(ORIGIN_SHAPE, name="origin_shape"),
+    CheckConstraint(f"created_by IS NULL OR created_by IN {CREATED_BY}", name="created_by_known"),
     Index(None, "pool_entry_pk"),  # projects_using / "used by" counts, and the RESTRICT check
 )
 

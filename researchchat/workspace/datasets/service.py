@@ -32,6 +32,12 @@ from researchchat.workspace import ErrorCode, WorkspaceError, store
 from researchchat.workspace.datasets import links, sources
 from researchchat.workspace.datasets import store as ds
 from researchchat.workspace.datasets.created import CreatedDatasets
+from researchchat.workspace.datasets.describe import (
+    DescribeNeed,
+    describe_need,
+    one_line_description,
+)
+from researchchat.workspace.datasets.load_code import load_code
 from researchchat.workspace.datasets.pool import DatasetPool, PoolEntry, PoolFile
 from researchchat.workspace.datasets.sources import DatasetPlan, PlannedFile
 from researchchat.workspace.datasets.store import DatasetStatus, ProjectDataset, Source
@@ -125,6 +131,11 @@ class DatasetRecordView(TypedDict):
     error: str | None
     shared_with: int  # other projects using the same pool entry
     origin: DatasetOrigin  # tells the model a file was created in this project, not downloaded
+    description: str | None  # the catalog's one-line description (downloads); None for created / link / older rows
+    columns: list[str] | None  # created files' column names; [] = unknown; None for downloads
+    assistant_description: str | None  # one line the assistant wrote after looking; shown as "described by the assistant"
+    describe: DescribeNeed | None  # "write" when the row says nothing about itself (describe.py)
+    load_code: str  # the same Python as the tab's "Copy load code" (load_code.py)
 
 
 class DeleteResult(TypedDict):
@@ -140,6 +151,7 @@ STARTED_NOTE = (
 )
 READY_NOTE = "Already downloaded. The files are ready to use at these paths."
 LINK_READY_NOTE = "Tell the user: This file is already in your datasets. Give them the path; nothing was downloaded."
+REF_PREFIXES = {"huggingface": "hf", "zenodo": "zenodo"}  # dataset_search refs; links and created files have none
 LINK_LICENCE_NOTE = " No licence is known for a pasted link; don't state one."
 
 
@@ -635,7 +647,7 @@ class DatasetService:
         entry = PoolEntry(
             id=DatasetPool.make_entry_id(ds.base_id(request.source, request.source_id), plan.revision),
             source=request.source, source_id=request.source_id, revision=plan.revision, name=plan.name,
-            url=plan.url, license=plan.license, created_at=utc_now(),
+            url=plan.url, license=plan.license, created_at=utc_now(), description=plan.description,
         )
         return RequestTarget(entry, plan, is_new_entry=True)
 
@@ -664,6 +676,7 @@ class DatasetService:
         old_entry = dataset.pool_entry
         self.pool.unlink_dataset(project_id, dataset.id)
         dataset.pool_entry, dataset.files = entry.id, sorted(wanted)
+        dataset.assistant_description = None  # the note described the old version's data
         self.pool.link_files(project_id, dataset.id, entry, wanted)
         self.pool.save_index()  # the new version may be new to the index; the project row points to it (FK)
         self._save(project_id)
@@ -703,7 +716,7 @@ class DatasetService:
         entry = self._entry(dataset)
         jobs = self._jobs_for(project_id, dataset.id)
         waiting = [self._queue_position(j) for j in jobs if not j.running]
-        return {
+        view: DatasetRecordView = {
             "dataset_id": dataset.id,
             "name": entry.name,
             "status": status,
@@ -720,7 +733,13 @@ class DatasetService:
             "error": dataset.error,
             "shared_with": len(users.get(dataset.pool_entry, set()) - {project_id}),
             "origin": "downloaded",
+            "description": entry.description,
+            "columns": None,
+            "assistant_description": dataset.assistant_description,
         }
+        view["describe"] = describe_need(view, is_link=entry.source == links.LINK_SOURCE)
+        view["load_code"] = load_code(view)
+        return view
 
     async def sync_view(self, project_id: str) -> Path:
         """Rebuild the project's kernel view from its tab under the pool lock; returns the folder to mount."""
@@ -745,9 +764,9 @@ class DatasetService:
             self._save(project_id)
             self._sync_view(project_id, [d for d in datasets if d is not changed])
 
-    def sync_created(self, project_id: str) -> None:
+    def sync_created(self, project_id: str, by: str | None = None) -> None:
         """NotebookService.after_run: scan the project's files/ and bump datasets_rev when created rows changed."""
-        if self.created.sync(project_id):
+        if self.created.sync(project_id, by):
             self.rev += 1
 
     def list_for_model(self, project_id: str) -> list[DatasetRecordView]:
@@ -755,6 +774,56 @@ class DatasetService:
         users = self._users_by_entry()
         downloaded = [self._view(project_id, d, users) for d in self._load(project_id)]
         return downloaded + self.created.model_views(project_id)
+
+    def project_refs(self, project_id: str) -> dict[str, DatasetRecordView]:
+        """"hf:<id>" / "zenodo:<id>" → this project's own row for that catalog entry; link and created rows left out."""
+        try:
+            datasets = self._load(project_id)
+        except WorkspaceError:
+            return {}  # unknown project
+        users = self._users_by_entry()
+        refs: dict[str, DatasetRecordView] = {}
+        for dataset in datasets:
+            entry = self.pool.get_entry(dataset.pool_entry)
+            prefix = REF_PREFIXES.get(entry.source) if entry is not None else None
+            if prefix:
+                refs[f"{prefix}:{entry.source_id}"] = self._view(project_id, dataset, users)
+        return refs
+
+    def needs_description(self, project_id: str) -> list[DatasetRecordView]:
+        """Ready rows that say nothing about themselves and may be looked at freely (describe "write")."""
+        return [v for v in self.list_for_model(project_id) if v.get("describe") == "write"]
+
+    def view_for_model(self, project_id: str, dataset_id: str) -> DatasetRecordView:
+        """One of this project's datasets as dataset_list shows it (either kind); NOT_FOUND otherwise."""
+        view = next((v for v in self.list_for_model(project_id) if v["dataset_id"] == dataset_id), None)
+        if view is None:
+            raise WorkspaceError(ErrorCode.NOT_FOUND, "Unknown dataset.")
+        return view
+
+    async def save_description(self, project_id: str, dataset_id: str, text: str) -> DatasetRecordView:
+        """Store the assistant's one-line description on one of this project's datasets; returns the new view.
+
+        Only a row that says nothing about itself takes one (NOT_NEEDED otherwise).
+        """
+        view = self.view_for_model(project_id, dataset_id)
+        if view["describe"] is None:
+            raise WorkspaceError(ErrorCode.NOT_NEEDED, "This dataset already says what it holds, or isn't ready.")
+        line = one_line_description(text) if isinstance(text, str) else ""
+        if not line:
+            raise WorkspaceError(ErrorCode.BAD_DESCRIPTION, "Give a one-line description of what the data holds.")
+        if view["origin"] == "created":
+            self.created.save_description(project_id, dataset_id, line)
+        else:
+            async with self._lock:
+                dataset = ds.find_project_dataset(self._load(project_id), dataset_id)
+                if dataset is None:
+                    raise WorkspaceError(ErrorCode.NOT_FOUND, "Unknown dataset.")
+                dataset.assistant_description = line
+                self._save(project_id)
+        self.rev += 1
+        await self._push(project_id)
+        return self.view_for_model(project_id, dataset_id)
 
     def describe(self, project_id: str, dataset_id: str) -> DatasetRecordView:
         """One dataset, for the Delete / Keep prompt (name, size it frees, other users)."""
@@ -1064,6 +1133,7 @@ class DatasetService:
                     "error": dataset.error if status == "failed" else None,
                     "shared_with": view["shared_with"],
                     "origin": "downloaded",
+                    "assistant_description": dataset.assistant_description,
                 }
             )
         return rows + self.created.panel_rows(project_id), self.rev

@@ -55,6 +55,8 @@ export interface DatasetProps {
   shared_with: number;
   /** PCD-1 AC3: card layout. The server always sends it; optional here so existing test fixtures still type-check (absent = "downloaded") */
   origin?: DatasetOrigin;
+  /** PCD-4 AC7: one line the assistant wrote after looking at the data; shown as "Described by the assistant" */
+  assistant_description?: string | null;
 }
 
 export interface ProjectRef {

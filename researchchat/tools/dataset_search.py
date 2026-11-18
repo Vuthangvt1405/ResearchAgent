@@ -11,10 +11,12 @@ import json
 import re
 import time
 
+import chainlit as cl
 import httpx
 
 from researchchat.config import DATASET_MAX_RESULTS
 from researchchat.tools.titles import shorten
+from researchchat.workspace import WorkspaceError
 
 DEFINITION = {
     "type": "function",
@@ -28,7 +30,8 @@ DEFINITION = {
             "catalogs match on dataset names. If results are poor, try "
             "again with synonyms or fewer words. Hugging Face and Zenodo results "
             "have a `ref` you can pass to dataset_download (only when the user "
-            "wants the data in their project)."
+            "wants the data in their project). Check dataset_list first: when the project "
+            "already has matching data, use it; search for a new copy only when the user asks for one."
         ),
         "parameters": {
             "type": "object",
@@ -237,21 +240,84 @@ def _line(r: dict) -> str:
     extra = [r["source"], r.get("license"), r.get("size")]
     if r.get("downloads"):
         extra.append(f"{r['downloads']:,} downloads")
-    return f"- [{r['name']}]({r['url']}) · " + " · ".join(e for e in extra if e)
+    line = f"- [{r['name']}]({r['url']}) · " + " · ".join(e for e in extra if e)
+    if own := r.get("in_project"):
+        line += f" · already in your project ({own['status']}) · `{own['path']}/`"
+    return line
 
 
-async def run(args: dict) -> tuple[str, str]:
-    """Return (text shown in the chat step, result sent to the model)."""
+IN_PROJECT_FIELDS = ("dataset_id", "status", "path", "description", "load_code")
+
+
+def mark_in_project(results: list[dict], refs: dict[str, dict]) -> list[dict]:
+    """The same results in the same order; one whose `ref` the project already has gets `in_project`."""
+    marked = []
+    for r in results:
+        own = refs.get(r.get("ref") or "")
+        marked.append({**r, "in_project": {k: own.get(k) for k in IN_PROJECT_FIELDS}} if own else r)
+    return marked
+
+
+def _chat_project(svc, project_id: str | None) -> tuple:
+    """(dataset service, project id) of this chat; (None, None) outside a chat (tests, or no session)."""
+    if svc is not None and project_id is not None:
+        return svc, project_id
+    try:
+        _ = cl.context.session  # raises outside a Chainlit chat, before the app is imported
+        from researchchat.workspace import actions
+
+        return svc or actions.datasets, project_id or actions.session_project(cl.user_session)
+    except Exception:  # noqa: BLE001 — search must work without a project
+        return None, None
+
+
+def _project_refs(svc, project_id: str | None) -> dict[str, dict]:
+    """The project's catalog refs; {} without a project."""
+    if svc is None:
+        return {}
+    try:
+        return svc.project_refs(project_id)
+    except WorkspaceError:
+        return {}
+
+
+def _undescribed_note(svc, project_id: str | None) -> str | None:
+    """A reminder when the project has ready data that says nothing about itself (describe "write")."""
+    if svc is None:
+        return None
+    try:
+        names = [v["name"] for v in svc.needs_description(project_id)]
+    except WorkspaceError:
+        return None
+    if not names:
+        return None
+    return (f"The project already has data that says nothing about itself: {', '.join(names[:5])}. "
+            "Before you download anything, look at its first rows with notebook_run (dataset_list has its "
+            "load_code): it may be what the user wants.")
+
+
+async def run(args: dict, *, svc=None, project_id: str | None = None) -> tuple[str, str]:
+    """Return (text shown in the chat step, result sent to the model).
+
+    svc / project_id: the dataset service and this chat's project, so results the
+    project already has are marked; None when the Notebook tools are off (tests pass fakes).
+    """
     query = str(args.get("query", ""))
     if not words(query):
         raise ValueError("No search query given.")
     results, failed = await search(query, str(args.get("task") or ""), str(args.get("language") or ""))
+    svc, project_id = _chat_project(svc, project_id)
+    results = mark_in_project(results, _project_refs(svc, project_id))
     shown = "\n".join(_line(r) for r in results) or "No datasets found."
     payload: dict = {"datasets": results}
+    notes = []
     if failed:
-        note = f"No answer from: {', '.join(failed)}."
-        shown += f"\n\n{note}"
-        payload["note"] = note
+        notes.append(f"No answer from: {', '.join(failed)}.")
+        shown += f"\n\n{notes[-1]}"
+    if reminder := _undescribed_note(svc, project_id):
+        notes.append(reminder)
+    if notes:
+        payload["note"] = " ".join(notes)
     if not results:
         payload["hint"] = "Try fewer or different keywords, or web_search."
     return shown, json.dumps(payload, ensure_ascii=False)

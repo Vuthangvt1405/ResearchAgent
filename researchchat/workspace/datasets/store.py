@@ -184,6 +184,7 @@ class ProjectDataset:
     requested_at: str = ""  # ISO 8601 UTC; queue order
     linked_at: str | None = None  # when this project got the files (may be long after the pool did)
     error: str | None = None  # one-line reason when failed
+    assistant_description: str | None = None  # one line the assistant wrote for this project; cleared on update
 
 
 def load_project_datasets(project_id: str, root: Path = WORKSPACES_DIR) -> list[ProjectDataset]:
@@ -219,7 +220,7 @@ def _project_datasets_query(project_id: str) -> Select:
         select(
             project_datasets.c.pk, project_datasets.c.slug, pool_entries.c.slug.label("pool_entry"),
             project_datasets.c.selection, project_datasets.c.status, project_datasets.c.requested_at,
-            project_datasets.c.linked_at, project_datasets.c.error,
+            project_datasets.c.linked_at, project_datasets.c.error, project_datasets.c.assistant_description,
         )
         .join(projects, projects.c.pk == project_datasets.c.project_pk)
         .join(pool_entries, pool_entries.c.pk == project_datasets.c.pool_entry_pk)
@@ -250,6 +251,7 @@ def _project_dataset_from_row(row: Row, files: list[str]) -> ProjectDataset | No
     return ProjectDataset(
         id=row.slug, pool_entry=row.pool_entry, selection=row.selection, status=row.status, files=files,
         requested_at=row.requested_at, linked_at=row.linked_at, error=row.error,
+        assistant_description=row.assistant_description,
     )
 
 
@@ -275,7 +277,7 @@ def _insert_project_dataset(
     dataset_pk = connection.execute(insert(project_datasets).values(
         project_pk=project_pk, slug=dataset.id, pool_entry_pk=entry_pk, position=position,
         selection=dataset.selection, status=dataset.status, requested_at=dataset.requested_at,
-        linked_at=dataset.linked_at, error=dataset.error,
+        linked_at=dataset.linked_at, error=dataset.error, assistant_description=dataset.assistant_description,
     )).inserted_primary_key[0]
     if dataset.files:
         connection.execute(
