@@ -4,6 +4,8 @@
 
 # SillyTherin
 
+### 🐍☕ *"If You Are Need Analyst With Data In Jupyter, I Think Maybe You Need This :D"*
+
 **A friendly research assistant that thinks, searches the web, finds datasets and runs notebook code, all from one chat.**
 
 [![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-3776AB?logo=python&logoColor=white)](https://www.python.org/)
