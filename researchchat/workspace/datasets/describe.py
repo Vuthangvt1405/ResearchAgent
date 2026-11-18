@@ -2,7 +2,7 @@
 
 A ready row that has no catalog description, no assistant description and no
 known column names needs a description ("write"). Every file in the project may
-be read without asking the user (R54), whoever added it. Pure functions, no I/O.
+be read without asking the user, whoever added it. Pure functions, no I/O.
 """
 
 from typing import TYPE_CHECKING, Literal
@@ -15,7 +15,7 @@ DESCRIPTION_MAX = 300  # one line, like catalog descriptions
 def describe_need(view: "DatasetRecordView", *, is_link: bool = False, created_by: str | None = None) -> DescribeNeed | None:
     """"write" for a ready row that says nothing about itself; None when it already does or isn't ready.
 
-    `is_link` and `created_by` are kept for callers; they no longer change the answer (R54).
+    `is_link` and `created_by` are kept for callers; they no longer change the answer, since any file may be read.
     """
     if view["status"] != "ready" or view.get("description") or view.get("assistant_description"):
         return None

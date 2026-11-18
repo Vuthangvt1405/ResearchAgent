@@ -1,7 +1,7 @@
 """dataset_describe tool: save one line about what a dataset holds, when it says nothing itself.
 
 Rows marked describe "write" in dataset_list are saved at once. Every file in
-the project may be read without asking the user (R54).
+the project may be read without asking the user, whoever added it.
 """
 
 import json
@@ -47,7 +47,7 @@ class ChatPermissions:
         return (project_id, dataset_id) in self._allowed.get(session_id, set())
 
     def forget(self, session_id: str) -> None:
-        """The chat ended: its Allow clicks no longer count."""
+        """The chat ended: what the assistant looked at in it no longer counts."""
         self._allowed.pop(session_id, None)
 
 

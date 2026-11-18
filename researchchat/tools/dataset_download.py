@@ -149,7 +149,7 @@ async def ask_retry(name: str, reason: str | None) -> bool:
 
 
 def undescribed_not_looked_at(svc, project_id: str, session_id: str, ref: str, looked=None) -> list[dict]:
-    """Ready rows with describe "write" the assistant hasn't looked at in this chat (AC7); none for a pasted link."""
+    """Ready rows with describe "write" the assistant hasn't looked at in this chat, so no download yet; none for a pasted link."""
     from researchchat.tools.dataset_describe import looked as chat_looks
 
     try:

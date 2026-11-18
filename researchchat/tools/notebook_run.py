@@ -2,7 +2,7 @@
 
 Safe code runs at once. Risky code is shown in the chat with the
 reasons and Run / Skip buttons, and runs only on Run. Any file in the project
-may be read without asking the user (R54).
+may be read without asking the user, whoever added it.
 """
 
 import chainlit as cl
@@ -43,7 +43,7 @@ def undescribed_named_in(code: str, views: list[dict]) -> list[dict]:
 
 
 def _remember_looks(code: str, datasets, project_id: str, session_id: str, looked) -> None:
-    """The assistant looked at these undescribed datasets in this chat: downloads may go ahead (AC7)."""
+    """The assistant looked at these undescribed datasets in this chat: downloads may go ahead."""
     from researchchat.tools.dataset_describe import looked as chat_looks
 
     try:
