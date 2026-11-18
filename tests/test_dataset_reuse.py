@@ -367,39 +367,11 @@ def test_any_download_without_description_is_write():
         assert describe_need(row(license=license_id)) == "write", license_id
 
 
-def test_pasted_link_download_is_write():
-    # Positive · Changed: link source
+def test_created_file_with_unknown_columns_is_write():
+    # Positive · Changed: created, `columns []`
     # Then: `"write"`
-    # Demonstrates: a pasted link is described like any other download
-    assert describe_need(row(license=None), is_link=True) == "write"
-
-
-def test_assistant_file_with_unknown_columns_is_write():
-    # Positive · Changed: created, `"assistant"`, `columns []`
-    # Then: `"write"`
-    # Demonstrates: a file the assistant wrote, with unknown columns, is described
-    assert describe_need(created_row(), created_by="assistant") == "write"
-
-
-def test_user_cell_file_with_unknown_columns_is_write():
-    # Positive · Changed: created, `"user"`
-    # Then: `"write"`
-    # Demonstrates: the user's own cells aren't asked about
-    assert describe_need(created_row(), created_by="user") == "write"
-
-
-def test_uploaded_file_is_write():
-    # Positive · Changed: created, `"upload"`
-    # Then: `"write"`
-    # Demonstrates: an uploaded file is read and described without asking
-    assert describe_need(created_row(), created_by="upload") == "write"
-
-
-def test_file_from_before_this_change_is_write():
-    # Positive · Changed: created, `created_by` None
-    # Then: `"write"`
-    # Demonstrates: unknown origin is read freely too
-    assert describe_need(created_row(), created_by=None) == "write"
+    # Demonstrates: who added the file (assistant, user cell, upload, unknown) is not part of the decision
+    assert describe_need(created_row()) == "write"
 
 
 def test_row_with_a_catalog_description_needs_none():
@@ -414,14 +386,14 @@ def test_row_with_an_assistant_description_needs_none():
     # Then: `None`
     # Demonstrates: described once
     assert describe_need(row(assistant_description="Iris measurements")) is None
-    assert describe_need(created_row(assistant_description="Model scores"), created_by="upload") is None
+    assert describe_need(created_row(assistant_description="Model scores")) is None
 
 
 def test_created_file_with_known_columns_needs_none():
     # Negative · Changed: columns read
     # Then: `None`
     # Demonstrates: columns already say enough
-    assert describe_need(created_row(columns=["sepal_length", "species"]), created_by="upload") is None
+    assert describe_need(created_row(columns=["sepal_length", "species"])) is None
 
 
 def test_missing_or_failed_row_needs_none():
@@ -430,7 +402,7 @@ def test_missing_or_failed_row_needs_none():
     # Demonstrates: only ready data is described
     for status in ("missing", "failed", "downloading", "queued"):
         assert describe_need(row(status=status)) is None, status
-        assert describe_need(created_row(status=status), created_by="assistant") is None, status
+        assert describe_need(created_row(status=status)) is None, status
 
 
 # ---- The app asks before downloading a broken copy again · unit (fake service, `dataset_download.run`)

@@ -12,10 +12,12 @@ if TYPE_CHECKING:
 
 DescribeNeed = Literal["write"]
 DESCRIPTION_MAX = 300  # one line, like catalog descriptions
-def describe_need(view: "DatasetRecordView", *, is_link: bool = False, created_by: str | None = None) -> DescribeNeed | None:
+
+
+def describe_need(view: "DatasetRecordView") -> DescribeNeed | None:
     """"write" for a ready row that says nothing about itself; None when it already does or isn't ready.
 
-    `is_link` and `created_by` are kept for callers; they no longer change the answer, since any file may be read.
+    Where the data came from (a pasted link, an upload, a cell) does not matter: any project file may be read.
     """
     if view["status"] != "ready" or view.get("description") or view.get("assistant_description"):
         return None

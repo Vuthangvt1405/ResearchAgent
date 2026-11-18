@@ -737,7 +737,7 @@ class DatasetService:
             "columns": None,
             "assistant_description": dataset.assistant_description,
         }
-        view["describe"] = describe_need(view, is_link=entry.source == links.LINK_SOURCE)
+        view["describe"] = describe_need(view)
         view["load_code"] = load_code(view)
         return view
 
