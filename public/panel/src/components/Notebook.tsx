@@ -5,6 +5,7 @@ import { useEffect, useRef, useState, type DragEvent, type ReactNode } from "rea
 import { AlertCircle, GripVertical, NotebookPen, Plus, SearchX, StickyNote, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { BlockMenu, type BlockActions } from "@/components/BlockMenu";
+import { CellToolbar } from "@/components/CellToolbar";
 import { CodeCell } from "@/components/CodeCell";
 import { DatasetsTab } from "@/components/DatasetsTab";
 import { InsertRow } from "@/components/InsertRow";
@@ -31,8 +32,8 @@ const KERNEL: Record<string, [string, string]> = {
   unavailable: ["hsl(var(--rc-danger))", "Docker not running"],
 };
 
-function Block({ cell, fresh, menuOpen, setMenu, actions, dragging, drop, onDragStart, onDragOver, onDrop, onDragEnd, children }: {
-  cell: CellProps; fresh: boolean; menuOpen: boolean; setMenu: (id: string | null) => void; actions: BlockActions;
+function Block({ cell, fresh, menuOpen, setMenu, actions, copied, dragging, drop, onDragStart, onDragOver, onDrop, onDragEnd, children }: {
+  cell: CellProps; fresh: boolean; menuOpen: boolean; setMenu: (id: string | null) => void; actions: BlockActions; copied: boolean;
   dragging: string | null; drop: Drop | null;
   onDragStart: (e: DragEvent, cell: CellProps) => void; onDragOver: (e: DragEvent, cell: CellProps) => void;
   onDrop: (e: DragEvent, cell: CellProps) => void; onDragEnd: () => void; children: ReactNode;
@@ -62,7 +63,10 @@ function Block({ cell, fresh, menuOpen, setMenu, actions, dragging, drop, onDrag
         </button>
       </div>
       <BlockMenu cell={cell} actions={actions} open={menuOpen} setMenu={setMenu} />
-      <div className="rcnb-body">{children}</div>
+      <div className="rcnb-body">
+        <CellToolbar cell={cell} actions={actions} copied={copied} isMenuOpen={menuOpen} setMenu={setMenu} />
+        {children}
+      </div>
     </div>
   );
 }
@@ -214,6 +218,7 @@ export function Notebook() {
                   menuOpen={menu === cell.id}
                   setMenu={setMenu}
                   actions={actions}
+                  copied={copied === `cell:${cell.id}`}
                   dragging={dragger.drag}
                   drop={dragger.drop}
                   onDragStart={dragger.startDrag}
@@ -230,11 +235,8 @@ export function Notebook() {
                       running={cell.id === nb.running_cell_id}
                       match={matchIds.has(cell.id)}
                       canRun={kernel !== "unavailable" && !isBusy}
-                      copied={copied === `cell:${cell.id}`}
                       onChange={(t) => a.edit(cell.id, t)}
                       onRun={() => a.run(cell)}
-                      onCopy={() => copyCell(cell)}
-                      onMenu={() => setMenu(menu === cell.id ? null : cell.id)}
                       onMove={(dir) => a.move(cell.id, dir)}
                     />
                   )}
