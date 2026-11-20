@@ -3,8 +3,8 @@
 Read-only: it never runs the user's cells.
 """
 
-import chainlit as cl
 
+from researchchat.chat.current import this_chat
 from researchchat.tools.services import NotebookReader
 
 DEFINITION = {
@@ -31,6 +31,6 @@ async def run(args: dict, *, svc: NotebookReader | None = None, project_id: str 
         from researchchat.workspace import actions
 
         svc = svc or actions.service
-        project_id = project_id or actions.session_project(cl.user_session)
+        project_id = project_id or actions.session_project(this_chat().state)
     text = await svc.read_for_model(project_id)
     return f"Read the notebook ({len(text):,} characters).", text

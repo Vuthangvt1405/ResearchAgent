@@ -6,10 +6,8 @@ import asyncio
 import nbformat
 import pytest
 
-from researchchat.workspace import ErrorCode, WorkspaceError
-from researchchat.workspace import actions, store
+from researchchat.workspace import ErrorCode, WorkspaceError, actions, store
 from researchchat.workspace.service import output_props
-
 from tests.test_workspace_store import FakeSession
 
 
@@ -341,7 +339,7 @@ def wired(root, project_p, fake_kernels):
 
 
 class ToastRecorder:
-    """Stands in for cl.context.emitter.send_toast."""
+    """Stands in for a chat's toasts."""
 
     def __init__(self):
         self.toasts: list[tuple[str, str]] = []
@@ -457,14 +455,14 @@ def iris_listed_then_gone(root, wired):
 
 
 def open_workspace(datasets, project_id, toasts) -> None:
-    """What actions.open_for_session does for a project, minus the Chainlit panel."""
+    """What actions.open_chat does for a project, minus the panel."""
     actions.list_created_datasets_now(datasets, project_id)
     run(actions.toast_missing_created_files(datasets, project_id, toasts))
 
 
 def test_open_workspace_toasts_missing_files_once(iris_listed_then_gone):
     # edge
-    # Changed: `open_for_session`
+    # Changed: `open_chat`
     # Then: one `send_toast(…, "warning")` naming `Iris.csv`
     toasts = ToastRecorder()
 

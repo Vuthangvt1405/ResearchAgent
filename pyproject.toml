@@ -1,5 +1,5 @@
 [tool.vulture]
-paths = ["app.py", "researchchat", "tests", "vulture_whitelist.py"]
+paths = ["researchchat", "tests", "vulture_whitelist.py"]
 exclude = [".venv/", "researchchat/db/migrations/"]
 min_confidence = 80
 sort_by_size = true

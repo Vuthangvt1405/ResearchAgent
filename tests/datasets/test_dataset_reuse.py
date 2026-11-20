@@ -337,7 +337,7 @@ def test_search_works_unmarked_when_notebook_is_off(ws):
     # Negative · Changed: no project / service
     # Then: plain results
     # Demonstrates: search still works when the Notebook tools are off
-    shown, result = run(dataset_search.run({"query": "iris"}))  # no Chainlit chat here, as with no project
+    shown, result = run(dataset_search.run({"query": "iris"}))  # no chat here, as with no project
     results = json.loads(result)["datasets"]
     assert [r["ref"] for r in results] == ["hf:scikit-learn/iris", "hf:other/iris"]
     assert all("in_project" not in r for r in results)

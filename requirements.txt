@@ -1,4 +1,7 @@
-chainlit>=2.0
+fastapi>=0.115  # our own web server and the chat WebSocket
+uvicorn>=0.30
+wsproto>=1.2  # uvicorn's WebSocket support; without one the chat socket can't open
+pydantic>=2.7  # checks every socket event
 openai>=1.50
 python-dotenv>=1.0
 httpx>=0.27

@@ -1,20 +1,15 @@
 """The "Kaggle account" setting, and what connecting or disconnecting does.
 
-Chainlit's Settings has no button widget, so the setting is sent as a switch and
-public/custom.js draws a Connect / Disconnect button in its place; the button flips
-the switch and presses Confirm. Connecting opens Kaggle's page in the browser and
-pops up a sign-in dialog in the chat.
+The setting is sent as a switch, which the page draws as a Connect / Disconnect button.
+Connecting opens Kaggle's page in the browser and pops up a sign-in dialog in the chat.
 """
 
 import asyncio
-import json
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Literal, Protocol
 
-import chainlit as cl
-from chainlit.input_widget import Switch
-
+from researchchat.chat.widgets import SettingSwitch
 from researchchat.workspace import WorkspaceError
 from researchchat.workspace.kaggle.account import (
     REFUSED_NOTICE,
@@ -26,7 +21,6 @@ from researchchat.workspace.kaggle.oauth import AUTHORIZE_URL
 
 KAGGLE_SWITCH_ID = "kaggle_account"
 KAGGLE_SWITCH_LABEL = "Kaggle account"
-SIGN_IN_ELEMENT_NAME = "KaggleSignIn"  # public/elements/KaggleSignIn.jsx
 WAITING_TOAST = "Waiting for Kaggle sign-in in your browser…"
 DISCONNECTED_TOAST = "Kaggle disconnected."
 WAITING_POPUP_MESSAGE = "Kaggle's approval page should have opened in your browser. If it didn't, open it here."
@@ -43,11 +37,12 @@ SendToast = Callable[[str, str], Awaitable[None]]  # (message, type)
 ResendSettings = Callable[[], Awaitable[None]]
 
 
-def kaggle_switch(status: KaggleAccountStatus) -> Switch:
-    return Switch(
+def kaggle_switch(status: KaggleAccountStatus) -> SettingSwitch:
+    return SettingSwitch(
         id=KAGGLE_SWITCH_ID,
         label=KAGGLE_SWITCH_LABEL,
         initial=status.state != "disconnected",
+        disabled=False,
         description=switch_description(status),
     )
 
@@ -78,31 +73,6 @@ class SignInPopup(Protocol):
     async def show(self, authorize_url: str) -> None: ...
 
     async def finish(self, state: SignInPopupState, message: str) -> None: ...
-
-
-class ChainlitSignInPopup:
-    """The dialog as a Chainlit custom element inside one chat message."""
-
-    def __init__(self) -> None:
-        self._element: cl.CustomElement | None = None
-        self._authorize_url = ""
-
-    async def show(self, authorize_url: str) -> None:
-        self._authorize_url = authorize_url
-        self._element = cl.CustomElement(
-            name=SIGN_IN_ELEMENT_NAME, props=self._props("waiting", WAITING_POPUP_MESSAGE), display="inline"
-        )
-        await cl.Message(content="", elements=[self._element]).send()
-
-    async def finish(self, state: SignInPopupState, message: str) -> None:
-        if self._element is None:
-            return
-        self._element.props = self._props(state, message)
-        self._element.content = json.dumps(self._element.props)
-        await self._element.update()
-
-    def _props(self, state: SignInPopupState, message: str) -> dict:
-        return {"authorize_url": self._authorize_url, "state": state, "message": message}
 
 
 @dataclass(frozen=True)

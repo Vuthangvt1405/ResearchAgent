@@ -18,7 +18,7 @@ DEFAULTS = Picks(model="vendor/fast", effort="default")
 
 
 def options(mode):
-    return [(o.id, o.name, o.default) for o in mode.options]
+    return [(o.id, o.name, o.selected) for o in mode.options]
 
 
 def test_model_picker_lists_every_configured_model_with_default_marked():
@@ -80,7 +80,7 @@ def test_resumed_chat_keeps_its_model_and_effort():
     # Given a chat that picked a model and effort, When the pickers are sent again, Then they start at those picks
     picks = Picks(model="vendor/smart", effort="high")
     model_mode, effort_mode = build_modes(CHOICES, picks, can_reason=True)
-    assert [o.id for o in model_mode.options if o.default] == ["vendor/smart"]
-    assert [o.id for o in effort_mode.options if o.default] == ["high"]
+    assert [o.id for o in model_mode.options if o.selected] == ["vendor/smart"]
+    assert [o.id for o in effort_mode.options if o.selected] == ["high"]
     # a message from a model without the Effort picker keeps the earlier effort
     assert chosen_picks({"model": "vendor/fast"}, CHOICES, picks).effort == "high"

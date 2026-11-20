@@ -2,44 +2,50 @@
 page reads). Its title shows what is happening right now, then a summary."""
 
 import time
+from collections.abc import Callable
 
-import chainlit as cl
+from researchchat.chat.ports import ProgressView, ThinkingStep, ToolStep
 
-# Chainlit loads a step's icon from /avatars/<step name> and rejects names with
-# ":" or "·" (a blank circle shows instead). This makes steps use the app's icon.
-STEP_AVATAR = {"avatarName": "default"}
+THINKING_LABEL = "Thinking"
 
 
 class Progress:
-    def __init__(self) -> None:
-        self.group: cl.Step | None = None
+    """Counts one reply's steps and time; `view` draws the group."""
+
+    def __init__(self, view: ProgressView, clock: Callable[[], float] = time.monotonic) -> None:
+        self.view = view
+        self.clock = clock
         self.steps = 0
-        self.started = time.monotonic()
+        self.started = clock()
+        self.label: str | None = None
+
+    @property
+    def is_open(self) -> bool:
+        return self.label is not None
 
     async def now(self, label: str) -> None:
-        """Show `label` as the current activity, opening the group if needed.
-
-        Steps created after this (until finish) are nested inside the group,
-        because Chainlit parents new steps to the step that is open.
-        """
-        if self.group is None:
-            self.group = cl.Step(name=label, type="run", default_open=False, metadata=dict(STEP_AVATAR))
-            await self.group.__aenter__()
-        elif self.group.name != label:
-            self.group.name = label
-            await self.group.update()
+        """Show `label` as the current activity, opening the group if needed."""
+        if label != self.label:
+            self.label = label
+            await self.view.show_activity(label)
 
     async def step_started(self, label: str) -> None:
-        """Call before creating a nested step."""
         self.steps += 1
         await self.now(label)
 
+    async def start_thinking(self) -> ThinkingStep:
+        await self.step_started(THINKING_LABEL)
+        return await self.view.start_thinking()
+
+    async def start_tool_step(self, title: str) -> ToolStep:
+        await self.step_started(title)
+        return await self.view.start_tool_step(title)
+
     async def finish(self) -> None:
         """Close the group with a summary title, e.g. "4 steps · 12s"."""
-        if self.group is None:
+        if not self.is_open:
             return
-        seconds = round(time.monotonic() - self.started)
+        seconds = round(self.clock() - self.started)
         plural = "" if self.steps == 1 else "s"
-        self.group.name = f"{self.steps} step{plural} · {seconds}s"
-        await self.group.__aexit__(None, None, None)
-        self.group = None
+        await self.view.close(f"{self.steps} step{plural} · {seconds}s")
+        self.label = None

@@ -2,10 +2,10 @@
 
 from dataclasses import dataclass
 
-import chainlit as cl
 import httpx
 from openai import AsyncOpenAI
 
+from researchchat.chat.ports import AnswerView, ThinkingStep
 from researchchat.config import MODEL, OPENROUTER_API_KEY, OPENROUTER_URL
 from researchchat.progress import Progress
 
@@ -63,16 +63,16 @@ async def model_params(model_id: str = MODEL) -> set[str]:
 
 
 async def stream_round(
-    messages: list, reply: cl.Message, extra: dict, progress: Progress, model_id: str = MODEL
+    messages: list, answer: AnswerView, extra: dict, progress: Progress, model_id: str = MODEL
 ) -> tuple[str, list[dict]]:
-    """Stream one model response into the UI.
+    """Stream one model response into the chat.
 
-    Thinking goes into a step inside `progress`; the answer goes into `reply`.
+    Thinking goes into a step inside `progress`; the answer goes into `answer`.
     Returns the text written this round and any tool calls the model made.
     """
     text = ""
     calls: dict[int, dict] = {}
-    thinking: cl.Step | None = None
+    thinking: ThinkingStep | None = None
     try:
         stream = await client.chat.completions.create(
             model=model_id, messages=messages, stream=True, **extra
@@ -89,18 +89,16 @@ async def stream_round(
                 reasoning = getattr(delta, "reasoning", None)
                 if reasoning:
                     if thinking is None:
-                        await progress.step_started("Thinking")
-                        thinking = cl.Step(name="Thinking", type="llm")
-                        await thinking.__aenter__()
-                    await thinking.stream_token(reasoning)
+                        thinking = await progress.start_thinking()
+                    await thinking.stream(reasoning)
                 if delta.content:
                     if thinking is not None:
-                        await thinking.__aexit__(None, None, None)
+                        await thinking.close()
                         thinking = None
-                    if not text and progress.group is not None:
+                    if not text and progress.is_open:
                         await progress.now("Writing answer")
                     text += delta.content
-                    await reply.stream_token(delta.content)
+                    await answer.stream(delta.content)
                 # Tool calls arrive in pieces; join them by index
                 for tc in delta.tool_calls or []:
                     call = calls.setdefault(
@@ -112,5 +110,5 @@ async def stream_round(
                         call["arguments"] += tc.function.arguments or ""
     finally:
         if thinking is not None:
-            await thinking.__aexit__(None, None, None)
+            await thinking.close()
     return text, [calls[i] for i in sorted(calls)]

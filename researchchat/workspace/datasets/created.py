@@ -8,7 +8,7 @@ where the pool links live. Delete removes the file
 itself, never a link target.
 
 Storage goes through created_store.py. Nothing here imports actions.py
-or reads the Chainlit session; the run lock and the clock are injected (DIP).
+or reads the chat; the run lock and the clock are injected (DIP).
 """
 
 import asyncio

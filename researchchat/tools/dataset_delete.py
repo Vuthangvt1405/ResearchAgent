@@ -5,8 +5,8 @@ Every model delete shows Delete / Keep with the name and the space it frees.
 
 import json
 
-import chainlit as cl
-
+from researchchat.chat.current import this_chat
+from researchchat.chat.ports import Choice
 from researchchat.tools.dataset_download import error_json
 from researchchat.tools.services import ApproveDelete, DatasetDeleter
 from researchchat.workspace import ErrorCode, WorkspaceError
@@ -29,6 +29,8 @@ DEFINITION = {
 }
 
 APPROVAL_TIMEOUT_SECONDS = 120
+DELETE_CHOICE = Choice("delete", "Delete")
+DELETE_OR_KEEP = (DELETE_CHOICE, Choice("keep", "Keep"))
 
 
 def step_title(args: dict) -> str:
@@ -46,17 +48,9 @@ def approval_text(name: str, frees_bytes: int, shared_with: int) -> str:
 
 async def ask_approval(name: str, frees_bytes: int, shared_with: int) -> bool:
     """Delete / Keep in the chat; False on Keep or timeout."""
-    ask = cl.AskActionMessage(
-        content=approval_text(name, frees_bytes, shared_with),
-        actions=[
-            cl.Action(name="delete", payload={"delete": True}, label="Delete"),
-            cl.Action(name="keep", payload={"delete": False}, label="Keep"),
-        ],
-        timeout=APPROVAL_TIMEOUT_SECONDS,
-    )
-    ask.parent_id = None  # don't hide the question inside the collapsed tool group
-    answer = await ask.send()
-    return bool(answer and answer.get("payload", {}).get("delete"))
+    question = approval_text(name, frees_bytes, shared_with)
+    answer = await this_chat().asker.ask_choice(question, DELETE_OR_KEEP, APPROVAL_TIMEOUT_SECONDS)
+    return answer == DELETE_CHOICE.id
 
 
 async def run(
@@ -71,7 +65,7 @@ async def run(
         from researchchat.workspace import actions
 
         svc = svc or actions.datasets
-        project_id = project_id or actions.session_project(cl.user_session)
+        project_id = project_id or actions.session_project(this_chat().state)
     try:
         view = svc.describe(project_id, dataset_id.strip())
         frees_bytes = 0 if view["shared_with"] else view["size_bytes"]

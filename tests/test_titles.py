@@ -23,7 +23,7 @@ def test_long_medium_url_becomes_site_and_page_name():
 
 
 def test_www_and_trailing_slash_are_dropped():
-    assert short_url("https://www.pypi.org/project/chainlit/") == "pypi.org › chainlit"
+    assert short_url("https://www.pypi.org/project/fastapi/") == "pypi.org › fastapi"
 
 
 def test_site_only_url():

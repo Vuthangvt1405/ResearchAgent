@@ -8,7 +8,7 @@ files; each waiting project keeps its own dataset id and chat.
 When a job ends it pushes panel updates, messages each waiting chat if it's
 still open, and leaves a one-time note for that chat's next model turn.
 
-This module never imports actions.py or reads the Chainlit session: the
+This module never imports actions.py or reads the chat: the
 panel push, chat send and props builder are injected. Disk
 reads and writes go through store.py.
 """
@@ -949,7 +949,7 @@ class DatasetService:
             job.running = True
             running.append(job)
             busy.add(job.pool_entry)
-            # A fresh context: the job must not carry the starting chat's Chainlit context
+            # A fresh context: the job must not carry the starting chat's context
             job.task = asyncio.get_running_loop().create_task(self._run_job(job), context=contextvars.Context())
 
     async def wait_idle(self) -> None:

@@ -2,8 +2,7 @@
 
 import json
 
-import chainlit as cl
-
+from researchchat.chat.current import this_chat
 from researchchat.tools.services import DatasetLister
 from researchchat.workspace.datasets.describe import one_line
 from researchchat.workspace.datasets.service import human_size
@@ -99,7 +98,7 @@ async def run(args: dict, *, svc: DatasetLister | None = None, project_id: str |
         from researchchat.workspace import actions
 
         svc = svc or actions.datasets
-        project_id = project_id or actions.session_project(cl.user_session)
+        project_id = project_id or actions.session_project(this_chat().state)
     views = [_safe_view(v) for v in svc.list_for_model(project_id)]
     if not views:
         return "No datasets in this project yet.", json.dumps({"datasets": []})

@@ -85,10 +85,9 @@ MODEL_AUTO_RUN: bool = _notebook.get("model_auto_run", True)
 RISKY_CODE_NEEDS_APPROVAL: bool = _notebook.get("risky_code_needs_approval", True)
 NOTEBOOK_READ_MAX_CHARS: int = _notebook.get("read_max_chars", 12000)
 
-# Chainlit breaks on Python 3.14 (its nest_asyncio patch); 3.11 is the oldest
-# with the asyncio features the download queue uses.
+# 3.11 is the oldest with the asyncio features the download queue uses; 3.14 the newest tested
 PYTHON_MIN = (3, 11)
-PYTHON_MAX = (3, 13)
+PYTHON_MAX = (3, 14)
 KEY_PLACEHOLDER = "your-key-here"  # the value in .env.example
 
 
@@ -97,7 +96,7 @@ def setup_problems(version: tuple = tuple(sys.version_info[:2]), api_key: str | 
     problems = []
     if not PYTHON_MIN <= tuple(version[:2]) <= PYTHON_MAX:
         problems.append(
-            f"Python {version[0]}.{version[1]} isn't supported; use 3.11-3.13. "
+            f"Python {version[0]}.{version[1]} isn't supported; use {PYTHON_MIN[0]}.{PYTHON_MIN[1]}-{PYTHON_MAX[0]}.{PYTHON_MAX[1]}. "
             "Run scripts/setup.sh (see README, Setup), then start the app from .venv."
         )
     if not api_key or api_key.strip() in ("", KEY_PLACEHOLDER):

@@ -1,10 +1,9 @@
-// Bundle entry: creates the persistent root once, exposes window.__rcPanel for the
-// Notebook.jsx shim, and starts the page extras (src/page). Loaded same-origin by public/custom.js.
+// Bundle entry: creates the persistent root once and exposes window.__rcPanel, the API
+// the page that hosts the panel uses to mount it and feed it props.
 import { createRoot, type Root } from "react-dom/client";
 import { App } from "@/components/App";
 import { createOverlay } from "@/overlay";
 import { usePanel } from "@/store";
-import { startPageExtras } from "@/page";
 import type { CallAction, NotebookProps } from "@/types";
 import "./styles.css";
 
@@ -20,8 +19,6 @@ declare global {
     __rcPanel?: RcPanelApi;
     __rcPanelReady?: Promise<RcPanelApi>;
     __rcPanelResolve?: (api: RcPanelApi) => void;
-    /** Chainlit's copilot shadow root; its shadcn portals render there when set */
-    cl_shadowRootElement?: HTMLElement;
   }
 }
 
@@ -40,7 +37,7 @@ export function bootstrap(win: Window = window): RcPanelApi {
     setCallAction: (fn) => usePanel.getState().setCallAction(fn),
   };
   win.__rcPanel = api;
-  // custom.js usually created the promise before this module loaded
+  // the host page may have created the promise before this module loaded
   if (win.__rcPanelResolve) win.__rcPanelResolve(api);
   else win.__rcPanelReady = Promise.resolve(api);
   return api;
@@ -57,5 +54,4 @@ export function teardown(win: Window = window) {
 
 if (import.meta.env.MODE !== "test") {
   bootstrap();
-  startPageExtras();
 }

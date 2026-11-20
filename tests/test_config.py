@@ -32,7 +32,7 @@ def test_setup_ok_on_supported_python_with_key():
 def test_setup_rejects_unsupported_python():
     from researchchat.config import setup_problems
 
-    for version in ((3, 10), (3, 14)):
+    for version in ((3, 10), (3, 15)):
         [problem] = setup_problems(version, "sk-or-123")
         assert f"Python {version[0]}.{version[1]} isn't supported" in problem and "scripts/setup.sh" in problem
 

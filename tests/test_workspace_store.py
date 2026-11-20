@@ -9,8 +9,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
 from researchchat.db.engine import database_for
-from researchchat.workspace import ErrorCode, WorkspaceError
-from researchchat.workspace import store
+from researchchat.workspace import ErrorCode, WorkspaceError, store
 
 
 @pytest.fixture
@@ -20,7 +19,7 @@ def root(tmp_path):
 
 
 class FakeSession:
-    """Stands in for cl.user_session."""
+    """Stands in for a chat's values."""
 
     def __init__(self, **values):
         self.values = dict(values)

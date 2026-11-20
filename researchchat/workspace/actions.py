@@ -1,7 +1,7 @@
-"""Action callbacks the Notebook panel calls with callAction.
+"""The app's services, the open chats, and the actions the Notebook panel calls.
 
-The project always comes from the chat session, never from the payload.
-Each callback returns NotebookProps, with `error` set when rejected.
+The project always comes from the chat, never from the payload.
+Each panel action returns NotebookProps, with `error` set when rejected.
 """
 
 import asyncio
@@ -9,12 +9,18 @@ import logging
 import time
 import webbrowser
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 
-import chainlit as cl
 import httpx
-from chainlit.context import init_ws_context
-from chainlit.input_widget import InputWidget
 
+from researchchat.chat.ports import (
+    ChatPoster,
+    ChatState,
+    PanelSink,
+    SettingsView,
+    Toaster,
+)
+from researchchat.chat.widgets import SettingSwitch
 from researchchat.config import (
     DATASETS_ASK_ABOVE_MB,
     DATASETS_MAX_FILES,
@@ -36,8 +42,8 @@ from researchchat.workspace.kaggle.account import (
 from researchchat.workspace.kaggle.callback import CallbackListener
 from researchchat.workspace.kaggle.settings_switch import (
     KAGGLE_SWITCH_ID,
-    ChainlitSignInPopup,
     ChatSide,
+    SignInPopup,
     account_change,
     apply_account_change,
 )
@@ -48,51 +54,56 @@ from researchchat.workspace.service import NotebookProps, NotebookService
 
 log = logging.getLogger(__name__)
 
-SendToast = Callable[[str, str], Awaitable[None]]  # (message, type) -> shown; Chainlit's emitter.send_toast
+SendToast = Callable[[str, str], Awaitable[None]]  # (message, kind) -> shown
 
 kernels = KernelRegistry()
 panels = PanelRegistry()
 service = NotebookService(kernels, notify=panels.push)
 
 
+@dataclass(frozen=True)
+class ChatLink:
+    """One open chat as the app's services reach it: its values and its side of the screen."""
+
+    state: ChatState
+    poster: ChatPoster
+    settings: SettingsView
+    toaster: Toaster
+    panel: PanelSink
+    popup: SignInPopup
+
+
+SettingsBuilder = Callable[[ChatState, KaggleAccountStatus], Awaitable[list[SettingSwitch]]]
+settings_widgets: SettingsBuilder | None = None  # set at the entry point: it knows the model's features
+
+
 class ChatRegistry:
-    """Live Chainlit sessions by chat id, so a background job can message the chat that started it."""
+    """Open chats by id, so a background job can message the chat that started it."""
 
-    def __init__(self):
-        self._sessions: dict[str, object] = {}  # session_id -> chainlit WebsocketSession
+    def __init__(self) -> None:
+        self._links: dict[str, ChatLink] = {}
 
-    def register(self, session) -> None:
-        self._sessions[session.id] = session
+    def register(self, link: ChatLink) -> None:
+        self._links[link.state.chat_id] = link
 
-    def unregister(self, session_id: str) -> None:
-        self._sessions.pop(session_id, None)
+    def unregister(self, chat_id: str) -> None:
+        self._links.pop(chat_id, None)
 
-    async def refresh_settings(self, build: Callable[[], Awaitable[list[InputWidget]]]) -> None:
-        """Re-send Settings to every live chat, keeping each chat's own choices. A closed chat is skipped."""
-
-        async def one(session) -> None:
-            init_ws_context(session)  # only affects this task's context
-            await resend_settings_here(build)
-
-        tasks = [asyncio.create_task(one(s)) for s in list(self._sessions.values())]
-        for result in await asyncio.gather(*tasks, return_exceptions=True):
+    async def refresh_settings(self, status: KaggleAccountStatus, build: SettingsBuilder) -> None:
+        """Re-send Settings to every open chat, keeping each chat's own choices. A closed chat is skipped."""
+        links = list(self._links.values())
+        results = await asyncio.gather(*(resend_settings(link, status, build) for link in links), return_exceptions=True)
+        for result in results:
             if isinstance(result, Exception):
                 log.warning("Couldn't refresh Settings in a chat", exc_info=result)
 
     async def send(self, session_id: str, text: str) -> bool:
-        """Post a message in that chat's context; False when it's closed. Errors are swallowed."""
-        session = self._sessions.get(session_id)
-        if session is None:
+        """Post a message into that chat; False when it's closed. Errors are swallowed."""
+        link = self._links.get(session_id)
+        if link is None:
             return False
-
-        async def one() -> None:
-            init_ws_context(session)  # only affects this task's context
-            msg = cl.Message(content=text)
-            msg.parent_id = None
-            await msg.send()
-
         try:
-            await asyncio.create_task(one())
+            await link.poster.post(text)
             return True
         except Exception:
             log.warning("Couldn't message chat %s", session_id, exc_info=True)
@@ -102,22 +113,18 @@ class ChatRegistry:
 chats = ChatRegistry()
 
 
-SettingsBuilder = Callable[[KaggleAccountStatus], Awaitable[list[InputWidget]]]
-settings_widgets: SettingsBuilder | None = None  # set at the entry point: it knows the model's features
-
-
-async def resend_settings_here(build: Callable[[], Awaitable[list[InputWidget]]]) -> None:
-    """Re-send Settings to the current chat and remember the Kaggle switch's new position."""
-    chosen = cl.user_session.get("settings") or {}
-    sent = await cl.ChatSettings(keep_chat_choices(await build(), chosen)).send()
-    cl.user_session.set("settings", {**chosen, KAGGLE_SWITCH_ID: sent.get(KAGGLE_SWITCH_ID)})
+async def resend_settings(link: ChatLink, status: KaggleAccountStatus, build: SettingsBuilder) -> None:
+    """Re-send one chat's Settings and remember the Kaggle switch's new position."""
+    chosen = link.state.get("settings") or {}
+    sent = await link.settings.show_settings(keep_chat_choices(await build(link.state, status), chosen))
+    link.state.set("settings", {**chosen, KAGGLE_SWITCH_ID: sent.get(KAGGLE_SWITCH_ID)})
 
 
 async def refresh_kaggle_switch_everywhere(status: KaggleAccountStatus) -> None:
     """The account is app-wide, so every open chat's Settings must show the new state."""
     if settings_widgets is None:
         return
-    await chats.refresh_settings(lambda: settings_widgets(status))
+    await chats.refresh_settings(status, settings_widgets)
 
 
 kaggle_account = KaggleAccountService(
@@ -130,17 +137,17 @@ kaggle_account = KaggleAccountService(
 )
 
 
-async def apply_kaggle_switch(previous_settings: dict, new_settings: dict) -> None:
-    """Settings were confirmed: connect or disconnect Kaggle if its switch changed."""
+async def apply_kaggle_switch(previous_settings: dict, new_settings: dict, link: ChatLink) -> None:
+    """Settings changed: connect or disconnect Kaggle if its switch changed."""
     change = account_change(bool(previous_settings.get(KAGGLE_SWITCH_ID)), bool(new_settings.get(KAGGLE_SWITCH_ID)))
     if change is None or settings_widgets is None:
         return
     build = settings_widgets
     chat = ChatSide(
         open_browser=webbrowser.open,
-        popup=ChainlitSignInPopup(),
-        send_toast=cl.context.emitter.send_toast,
-        resend_settings=lambda: resend_settings_here(lambda: build(kaggle_account.status())),
+        popup=link.popup,
+        send_toast=link.toaster.show_toast,
+        resend_settings=lambda: resend_settings(link, kaggle_account.status(), build),
     )
     await apply_account_change(change, kaggle_account, chat)
 datasets = DatasetService(
@@ -306,20 +313,24 @@ EDIT_ACTIONS = {
 }
 
 
-async def _callback(action: cl.Action):
-    if action.name in EDIT_ACTIONS:
-        skip_session.set(cl.context.session.id)
-    result = await handle(service, cl.user_session, action.name, action.payload)
-    if action.name in ("nb_switch_project", "nb_create_project") and "project" in result and not result.get("error"):
-        # Move this chat's panel to the new project
-        await panels.open(result["project"]["id"], result)
-        if action.name == "nb_switch_project":
-            await toast_missing_created_files(datasets, result["project"]["id"], cl.context.emitter.send_toast)
+async def run_panel_action(link: ChatLink, name: str, payload: object) -> dict | list:
+    """One panel action from this chat's tab; a project switch moves this chat's panel."""
+    token = skip_session.set(link.state.chat_id) if name in EDIT_ACTIONS else None
+    try:
+        result = await handle(service, link.state, name, payload)
+    finally:
+        if token is not None:
+            skip_session.reset(token)
+    if moved_to_another_project(name, result):
+        panels.open(result["project"]["id"], link.state.chat_id, link.panel)
+        if name == "nb_switch_project":
+            await toast_missing_created_files(datasets, result["project"]["id"], link.toaster.show_toast)
     return result
 
 
-for _name in FIELDS:
-    cl.action_callback(_name)(_callback)
+def moved_to_another_project(name: str, result: dict | list) -> bool:
+    is_project_change = name in ("nb_switch_project", "nb_create_project")
+    return is_project_change and isinstance(result, dict) and "project" in result and not result.get("error")
 
 
 async def toast_missing_created_files(dataset_service: DatasetService, project_id: str, send_toast: SendToast) -> None:
@@ -340,18 +351,19 @@ def list_created_datasets_now(dataset_service: DatasetService, project_id: str) 
         log.exception("Scanning %s for created datasets failed", project_id)
 
 
-async def open_for_session() -> None:
-    """Open this chat's panel on its project (called at chat start)."""
-    pid = session_project(cl.user_session)
-    list_created_datasets_now(datasets, pid)
-    await panels.open(pid, await service.props(pid))
-    chats.register(cl.context.session)
-    await toast_missing_created_files(datasets, pid, cl.context.emitter.send_toast)
+async def open_chat(link: ChatLink) -> NotebookProps:
+    """Register a newly opened chat; returns the panel props of its project."""
+    project_id = session_project(link.state)
+    list_created_datasets_now(datasets, project_id)
+    props = await service.props(project_id)
+    panels.open(project_id, link.state.chat_id, link.panel)
+    chats.register(link)
+    await toast_missing_created_files(datasets, project_id, link.toaster.show_toast)
+    return props
 
 
-def close_for_session() -> None:
-    session_id = cl.context.session.id
-    panels.unregister(session_id)
-    chats.unregister(session_id)
-    datasets.drop_notes(session_id)
-    dataset_describe.looked.forget(session_id)  # having looked at undescribed data lasts for its chat only
+def close_chat(chat_id: str) -> None:
+    panels.unregister(chat_id)
+    chats.unregister(chat_id)
+    datasets.drop_notes(chat_id)
+    dataset_describe.looked.forget(chat_id)  # having looked at undescribed data lasts for its chat only

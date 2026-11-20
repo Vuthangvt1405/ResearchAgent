@@ -1,9 +1,6 @@
 """The Kaggle account switch in Settings and the sign-in pop-up in the chat."""
 
 import asyncio
-import contextvars
-import re
-from pathlib import Path
 
 from researchchat.settings import build_widgets
 from researchchat.workspace.kaggle import settings_switch as switch
@@ -19,10 +16,9 @@ from researchchat.workspace.kaggle.settings_switch import (
     apply_account_change,
     kaggle_switch,
 )
+from tests.chat.fakes import FakeChatState, FakeToaster
 from tests.kaggle.fakes import USERNAME, FakeKaggle, FakeListener, answer
 from tests.kaggle.test_kaggle_account import SAVED, Harness
-
-SIGN_IN_ELEMENT = Path(__file__).resolve().parents[2] / "public" / "elements" / "KaggleSignIn.jsx"
 
 
 def run(coro):
@@ -111,26 +107,33 @@ def test_account_change_resends_settings_to_every_chat(monkeypatch) -> None:
     # Changed: two live chats; the account becomes connected · Then: both get Settings with the switch on, each with its own model widgets · Demonstrates: one account for every open chat
     from researchchat.workspace import actions
 
-    current_chat: contextvars.ContextVar[str] = contextvars.ContextVar("current_chat")
     received: dict[str, list] = {}
 
-    class Session:
-        def __init__(self, session_id: str) -> None:
-            self.id = session_id
+    class RecordingSettings:
+        def __init__(self, chat_id: str) -> None:
+            self.chat_id = chat_id
 
-    async def build_for(status: KaggleAccountStatus) -> list:
+        async def show_settings(self, switches) -> dict[str, bool]:
+            received[self.chat_id] = list(switches)
+            return {switch.id: switch.initial for switch in switches}
+
+        async def show_pickers(self, pickers) -> None:
+            pass
+
+    def link(chat_id: str) -> "actions.ChatLink":
+        return actions.ChatLink(
+            state=FakeChatState(chat_id=chat_id), poster=None, settings=RecordingSettings(chat_id),
+            toaster=FakeToaster(), panel=None, popup=None,
+        )
+
+    async def build_for(_chat, status: KaggleAccountStatus) -> list:
         return build_widgets({"reasoning"}, kaggle=status)
 
-    async def record_resend(build) -> None:
-        received[current_chat.get()] = await build()
-
     registry = actions.ChatRegistry()
-    registry.register(Session("chat-a"))
-    registry.register(Session("chat-b"))
+    registry.register(link("chat-a"))
+    registry.register(link("chat-b"))
     monkeypatch.setattr(actions, "chats", registry)
     monkeypatch.setattr(actions, "settings_widgets", build_for)
-    monkeypatch.setattr(actions, "init_ws_context", lambda session: current_chat.set(session.id))
-    monkeypatch.setattr(actions, "resend_settings_here", record_resend)
 
     run(actions.refresh_kaggle_switch_everywhere(KaggleAccountStatus("connected", username=USERNAME)))
     assert sorted(received) == ["chat-a", "chat-b"]
@@ -203,15 +206,16 @@ def test_unchanged_switch_does_nothing(monkeypatch) -> None:
     async def record(change, _account, _chat) -> None:
         applied.append(change)
 
-    async def build_for(status: KaggleAccountStatus) -> list:
+    async def build_for(_chat, status: KaggleAccountStatus) -> list:
         return []
 
     monkeypatch.setattr(actions, "settings_widgets", build_for)
     monkeypatch.setattr(actions, "apply_account_change", record)
+    link = actions.ChatLink(state=FakeChatState(), poster=None, settings=None, toaster=FakeToaster(), panel=None, popup=None)
     for switch_value in (False, True):
         before = {"thinking_effort": "low", "kaggle_account": switch_value}
         after = {"thinking_effort": "high", "kaggle_account": switch_value}
-        run(actions.apply_kaggle_switch(before, after))
+        run(actions.apply_kaggle_switch(before, after, link))
     assert applied == []
 
 
@@ -239,15 +243,3 @@ def test_only_kaggle_authorize_url_is_opened(tmp_path, monkeypatch) -> None:
     assert chat.opened == [] and chat.popup.shown == []
     assert chat.toasts == [(REFUSED_NOTICE, "error")]
     assert h.listener.closed
-
-
-def test_sign_in_element_opens_only_kaggle_url() -> None:
-    # Changed: read the sign-in element's source · Then: window.open is guarded by the Kaggle authorize prefix; no dangerouslySetInnerHTML or eval · Demonstrates: the browser side opens only Kaggle
-    source = SIGN_IN_ELEMENT.read_text()
-    assert 'const KAGGLE_AUTHORIZE_PREFIX = "https://www.kaggle.com/api/v1/oauth2/authorize?";' in source
-    assert re.search(r"startsWith\(KAGGLE_AUTHORIZE_PREFIX\)", source)
-    assert source.count("window.open(") == 1
-    guarded_open = re.search(r"if \(!isKaggleAuthorizeUrl\(url\)\) return;\s*window\.open\(url", source)
-    assert guarded_open, "window.open must come right after the Kaggle prefix check"
-    for forbidden in ("dangerouslySetInnerHTML", "eval(", "innerHTML"):
-        assert forbidden not in source

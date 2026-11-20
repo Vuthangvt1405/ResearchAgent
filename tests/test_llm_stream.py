@@ -7,6 +7,8 @@ from typing import Self
 import pytest
 
 from researchchat import llm
+from researchchat.progress import Progress
+from tests.chat.fakes import FakeProgressView
 
 
 class FakeStream:
@@ -42,8 +44,11 @@ class FakeReply:
     def __init__(self) -> None:
         self.tokens: list[str] = []
 
-    async def stream_token(self, token: str) -> None:
-        self.tokens.append(token)
+    async def stream(self, text: str) -> None:
+        self.tokens.append(text)
+
+    async def finish(self, text: str) -> None:
+        pass
 
 
 def use_stream(monkeypatch, stream: FakeStream) -> None:
@@ -62,7 +67,7 @@ def test_stream_closed_after_a_full_round(monkeypatch) -> None:
     stream = FakeStream([text_chunk("Hel"), text_chunk("lo")])
     use_stream(monkeypatch, stream)
     reply = FakeReply()
-    text, calls = asyncio.run(llm.stream_round([], reply, {}, SimpleNamespace(group=None)))
+    text, calls = asyncio.run(llm.stream_round([], reply, {}, Progress(FakeProgressView())))
     assert (text, calls, reply.tokens) == ("Hello", [], ["Hel", "lo"])
     assert stream.closed
 
@@ -72,5 +77,5 @@ def test_stream_closed_when_the_round_is_stopped(monkeypatch) -> None:
     stream = FakeStream([text_chunk("Hel"), text_chunk("lo")], fail_after=1)
     use_stream(monkeypatch, stream)
     with pytest.raises(asyncio.CancelledError):
-        asyncio.run(llm.stream_round([], FakeReply(), {}, SimpleNamespace(group=None)))
+        asyncio.run(llm.stream_round([], FakeReply(), {}, Progress(FakeProgressView())))
     assert stream.closed

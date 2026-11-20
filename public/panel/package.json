@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "description": "Notebook/datasets panel for the Chainlit sidebar, bundled into public/build",
+  "description": "Notebook/datasets panel, bundled into public/build",
   "scripts": {
     "build": "vite build",
     "typecheck": "tsc --noEmit",

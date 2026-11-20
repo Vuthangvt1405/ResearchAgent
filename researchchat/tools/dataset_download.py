@@ -9,8 +9,8 @@ first. Unknown arguments are ignored, so {"approved": true} can't skip a prompt.
 import json
 from typing import TYPE_CHECKING
 
-import chainlit as cl
-
+from researchchat.chat.current import this_chat
+from researchchat.chat.ports import Choice
 from researchchat.tools.services import (
     ConfirmRetry,
     DatasetDownloader,
@@ -72,14 +72,18 @@ DEFINITION = {
 }
 
 APPROVAL_TIMEOUT_SECONDS = 120
+DOWNLOAD_CHOICE = Choice("download", "Download")
+DOWNLOAD_OR_SKIP = (DOWNLOAD_CHOICE, Choice("skip", "Skip"))
+DOWNLOAD_AGAIN_CHOICE = Choice("download_again", "Download again")
+DOWNLOAD_AGAIN_OR_SKIP = (DOWNLOAD_AGAIN_CHOICE, Choice("skip", "Skip"))
 MAX_PATTERNS = 20
 PATTERN_MAX_CHARS = 200
 SOURCE_NAMES = {"huggingface": "Hugging Face", "zenodo": "Zenodo"}
 
 
 def pasted_links_in_chat() -> frozenset[str]:
-    """Links the user pasted in this chat, from the model history of the Chainlit session."""
-    return links.find_pasted_links(cl.user_session.get("history") or [])
+    """Links the user pasted in this chat, from the chat's model history."""
+    return links.find_pasted_links(this_chat().state.get("history") or [])
 
 
 def step_title(args: dict) -> str:
@@ -123,21 +127,13 @@ def read_args(args: dict) -> tuple[str, list[str] | None, bool]:
 async def ask_approval(plan: DatasetPlan, download_bytes: int) -> bool:
     """Name, file count, size and licence with Download / Skip; False on Skip or timeout."""
     count = len(plan.files)
-    ask = cl.AskActionMessage(
-        content=(
-            f"The assistant wants to download **{plan.name}** from {SOURCE_NAMES.get(plan.source, plan.source)}: "
-            f"{count:,} file{'s' if count != 1 else ''}, **{human_size(download_bytes)}**.\n\n"
-            f"Licence: {plan.license or 'not stated'} · {plan.url}"
-        ),
-        actions=[
-            cl.Action(name="download", payload={"download": True}, label="Download"),
-            cl.Action(name="skip", payload={"download": False}, label="Skip"),
-        ],
-        timeout=APPROVAL_TIMEOUT_SECONDS,
+    question = (
+        f"The assistant wants to download **{plan.name}** from {SOURCE_NAMES.get(plan.source, plan.source)}: "
+        f"{count:,} file{'s' if count != 1 else ''}, **{human_size(download_bytes)}**.\n\n"
+        f"Licence: {plan.license or 'not stated'} · {plan.url}"
     )
-    ask.parent_id = None  # don't hide the question inside the collapsed tool group
-    answer = await ask.send()
-    return bool(answer and answer.get("payload", {}).get("download"))
+    answer = await this_chat().asker.ask_choice(question, DOWNLOAD_OR_SKIP, APPROVAL_TIMEOUT_SECONDS)
+    return answer == DOWNLOAD_CHOICE.id
 
 
 BROKEN_STATUSES = ("failed", "missing")  # a copy the project can't use; downloading it again needs the user's yes
@@ -146,17 +142,9 @@ BROKEN_STATUSES = ("failed", "missing")  # a copy the project can't use; downloa
 async def ask_retry(name: str, reason: str | None) -> bool:
     """Download again / Skip for a copy that can't be used; False on Skip or timeout."""
     why = f" ({reason})" if reason else ""
-    ask = cl.AskActionMessage(
-        content=f"This project's copy of **{name}** can't be used{why}. Download it again?",
-        actions=[
-            cl.Action(name="download_again", payload={"download": True}, label="Download again"),
-            cl.Action(name="skip", payload={"download": False}, label="Skip"),
-        ],
-        timeout=APPROVAL_TIMEOUT_SECONDS,
-    )
-    ask.parent_id = None  # don't hide the question inside the collapsed tool group
-    answer = await ask.send()
-    return bool(answer and answer.get("payload", {}).get("download"))
+    question = f"This project's copy of **{name}** can't be used{why}. Download it again?"
+    answer = await this_chat().asker.ask_choice(question, DOWNLOAD_AGAIN_OR_SKIP, APPROVAL_TIMEOUT_SECONDS)
+    return answer == DOWNLOAD_AGAIN_CHOICE.id
 
 
 def undescribed_not_looked_at(
@@ -210,7 +198,7 @@ async def run(
     """Return (text shown in the chat step, JSON DownloadStarted for the model).
 
     svc / project_id / session_id / approve / pasted_links default to
-    actions.datasets, this chat's project, cl.context.session.id, the chat
+    actions.datasets, this chat's project, this chat's id, the chat
     prompt and the links in the user's messages; tests pass fakes (confirm_retry:
     the "Download again?" prompt).
     """
@@ -219,8 +207,9 @@ async def run(
         from researchchat.workspace import actions
 
         svc = svc or actions.datasets
-        project_id = project_id or actions.session_project(cl.user_session)
-        session_id = session_id or cl.context.session.id
+        chat = this_chat().state
+        project_id = project_id or actions.session_project(chat)
+        session_id = session_id or chat.chat_id
         if pasted_links is None:
             pasted_links = pasted_links_in_chat()
     not_looked_at = undescribed_not_looked_at(svc, project_id, session_id, ref, looked)

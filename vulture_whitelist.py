@@ -1,10 +1,4 @@
-"""Vulture false positives: names used implicitly (Chainlit attributes, TypedDict payload fields, pytest hooks/fixtures)."""
-_.output  # unused attribute (researchchat/tools/__init__.py:53)
-_.output  # unused attribute (researchchat/tools/__init__.py:58)
-_.parent_id  # unused attribute (researchchat/tools/dataset_delete.py:47)
-_.parent_id  # unused attribute (researchchat/tools/dataset_download.py:110)
-_.parent_id  # unused attribute (researchchat/tools/notebook_run.py:53)
-_.parent_id  # unused attribute (researchchat/workspace/actions.py:55)
+"""Vulture false positives: names used implicitly (TypedDict payload fields, pytest hooks/fixtures)."""
 already_downloaded  # unused variable (researchchat/workspace/datasets/service.py:92)
 position_in_queue  # unused variable (researchchat/workspace/datasets/service.py:93)
 position_in_queue  # unused variable (researchchat/workspace/datasets/service.py:108)

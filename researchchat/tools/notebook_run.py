@@ -7,8 +7,8 @@ may be read without asking the user, whoever added it.
 
 from typing import TYPE_CHECKING
 
-import chainlit as cl
-
+from researchchat.chat.current import this_chat
+from researchchat.chat.ports import Choice
 from researchchat.config import MODEL_AUTO_RUN, RISKY_CODE_NEEDS_APPROVAL
 from researchchat.tools.services import ApproveRun, NotebookRunner, UndescribedDatasets
 from researchchat.workspace import WorkspaceError, risk
@@ -62,6 +62,10 @@ def _remember_looks(
         (looked or chat_looks).remember(session_id, project_id, view["dataset_id"])
 
 
+RUN_CHOICE = Choice("run", "Run")
+RUN_OR_SKIP = (RUN_CHOICE, Choice("skip", "Skip"))
+
+
 def step_title(args: dict) -> str:
     return "Notebook: run code"
 
@@ -69,19 +73,9 @@ def step_title(args: dict) -> str:
 async def ask_approval(code: str, reasons: list[str]) -> bool:
     """Show code + reasons with Run / Skip; False on Skip or timeout."""
     why = "\n".join(f"- {r}" for r in reasons) or "- automatic running is turned off"
-    ask = cl.AskActionMessage(
-        content=f"The assistant wants to run this code:\n\n```python\n{code}\n```\n\n**Asking because it:**\n{why}",
-        actions=[
-            cl.Action(name="run", payload={"run": True}, label="Run"),
-            cl.Action(name="skip", payload={"run": False}, label="Skip"),
-        ],
-        timeout=APPROVAL_TIMEOUT_SECONDS,
-    )
-    # Chainlit nests a message under the step it's created in, and the tool
-    # steps live in a collapsed group, so the question would be hidden.
-    ask.parent_id = None
-    answer = await ask.send()
-    return bool(answer and answer.get("payload", {}).get("run"))
+    question = f"The assistant wants to run this code:\n\n```python\n{code}\n```\n\n**Asking because it:**\n{why}"
+    answer = await this_chat().asker.ask_choice(question, RUN_OR_SKIP, APPROVAL_TIMEOUT_SECONDS)
+    return answer == RUN_CHOICE.id
 
 
 async def run(
@@ -107,9 +101,10 @@ async def run(
         from researchchat.workspace import actions
 
         svc = svc or actions.service
-        project_id = project_id or actions.session_project(cl.user_session)
+        chat = this_chat().state
+        project_id = project_id or actions.session_project(chat)
         datasets = datasets or actions.datasets
-        session_id = session_id or cl.context.session.id
+        session_id = session_id or chat.chat_id
     approve = approve or ask_approval
 
     reasons = risk.check(code)

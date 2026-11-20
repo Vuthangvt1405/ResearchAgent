@@ -6,8 +6,7 @@ the project may be read without asking the user, whoever added it.
 
 import json
 
-import chainlit as cl
-
+from researchchat.chat.current import this_chat
 from researchchat.tools.dataset_download import error_json
 from researchchat.tools.services import DatasetDescriber
 from researchchat.workspace import ErrorCode, WorkspaceError
@@ -80,7 +79,7 @@ async def run(
         from researchchat.workspace import actions
 
         svc = svc or actions.datasets
-        project_id = project_id or actions.session_project(cl.user_session)
+        project_id = project_id or actions.session_project(this_chat().state)
     try:
         view = svc.view_for_model(project_id, dataset_id.strip())
         if view["describe"] is None:

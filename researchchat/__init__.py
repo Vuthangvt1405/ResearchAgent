@@ -1,1 +1,1 @@
-"""ResearchChat: a Chainlit research assistant on OpenRouter."""
+"""ResearchChat: a research assistant on OpenRouter, with its own web server and a project notebook."""

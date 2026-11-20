@@ -11,9 +11,9 @@ import json
 import re
 import time
 
-import chainlit as cl
 import httpx
 
+from researchchat.chat.current import this_chat
 from researchchat.config import DATASET_MAX_RESULTS
 from researchchat.tools.services import ProjectDatasetLookup, UndescribedDatasets
 from researchchat.tools.titles import shorten
@@ -267,10 +267,10 @@ def _chat_project(
     if svc is not None and project_id is not None:
         return svc, project_id
     try:
-        _ = cl.context.session  # raises outside a Chainlit chat, before the app is imported
+        chat = this_chat().state  # raises outside a chat, before the app's services are imported
         from researchchat.workspace import actions
 
-        return svc or actions.datasets, project_id or actions.session_project(cl.user_session)
+        return svc or actions.datasets, project_id or actions.session_project(chat)
     except Exception:  # noqa: BLE001 — search must work without a project
         return None, None
 

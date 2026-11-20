@@ -4,6 +4,7 @@ import asyncio
 import logging
 import re
 import urllib.parse
+from dataclasses import asdict
 from pathlib import Path
 
 from researchchat.config import KAGGLE_TOKEN_FILE, WORKSPACES_DIR
@@ -40,7 +41,7 @@ def everything_shown(h: Harness, chat: FakeChat) -> str:
     """All text the chat and Settings showed during the flow."""
     shown = [message for message, _kind in chat.toasts]
     shown += chat.popup.shown + [message for _state, message in chat.popup.finished]
-    shown += [repr(kaggle_switch(status).to_dict()) for status in h.changes]
+    shown += [repr(asdict(kaggle_switch(status))) for status in h.changes]
     shown += [repr(status) for status in h.changes]
     return "\n".join(shown)
 
