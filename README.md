@@ -50,7 +50,7 @@ SillyTherin is designed for analysts, students and researchers who want to move 
 ### Installation
 
 ```bash
-git clone https://github.com/Vuthangvt1405/SillyTherin.git
+git clone https://github.com/uV-naloN/SillyTherin.git
 cd SillyTherin
 scripts/setup.sh    # creates .venv, installs dependencies and creates .env
 ```
