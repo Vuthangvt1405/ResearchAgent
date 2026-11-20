@@ -86,7 +86,8 @@ def _font_families(css: str) -> list[str]:
     return out
 
 
-FONT_OK = re.compile(r"^(?:.*\s)?(?:var\(--font-(?:sans|mono)\)|inherit)$")
+# Code cells use Jupyter's code font, kept in one panel variable; everything else uses Chainlit's fonts
+FONT_OK = re.compile(r"^(?:.*\s)?(?:var\(--font-(?:sans|mono)\)|var\(--rc-code-font\)|inherit)$")
 
 
 def _chainlit_assets() -> Path | None:
@@ -223,7 +224,7 @@ def test_semantic_colours_are_not_taken_from_chart_tokens():
 
 def test_panel_uses_the_chainlit_font_variables():
     # baseline, negative (font-family: ui-sans-serif, … is reintroduced).
-    # Then: every font-family is var(--font-sans), var(--font-mono) or inherit.
+    # Then: every font-family is var(--font-sans), var(--font-mono), the code-cell font or inherit.
     # Demonstrates: the panel and the chat share a typeface.
     bad = [f for f in _font_families(_css_blocks()) if not FONT_OK.match(f)]
     assert bad == []
@@ -236,10 +237,18 @@ def test_no_font_family_is_declared_outside_the_panel():
     assert bad == []
 
 
-def test_no_theme_json_is_added():
-    # negative: a public/theme.json appears -> fails.
-    # Demonstrates: the panel cannot change the app-wide font.
-    assert not (ROOT / "public" / "theme.json").exists()
+def test_theme_json_sets_no_font():
+    # negative: public/theme.json adds custom fonts or a --font-* variable -> fails.
+    # Demonstrates: the theme only recolours the app; the app-wide font stays Chainlit's.
+    import json
+
+    theme_file = ROOT / "public" / "theme.json"
+    if not theme_file.exists():
+        return
+    theme = json.loads(theme_file.read_text(encoding="utf-8"))
+    assert "custom_fonts" not in theme
+    variables = [name for mode in theme.get("variables", {}).values() for name in mode]
+    assert [name for name in variables if name.startswith("--font")] == []
 
 
 # ---- Tailwind classes exist in Chainlit's build --------
