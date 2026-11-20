@@ -429,3 +429,66 @@ def test_shim_matches_the_tested_connect_logic():
 
     assert timeout_ms(shim) == timeout_ms(ts) == 10000
     assert fallback_text(shim) == fallback_text(ts)
+
+
+# ---- Chainlit page parts that custom.js finds by name --
+# Baseline: Given the ids, attributes and classes of Chainlit's own markup that custom.js
+# looks for · When Chainlit's built JS is searched
+# A Chainlit upgrade that renames one would silently switch a page feature off.
+
+# custom.js looks for -> how Chainlit's built JS writes it
+CHAINLIT_PAGE_PARTS: dict[str, str] = {
+    "theme-toggle": 'id:"theme-toggle"',
+    "side-view-content": 'id:"side-view-content"',
+    "side-view-title": 'id:"side-view-title"',
+    "data-panel": "data-panel",
+    "data-resize-handle": "data-resize-handle",
+    "chat-settings-open-modal": 'id:"chat-settings-open-modal"',
+    "chat-settings": 'id:"chat-settings"',
+    "confirm": 'id:"confirm"',
+    "space-y-2": '("space-y-2"',  # a Settings field: label, control, help text
+    'role="switch"': 'role:"switch"',
+    "mode-picker-popover-": "id:`mode-picker-popover-${",
+    "cmdk-item": "cmdk-item",
+}
+# Names custom.js owns: its own elements, and the Kaggle switch id the server sends
+OWN_PAGE_NAMES = re.compile(r"^(rc-|kaggle_account$)")
+
+
+def _chainlit_js() -> str:
+    assets = _chainlit_assets()
+    files = sorted(assets.glob("index-*.js")) if assets else []
+    if not files:
+        pytest.skip("Chainlit's built JS (chainlit/frontend/dist/assets/index-*.js) not found")
+    return "\n".join(f.read_text(encoding="utf-8") for f in files)
+
+
+def _ids_looked_up(js: str) -> set[str]:
+    """Element ids custom.js names: its *_ID constants, getElementById calls and #id selectors."""
+    constants = re.findall(r'const \w+_ID = "([^"]+)"', js)
+    lookups = re.findall(r'getElementById\("([^"]+)"\)', js)
+    selectors = re.findall(r"#([a-z][\w-]*)\b", js)
+    return {name for name in [*constants, *lookups, *selectors] if not OWN_PAGE_NAMES.match(name)}
+
+
+def _is_listed(page_id: str) -> bool:
+    return any(page_id == part or (part.endswith("-") and page_id.startswith(part)) for part in CHAINLIT_PAGE_PARTS)
+
+
+def test_every_page_part_custom_js_relies_on_is_in_chainlits_build():
+    # Then: each listed part is still written by Chainlit's built JS; a missing one is named.
+    # Demonstrates: a Chainlit upgrade that renames a part fails here, not silently in the browser.
+    js = _chainlit_js()
+    assert [part for part, markup in CHAINLIT_PAGE_PARTS.items() if markup not in js] == []
+    # negative: a part Chainlit never writes is reported
+    assert 'id:"rc-no-such-part"' not in js
+
+
+def test_every_chainlit_id_custom_js_uses_is_listed():
+    # Then: every id custom.js looks up that it doesn't own itself is in CHAINLIT_PAGE_PARTS.
+    # Demonstrates: a new lookup can't skip the check above.
+    unlisted = sorted(page_id for page_id in _ids_looked_up(CUSTOM_JS.read_text(encoding="utf-8")) if not _is_listed(page_id))
+    assert unlisted == []
+    # negative: a new lookup of an unlisted Chainlit id is caught
+    assert _ids_looked_up('document.getElementById("new-chainlit-id")') == {"new-chainlit-id"}
+    assert not _is_listed("new-chainlit-id")
