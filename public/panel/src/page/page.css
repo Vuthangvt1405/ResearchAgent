@@ -19,6 +19,9 @@ html.rc-nb-animating [data-resize-handle] { transition:opacity .2s ease; }
 /* Kaggle account: the switch is driven by the button drawn next to it; its label would flip it unseen */
 #chat-settings #kaggle_account[role="switch"] { display:none !important; }
 #chat-settings label[for="kaggle_account"] { pointer-events:none; }
+/* The button uses shadcn's destructive style; Chainlit's dark theme makes that red a dim maroon,
+   so the button sets its own clear red, the same in light and dark */
+#rc-kaggle-account-button { --destructive:0 72% 51%; --destructive-foreground:0 0% 100%; }
 /* Settings switch rows: label left, control right, help text on the full width below.
    The inner wrapper becomes "contents" so the control and help text join the row's grid. */
 #chat-settings .space-y-2:has(> div > [role="switch"]) { display:grid; grid-template-columns:minmax(0,1fr) auto; column-gap:12px; row-gap:6px; align-items:center; }
