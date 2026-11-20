@@ -21,7 +21,7 @@ from researchchat.workspace.kaggle.token_file import SavedSignIn, TokenFile
 CANCELLED_NOTICE = "Kaggle sign-in was cancelled."
 TIMED_OUT_NOTICE = "Kaggle sign-in timed out. Try again."
 REFUSED_NOTICE = "Couldn't connect to Kaggle. Try again."
-SIGNED_OUT_NOTICE = "Kaggle signed you out. Turn on to connect again."
+SIGNED_OUT_NOTICE = "Kaggle signed you out. Connect to sign in again."
 REVOKE_UNREACHABLE_NOTICE = (
     "Disconnected here. Kaggle couldn't be reached to cancel the sign-in; "
     "you can remove SillyTherin under kaggle.com → Settings."

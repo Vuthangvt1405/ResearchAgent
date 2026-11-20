@@ -2,6 +2,7 @@
 // - a top-bar button (and Ctrl+\) that hides or shows the notebook sidebar
 // - the Settings button, moved from the chat box to the top bar (same centred window)
 // - a search box in the chat box Model picker (OpenRouter has hundreds of models)
+// - a Connect / Disconnect button for the Kaggle account in Settings
 // - thin, theme-coloured scrollbars
 // The project picker lives in the Notebook panel itself (public/elements/Notebook.jsx).
 (function () {
@@ -23,6 +24,28 @@
   const MODEL_SEARCH_ID = "rc-model-search";
   const MODEL_EMPTY_ID = "rc-model-search-empty";
   const HIDDEN_ATTR = "data-rc-hidden";
+
+  // Kaggle account button in Settings. Chainlit's Settings has no button widget, so the
+  // server sends a switch (researchchat/workspace/kaggle/settings_switch.py). The switch
+  // stays in the page, hidden, and the button flips it and presses Confirm: the server
+  // then connects or disconnects exactly as it does for the switch.
+  const SETTINGS_MODAL_ID = "chat-settings";
+  const SETTINGS_CONFIRM_ID = "confirm";
+  const KAGGLE_SWITCH_ID = "kaggle_account";
+  const KAGGLE_BUTTON_ID = "rc-kaggle-account-button";
+  // A Settings field that holds a switch: Chainlit stacks label, control and help text
+  const SWITCH_FIELD = `#${SETTINGS_MODAL_ID} .space-y-2:has(> div > [role="switch"])`;
+  const KAGGLE_CONNECT_LABEL = "Connect Kaggle";
+  const KAGGLE_DISCONNECT_LABEL = "Disconnect";
+  // The same classes as Chainlit's own shadcn Button (size "sm"), so its stylesheet already has them
+  const SHADCN_BUTTON_CLASS =
+    "inline-flex items-center justify-center gap-2 whitespace-nowrap text-sm font-medium ring-offset-background " +
+    "transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring " +
+    "focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 h-9 rounded-md px-3";
+  const SHADCN_VARIANT_CLASS = {
+    default: "bg-primary text-primary-foreground hover:bg-primary/90",
+    destructive: "bg-destructive text-destructive-foreground hover:bg-destructive/90",
+  };
 
   const ICONS = {
     settings:
@@ -56,6 +79,17 @@ html.rc-nb-animating [data-resize-handle] { transition:opacity .2s ease; }
   border:1px solid hsl(var(--border)); background:transparent; color:inherit; font-size:13px; outline:none; }
 #${MODEL_SEARCH_ID}:focus { border-color:hsl(var(--ring)); }
 #${MODEL_EMPTY_ID} { padding:12px 8px; font-size:13px; text-align:center; opacity:.7; }
+/* Kaggle account: the switch is driven by the button drawn next to it; its label would flip it unseen */
+#${SETTINGS_MODAL_ID} #${KAGGLE_SWITCH_ID}[role="switch"] { display:none !important; }
+#${SETTINGS_MODAL_ID} label[for="${KAGGLE_SWITCH_ID}"] { pointer-events:none; }
+/* Settings switch rows: label left, control right, help text on the full width below.
+   The inner wrapper becomes "contents" so the control and help text join the row's grid. */
+${SWITCH_FIELD} { display:grid; grid-template-columns:minmax(0,1fr) auto; column-gap:12px; row-gap:6px; align-items:center; }
+${SWITCH_FIELD} > * { margin-top:0 !important; }
+${SWITCH_FIELD} > label { grid-column:1; grid-row:1; }
+${SWITCH_FIELD} > div { display:contents; }
+${SWITCH_FIELD} > div > [role="switch"], ${SWITCH_FIELD} > div > #${KAGGLE_BUTTON_ID} { grid-column:2; grid-row:1; justify-self:end; }
+${SWITCH_FIELD} > div > :not([role="switch"]):not(#${KAGGLE_BUTTON_ID}) { grid-column:1 / -1; grid-row:2; }
 /* The chat box keeps only what is used while typing; Settings opens from the top bar */
 #${COMPOSER_SETTINGS_ID} { display:none !important; }
 /* ---- scrollbars: thin, rounded, theme-coloured, no arrow buttons ----
@@ -254,6 +288,54 @@ html.rc-nb-animating [data-resize-handle] { transition:opacity .2s ease; }
     setTimeout(() => input.focus(), 0);
   }
 
+  // ---- Kaggle account button in Settings ----
+
+  function kaggleSwitch() {
+    return document.querySelector(`#${SETTINGS_MODAL_ID} #${KAGGLE_SWITCH_ID}[role="switch"]`);
+  }
+
+  function isSwitchOn(toggle) {
+    return toggle.getAttribute("aria-checked") === "true";
+  }
+
+  function renderKaggleButton(btn, toggle) {
+    const isConnected = isSwitchOn(toggle);
+    const variant = isConnected ? "destructive" : "default";
+    const label = isConnected ? KAGGLE_DISCONNECT_LABEL : KAGGLE_CONNECT_LABEL;
+    // Writing unchanged text still counts as a page change and would wake the observer again
+    if (btn.textContent !== label) btn.textContent = label;
+    btn.className = `${SHADCN_BUTTON_CLASS} ${SHADCN_VARIANT_CLASS[variant]}`;
+    btn.disabled = toggle.disabled;
+  }
+
+  function confirmSettings() {
+    const confirm = document.querySelector(`#${SETTINGS_MODAL_ID} #${SETTINGS_CONFIRM_ID}`);
+    if (confirm) confirm.click();
+  }
+
+  function flipKaggleSwitchAndConfirm() {
+    const toggle = kaggleSwitch();
+    if (!toggle || toggle.disabled) return;
+    toggle.click();
+    // Confirm after React has stored the switch's new value, so the server sees the change
+    setTimeout(confirmSettings, 0);
+  }
+
+  function ensureKaggleButton() {
+    const toggle = kaggleSwitch();
+    if (!toggle) return;
+    let btn = document.getElementById(KAGGLE_BUTTON_ID);
+    if (!btn || btn.previousElementSibling !== toggle) {
+      if (btn) btn.remove();
+      btn = document.createElement("button");
+      btn.id = KAGGLE_BUTTON_ID;
+      btn.type = "button";
+      btn.addEventListener("click", flipKaggleSwitchAndConfirm);
+      toggle.insertAdjacentElement("afterend", btn);
+    }
+    renderKaggleButton(btn, toggle);
+  }
+
   // ---- notebook panel bundle (plan: docs/plans/done/panel-react-build-plan.md) ----
   // The panel is a bundled React app (public/panel → public/build). Load it once per
   // page, same-origin only (SEC3). public/elements/Notebook.jsx waits on this promise.
@@ -300,9 +382,15 @@ html.rc-nb-animating [data-resize-handle] { transition:opacity .2s ease; }
         ensureToggle();
         ensureSettingsButton();
         ensureModelSearch();
+        ensureKaggleButton();
         widenSidebar();
       }, 50);
-    }).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["disabled"] });
+    }).observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["disabled", "aria-checked"],
+    });
     ensureToggle();
     ensureSettingsButton();
     widenSidebar();
