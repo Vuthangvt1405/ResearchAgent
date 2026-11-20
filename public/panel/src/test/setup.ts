@@ -21,3 +21,5 @@ proto.scrollIntoView ||= function () {};
 proto.hasPointerCapture ||= function () { return false; };
 proto.setPointerCapture ||= function () {};
 proto.releasePointerCapture ||= function () {};
+const css = (g.CSS ||= {}) as Record<string, unknown>;
+css.escape ||= (value: string) => value.replace(/[^a-zA-Z0-9_-]/g, (char) => `\\${char}`);

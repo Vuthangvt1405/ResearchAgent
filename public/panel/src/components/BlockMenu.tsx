@@ -49,7 +49,7 @@ export function BlockMenu({ cell, actions, open, setMenu }: BlockMenuProps) {
         onCloseAutoFocus={(e) => {
           e.preventDefault();
           const h = document.querySelector<HTMLElement>(`[data-cell-id="${CSS.escape(cell.id)}"] .rcnb-handle`);
-          if (h && !document.activeElement?.closest("textarea, input")) h.focus();
+          if (h && !document.activeElement?.closest("textarea, input, [contenteditable='true']")) h.focus();
         }}
       >
         {item(<Code2 />, "Add code below", () => actions.add(cell.id, "code"))}
