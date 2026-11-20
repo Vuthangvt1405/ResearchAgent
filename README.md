@@ -1,96 +1,130 @@
 <div align="center">
 
-<!--<img src="asset/snake_logo_pack/snake_logo.svg" alt="SillyTherin logo" width="200" />-->
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="public/logo_dark.svg" />
+  <img src="public/logo_light.svg" alt="SillyTherin" width="420" />
+</picture>
 
-# SillyTherin
+### Build your own dataset from pure curiosity.
 
-### *If You Are Need Analyst Work Jupyter, I Think Maybe You Need This :D*
-
-**A friendly research assistant that thinks, searches the web, finds datasets and runs notebook code, all from one chat.**
+A playground for your own data pool, where every question you ask<br />
+grows it a little deeper and every answer is yours to explore.
 
 [![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![Chainlit](https://img.shields.io/badge/built%20with-Chainlit-F80061)](https://chainlit.io)
 [![OpenRouter](https://img.shields.io/badge/models-OpenRouter-6566F1)](https://openrouter.ai)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 
+[Overview](#overview) · [Features](#features) · [Getting started](#getting-started) · [Configuration](#configuration) · [Security](#security) · [Development](#development)
+
 </div>
 
 ---
 
-## Why SillyTherin?
+## Overview
 
-Data analysis usually means jumping between a search engine, dataset sites, download scripts and a Jupyter notebook. SillyTherin puts all of that in one chat. You ask a question, and the assistant researches it on the web, finds and downloads a matching dataset, and analyses it in a notebook you can see. Every step it takes shows up in the chat.
+Data analysis usually means switching between a search engine, dataset portals, download scripts and a Jupyter notebook. SillyTherin brings these into a single chat. You ask a question; the assistant researches it on the web, finds and downloads a suitable dataset, and analyses it in a notebook that sits beside the conversation. Every step it takes is shown in the chat, so the work stays transparent and reproducible.
 
-It's for analysts, students and researchers who want to go from a question to working notebook code quickly, without setting everything up by hand.
+SillyTherin is designed for analysts, students and researchers who want to move from an idea to running code quickly, without setting up the tooling by hand.
 
 ## Features
 
-- **Thinks before answering:** pick a thinking level and watch the reasoning stream in.
-- **Web search:** searches the web and reads public pages, showing every step in the chat.
-- **Dataset discovery:** finds datasets on Hugging Face, Zenodo and DataCite.
-- **Background downloads:** datasets download while you keep chatting, are verified, and are stored once across projects.
-- **Per-project notebook:** each project gets its own notebook and Python kernel in a sandboxed Docker container.
-- **Safe by default:** risky code and deletes ask first; only public HTTPS hosts are contacted.
-- **Any model on OpenRouter.**
+| | |
+|---|---|
+| **Reasoning** | Choose a thinking level per chat and follow the model's reasoning as it streams in. |
+| **Web research** | Searches the web and reads public pages, with each search and page shown as a step. |
+| **Dataset discovery** | Finds datasets across Hugging Face, Zenodo and DataCite. |
+| **Background downloads** | Datasets download while you keep working, are verified on arrival and stored once for reuse across projects. |
+| **Project notebooks** | Each project has its own notebook and Python kernel, isolated in a Docker container. The notebook panel offers Jupyter-style cells with syntax highlighting. |
+| **Safe defaults** | Risky code and deletions require confirmation, and only public HTTPS hosts are contacted. |
+| **Model choice** | Works with any chat model available on OpenRouter. |
 
-## Quick start
+## Getting started
 
-You need **Python 3.11–3.13**, an **[OpenRouter API key](https://openrouter.ai/keys)**, and optionally **Docker** (only for running notebook code).
+### Prerequisites
+
+- **Python** 3.11, 3.12 or 3.13
+- An **[OpenRouter API key](https://openrouter.ai/keys)**
+- **Docker** (optional, required only to run notebook code)
+
+### Installation
 
 ```bash
 git clone https://github.com/Vuthangvt1405/SillyTherin.git
 cd SillyTherin
-scripts/setup.sh                 # creates .venv, installs packages, creates .env
+scripts/setup.sh    # creates .venv, installs dependencies and creates .env
 ```
 
-On Windows: `py -3.11 -m venv .venv`, `.venv\Scripts\activate`, `pip install -r requirements.txt`, `copy .env.example .env`.
+<details>
+<summary>Windows</summary>
 
-Add your key to `.env`:
-
+```powershell
+py -3.11 -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
+copy .env.example .env
 ```
+
+</details>
+
+Add your API key to `.env`:
+
+```dotenv
 OPENROUTER_API_KEY=sk-or-...
 ```
 
-(Optional) build the notebook kernel with Docker running:
+To run notebook code, build the kernel image with Docker running:
 
 ```bash
 docker build -f docker/kernel.Dockerfile -t researchchat-kernel:1 docker
 ```
 
-Run it and open <http://localhost:8000>:
+### Running
 
 ```bash
 .venv/bin/chainlit run app.py
 ```
 
-In the ⚙️ menu next to the message box, turn on **Web search** and **Notebook**.
+Open <http://localhost:8000>. In the settings menu next to the message box, enable **Web search** and **Notebook** as needed.
 
 ## Configuration
 
-| File | What |
+| File | Purpose |
 |---|---|
-| `.env` | `OPENROUTER_API_KEY`, optional `OPENROUTER_MODEL` |
-| `config.toml` | Model, prompts, search and download limits, thinking levels |
-| `.chainlit/config.toml` | Chainlit UI settings |
+| `.env` | Secrets: `OPENROUTER_API_KEY`, and optionally `OPENROUTER_MODEL` to override the default model |
+| `config.toml` | Default model, system prompt, search and download limits, thinking levels |
+| `.chainlit/config.toml` | Chainlit interface settings |
+| `public/theme.json` | Interface colours |
 
-Restart the app after changing any of these. Projects, notebooks and datasets are stored in `workspaces/` (git-ignored).
+Restart the app after changing any of these files. Projects, notebooks and datasets are stored in `workspaces/`, which is excluded from version control.
 
-> Never start the app with `--host 0.0.0.0`: anyone who can reach it could run code.
+## Security
 
-## Contributing
+SillyTherin executes code, so it only serves `localhost` and refuses to start on any other host. Do not expose it on a network (for example with `--host 0.0.0.0`) unless you first add authentication.
 
-Bug reports, ideas and pull requests are welcome.
+## Development
+
+Install the development dependencies, then run the tests and the linter:
 
 ```bash
 .venv/bin/python -m pip install -r requirements-dev.txt
-.venv/bin/python -m pytest -m "not docker"    # tests without Docker
-ruff check .                                  # lint
+.venv/bin/python -m pytest -m "not docker"    # tests that do not need Docker
+.venv/bin/python -m ruff check .
 ```
+
+The notebook panel is a separate front-end in `public/panel`:
+
+```bash
+cd public/panel
+npm ci
+npm test
+npm run build    # writes the bundle to public/build
+```
+
+Contributions are welcome. Please open an issue to discuss larger changes before submitting a pull request.
 
 ## License
 
-Licensed under the [Apache License 2.0](LICENSE).
+Released under the [Apache License 2.0](LICENSE).
 
-<div align="center">
-<sub>Made with ☕ and a slightly silly snake 🐍</sub>
-</div>
+Built with [Chainlit](https://chainlit.io), [OpenRouter](https://openrouter.ai) and [CodeMirror](https://codemirror.net).
