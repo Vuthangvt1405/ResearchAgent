@@ -503,9 +503,10 @@ def test_every_chainlit_id_the_extras_use_is_listed():
 
 
 def _kaggle_button_classes() -> list[str]:
-    """The shadcn Button classes the Kaggle button copies (BUTTON_BASE_CLASS and BUTTON_VARIANT_CLASS)."""
+    """The shadcn Button classes the Kaggle button copies (BUTTON_BASE_CLASS and BUTTON_RED_CLASS)."""
     src = (PAGE_SRC / "kaggleButton.ts").read_text(encoding="utf-8")
-    block = src[src.index("const BUTTON_BASE_CLASS") : src.index("};", src.index("const BUTTON_VARIANT_CLASS"))]
+    red = src.index("const BUTTON_RED_CLASS")
+    block = src[src.index("const BUTTON_BASE_CLASS") : src.index(";", red)]
     return sorted({c for text in re.findall(r'"([^"]*)"', block) for c in text.split()})
 
 

@@ -176,13 +176,13 @@ describe("Model picker search", () => {
 });
 
 describe("Kaggle button in Settings", () => {
-  it("says Connect Kaggle when the switch is off, Disconnect in red when on", () => {
+  it("says Connect Kaggle when the switch is off and Disconnect when on, red both times", () => {
     const { toggle } = settingsWithKaggleSwitch(false);
     refreshPageExtras(document);
     const button = document.getElementById(KAGGLE_BUTTON_ID)!;
     expect(button.previousElementSibling).toBe(toggle);
     expect(button.textContent).toBe(KAGGLE_CONNECT_LABEL);
-    expect(button.className).toContain("bg-primary");
+    expect(button.className).toContain("bg-destructive");
     toggle.setAttribute("aria-checked", "true");
     refreshPageExtras(document);
     expect(button.textContent).toBe(KAGGLE_DISCONNECT_LABEL);

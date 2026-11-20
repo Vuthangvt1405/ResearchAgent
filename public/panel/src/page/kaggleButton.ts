@@ -15,10 +15,8 @@ const BUTTON_BASE_CLASS =
   "inline-flex items-center justify-center gap-2 whitespace-nowrap text-sm font-medium ring-offset-background " +
   "transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring " +
   "focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 h-9 rounded-md px-3";
-const BUTTON_VARIANT_CLASS = {
-  default: "bg-primary text-primary-foreground hover:bg-primary/90",
-  destructive: "bg-destructive text-destructive-foreground hover:bg-destructive/90",
-};
+// Red in both states (shadcn's destructive variant), so the account button stands apart
+const BUTTON_RED_CLASS = "bg-destructive text-destructive-foreground hover:bg-destructive/90";
 
 function kaggleSwitch(doc: Document): HTMLButtonElement | null {
   return doc.querySelector(`#${SETTINGS_MODAL_ID} #${KAGGLE_SWITCH_ID}[role="switch"]`);
@@ -29,12 +27,10 @@ function isSwitchOn(toggle: HTMLElement): boolean {
 }
 
 function renderKaggleButton(button: HTMLButtonElement, toggle: HTMLButtonElement) {
-  const isConnected = isSwitchOn(toggle);
-  const variant = isConnected ? "destructive" : "default";
-  const label = isConnected ? KAGGLE_DISCONNECT_LABEL : KAGGLE_CONNECT_LABEL;
+  const label = isSwitchOn(toggle) ? KAGGLE_DISCONNECT_LABEL : KAGGLE_CONNECT_LABEL;
   // Writing unchanged text still counts as a page change and would wake the observer again
   if (button.textContent !== label) button.textContent = label;
-  button.className = `${BUTTON_BASE_CLASS} ${BUTTON_VARIANT_CLASS[variant]}`;
+  button.className = `${BUTTON_BASE_CLASS} ${BUTTON_RED_CLASS}`;
   button.disabled = toggle.disabled;
 }
 
