@@ -59,3 +59,6 @@ html.rc-nb-animating [data-resize-handle] { transition:opacity .2s ease; }
 #side-view-content:has(#rc-panel-root) { padding-left:12px !important; padding-right:12px !important; }
 /* Chainlit's own back arrow closes the panel for good; the top-bar toggle replaces it */
 #side-view-title > button { display:none !important; }
+/* The notebook names itself ("Project notebook"), so Chainlit's "Notebook" heading row above it
+   is dropped; other sidebar content keeps its heading */
+#side-view-title:has(+ #side-view-content #rc-panel-root) { display:none !important; }
