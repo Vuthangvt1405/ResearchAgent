@@ -175,5 +175,3 @@ export function useNotebookActions() {
     switchProject, createProject, dsCancel, dsDelete, insertDatasetCode,
   };
 }
-
-export type NotebookActions = ReturnType<typeof useNotebookActions>;
