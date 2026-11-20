@@ -11,7 +11,8 @@ import { NoteCell } from "@/components/NoteCell";
 import { ProjectPicker } from "@/components/ProjectPicker";
 import { usePanel } from "@/store";
 import { MOVED_EVENT } from "@/overlay";
-import { copyText, isActive } from "@/lib/loadCode";
+import { copyText } from "@/lib/clipboard";
+import { isActive } from "@/lib/datasetProgress";
 import { useNotebookActions } from "@/lib/notebookActions";
 import type { CellProps } from "@/types";
 

@@ -8,7 +8,10 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { usePanel } from "@/store";
-import { copyText, fmtBytes, isActive, loadCode, ordinal, percent } from "@/lib/loadCode";
+import { copyText } from "@/lib/clipboard";
+import { isActive, percent } from "@/lib/datasetProgress";
+import { fmtBytes, ordinal } from "@/lib/format";
+import { loadCode } from "@/lib/loadCode";
 import { safeHref } from "@/lib/safeHref";
 import type { DatasetProps } from "@/types";
 

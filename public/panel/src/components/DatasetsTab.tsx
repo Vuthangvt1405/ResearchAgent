@@ -7,7 +7,8 @@ import { Input } from "@/components/ui/input";
 import { DatasetCard } from "@/components/DatasetCard";
 import { DatasetSortSelect } from "@/components/DatasetSortSelect";
 import { usePanel } from "@/store";
-import { fmtBytes, isActive } from "@/lib/loadCode";
+import { fmtBytes } from "@/lib/format";
+import { isActive } from "@/lib/datasetProgress";
 import type { DatasetProps } from "@/types";
 
 export interface DatasetsTabProps {
