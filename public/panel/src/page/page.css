@@ -1,0 +1,58 @@
+/* Page-level styles for the extras in src/page: sidebar collapse, the top-bar buttons,
+   the Model picker search, the Kaggle button in Settings, and thin theme-coloured scrollbars. */
+/* Collapsed: the sidebar panel shrinks to nothing and the chat takes the space.
+   The panel library sets flex inline, so !important wins over it. */
+html.rc-nb-collapsed [data-panel]:has(#side-view-content) { flex:0.001 1 0px !important; opacity:0; pointer-events:none; }
+/* (0.001, not 0: browsers don't animate flex-grow to or from exactly 0) */
+html.rc-nb-collapsed [data-resize-handle]:has(+ [data-panel] #side-view-content) { opacity:0; pointer-events:none; width:0 !important; }
+/* Animate only while toggling, so dragging the divider stays instant */
+html.rc-nb-animating [data-panel] { transition:flex-grow .32s cubic-bezier(.32,.72,0,1), opacity .22s ease; }
+html.rc-nb-animating [data-resize-handle] { transition:opacity .2s ease; }
+#rc-sidebar-toggle svg { transition:transform .32s cubic-bezier(.32,.72,0,1); }
+#rc-sidebar-toggle:active svg { transform:scale(.88); }
+/* Model picker search: an attribute, not a class, so React's re-renders don't undo it */
+#mode-picker-popover-model [data-rc-hidden] { display:none !important; }
+#rc-model-search { width:100%; box-sizing:border-box; margin:0 0 4px; padding:6px 8px; border-radius:6px;
+  border:1px solid hsl(var(--border)); background:transparent; color:inherit; font-size:13px; outline:none; }
+#rc-model-search:focus { border-color:hsl(var(--ring)); }
+#rc-model-search-empty { padding:12px 8px; font-size:13px; text-align:center; opacity:.7; }
+/* Kaggle account: the switch is driven by the button drawn next to it; its label would flip it unseen */
+#chat-settings #kaggle_account[role="switch"] { display:none !important; }
+#chat-settings label[for="kaggle_account"] { pointer-events:none; }
+/* Settings switch rows: label left, control right, help text on the full width below.
+   The inner wrapper becomes "contents" so the control and help text join the row's grid. */
+#chat-settings .space-y-2:has(> div > [role="switch"]) { display:grid; grid-template-columns:minmax(0,1fr) auto; column-gap:12px; row-gap:6px; align-items:center; }
+#chat-settings .space-y-2:has(> div > [role="switch"]) > * { margin-top:0 !important; }
+#chat-settings .space-y-2:has(> div > [role="switch"]) > label { grid-column:1; grid-row:1; }
+#chat-settings .space-y-2:has(> div > [role="switch"]) > div { display:contents; }
+#chat-settings .space-y-2:has(> div > [role="switch"]) > div > [role="switch"], #chat-settings .space-y-2:has(> div > [role="switch"]) > div > #rc-kaggle-account-button { grid-column:2; grid-row:1; justify-self:end; }
+#chat-settings .space-y-2:has(> div > [role="switch"]) > div > :not([role="switch"]):not(#rc-kaggle-account-button) { grid-column:1 / -1; grid-row:2; }
+/* The chat box keeps only what is used while typing; Settings opens from the top bar */
+#chat-settings-open-modal { display:none !important; }
+/* ---- scrollbars: thin, rounded, theme-coloured, no arrow buttons ----
+   Chromium/Safari use ::-webkit-scrollbar; Firefox uses the standard properties.
+   (In Chromium, setting scrollbar-color would switch the webkit styles off.) */
+::-webkit-scrollbar { width:10px; height:10px; }
+::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background:transparent; }
+::-webkit-scrollbar-button { display:none; width:0; height:0; }
+::-webkit-scrollbar-thumb { background-color:hsl(var(--muted-foreground) / .28); border:3px solid transparent; border-radius:999px; background-clip:padding-box; min-height:32px; }
+::-webkit-scrollbar-thumb:hover { background-color:hsl(var(--muted-foreground) / .5); border-width:2px; }
+::-webkit-scrollbar-thumb:active { background-color:hsl(var(--muted-foreground) / .65); border-width:2px; }
+/* Notebook: sideways bars on code and outputs are thinner and only show on hover */
+.rcnb-src::-webkit-scrollbar, .rcnb-pre::-webkit-scrollbar, .rcnb-img::-webkit-scrollbar, .rcnb-note::-webkit-scrollbar { height:8px; }
+.rcnb-src::-webkit-scrollbar-thumb, .rcnb-pre::-webkit-scrollbar-thumb, .rcnb-img::-webkit-scrollbar-thumb, .rcnb-note::-webkit-scrollbar-thumb { background-color:transparent; border-width:2px; }
+.rcnb-code:hover .rcnb-src::-webkit-scrollbar-thumb, .rcnb-pre:hover::-webkit-scrollbar-thumb,
+.rcnb-img:hover::-webkit-scrollbar-thumb, .rcnb-note:hover::-webkit-scrollbar-thumb { background-color:hsl(var(--muted-foreground) / .3); }
+.rcnb-code:hover .rcnb-src::-webkit-scrollbar-thumb:hover, .rcnb-pre:hover::-webkit-scrollbar-thumb:hover,
+.rcnb-img:hover::-webkit-scrollbar-thumb:hover { background-color:hsl(var(--muted-foreground) / .55); }
+@supports not selector(::-webkit-scrollbar) {
+  * { scrollbar-width:thin; scrollbar-color:hsl(var(--muted-foreground) / .35) transparent; }
+}
+@media (prefers-reduced-motion: reduce) {
+  #rc-sidebar-toggle svg { animation:none !important; transition:none !important; }
+  html.rc-nb-animating [data-panel], html.rc-nb-animating [data-resize-handle] { transition:none !important; }
+}
+/* The notebook uses the sidebar's full width: Chainlit's 24px side padding is halved */
+#side-view-content:has(#rc-panel-root) { padding-left:12px !important; padding-right:12px !important; }
+/* Chainlit's own back arrow closes the panel for good; the top-bar toggle replaces it */
+#side-view-title > button { display:none !important; }

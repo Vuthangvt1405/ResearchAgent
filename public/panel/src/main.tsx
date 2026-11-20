@@ -1,9 +1,10 @@
-// Bundle entry: creates the persistent root once and exposes window.__rcPanel for the
-// Notebook.jsx shim. Loaded same-origin by public/custom.js.
+// Bundle entry: creates the persistent root once, exposes window.__rcPanel for the
+// Notebook.jsx shim, and starts the page extras (src/page). Loaded same-origin by public/custom.js.
 import { createRoot, type Root } from "react-dom/client";
 import { App } from "@/components/App";
 import { createOverlay } from "@/overlay";
 import { usePanel } from "@/store";
+import { startPageExtras } from "@/page";
 import type { CallAction, NotebookProps } from "@/types";
 import "./styles.css";
 
@@ -54,4 +55,7 @@ export function teardown(win: Window = window) {
   delete win.__rcPanelResolve;
 }
 
-if (import.meta.env.MODE !== "test") bootstrap();
+if (import.meta.env.MODE !== "test") {
+  bootstrap();
+  startPageExtras();
+}
