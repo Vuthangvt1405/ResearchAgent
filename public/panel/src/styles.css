@@ -116,8 +116,6 @@
 .rcnb-tag.wait { background: hsl(var(--rc-warn) / .12); color: hsl(var(--rc-warn)); }
 .rcnb-lang { font-size: 11px; opacity: .8; }
 .rcnb-src { display: block; width: 100%; resize: none; border: 0; outline: none; background: transparent; color: inherit; font-family: var(--font-mono); font-size: 13px; line-height: 1.55; padding: 8px 16px 14px; white-space: pre; overflow-x: auto; overflow-y: hidden; tab-size: 4; }
-/* Typing in a cell or the find box gets a quiet grey edge, not the theme's red focus ring */
-.rcnb-src:focus { box-shadow: inset 0 0 0 1px hsl(var(--muted-foreground) / .35); border-radius: 0 0 var(--rc-radius) var(--rc-radius); }
 .rcnb-src::placeholder { color: hsl(var(--muted-foreground)); }
 .rcnb-out { padding: 6px 4px 8px; }
 .rcnb-out.collapsed { position: relative; max-height: 180px; overflow: hidden; }
@@ -149,7 +147,7 @@
 
 /* Find in notebook */
 .rcnb-findbar { display: flex; align-items: center; gap: 6px; margin: 0 0 6px; padding: 4px 8px; border: 1px solid hsl(var(--border)); border-radius: 6px; color: hsl(var(--muted-foreground)); }
-.rcnb-findbar:focus-within { border-color: hsl(var(--muted-foreground) / .6); }
+/* Typing in a cell or the find box draws no focus line: the caret shows where you are */
 .rcnb .rcnb-findbar input:focus-visible { box-shadow: none; }
 .rcnb-findbar input { flex: 1; min-width: 0; border: 0; outline: 0; background: none; color: hsl(var(--foreground)); font: inherit; font-size: 13px; }
 .rcnb-findcount { font-size: 11px; white-space: nowrap; }

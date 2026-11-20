@@ -14,7 +14,6 @@ html.rc-nb-animating [data-resize-handle] { transition:opacity .2s ease; }
 #mode-picker-popover-model [data-rc-hidden] { display:none !important; }
 #rc-model-search { width:100%; box-sizing:border-box; margin:0 0 4px; padding:6px 8px; border-radius:6px;
   border:1px solid hsl(var(--border)); background:transparent; color:inherit; font-size:13px; outline:none; }
-#rc-model-search:focus { border-color:hsl(var(--muted-foreground) / .6); }
 #rc-model-search-empty { padding:12px 8px; font-size:13px; text-align:center; opacity:.7; }
 /* Kaggle account: the switch is driven by the button drawn next to it; its label would flip it unseen */
 #chat-settings #kaggle_account[role="switch"] { display:none !important; }
