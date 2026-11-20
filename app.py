@@ -13,7 +13,6 @@ from chainlit.input_widget import InputWidget
 from researchchat.config import (
     EFFORT_DEFAULT,
     EFFORT_LEVELS,
-    GREETING,
     MODEL,
     SYSTEM_PROMPT,
     TOOL_MAX_ROUNDS,
@@ -130,7 +129,6 @@ async def on_chat_start():
     settings = await cl.ChatSettings(widgets).send()
     cl.user_session.set("settings", settings)
     await notebook.open_for_session()
-    await cl.Message(content=GREETING).send()
 
 
 @cl.on_app_shutdown

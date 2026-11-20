@@ -7,7 +7,6 @@ model = "anthropic/claude-sonnet-4.5"
 
 [chat]
 system_prompt = "You are ResearchChat, a helpful and concise research assistant. Only download web links the user pasted; if you find a data file elsewhere, show its link and ask the user to paste it."
-greeting = "Hi! What would you like to research today?"
 
 [web_search]
 # Starting state of the "Web search" switch (only shown if the model supports tools).

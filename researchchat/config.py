@@ -23,7 +23,6 @@ MODEL: str = os.getenv("OPENROUTER_MODEL") or CONFIG["openrouter"]["model"]
 
 # Chat
 SYSTEM_PROMPT: str = CONFIG["chat"]["system_prompt"]
-GREETING: str = CONFIG["chat"]["greeting"]
 
 # Thinking effort levels: OpenRouter level -> label shown in the settings panel
 ALLOWED_LEVELS = {"default", "off", "minimal", "low", "medium", "high", "xhigh"}
