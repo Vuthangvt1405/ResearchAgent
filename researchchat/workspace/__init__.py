@@ -30,6 +30,8 @@ class ErrorCode:
     NOT_NEEDED = "NOT_NEEDED"  # the dataset already says what it is, or isn't ready
     BAD_DESCRIPTION = "BAD_DESCRIPTION"  # empty description
     LOOK_FIRST = "LOOK_FIRST"  # a download while the project has undescribed data the assistant hasn't looked at
+    # Kaggle account
+    KAGGLE_SIGNIN = "KAGGLE_SIGNIN"  # connecting to Kaggle failed or was cancelled
 
 
 class WorkspaceError(Exception):

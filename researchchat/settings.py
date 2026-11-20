@@ -3,10 +3,15 @@
 from chainlit.input_widget import InputWidget, Select, Switch
 
 from researchchat.config import EFFORT_DEFAULT, EFFORT_LEVELS, SEARCH_ENABLED
+from researchchat.workspace.kaggle.account import KaggleAccountStatus
+from researchchat.workspace.kaggle.settings_switch import (
+    KAGGLE_SWITCH_ID,
+    kaggle_switch,
+)
 
 
-def build_widgets(model_params: set[str]) -> list[InputWidget]:
-    """Settings to show, based on what the model supports."""
+def build_widgets(model_params: set[str], kaggle: KaggleAccountStatus) -> list[InputWidget]:
+    """Settings to show: what the model supports, then the Kaggle account switch."""
     widgets: list[InputWidget] = []
     if "reasoning" in model_params:
         widgets += [
@@ -40,6 +45,18 @@ def build_widgets(model_params: set[str]) -> list[InputWidget]:
                 description="Let the model read your project notebook and run code in it. Risky code asks first.",
             ),
         ]
+    widgets.append(kaggle_switch(kaggle))  # shown for every model: connecting needs no model feature
+    return widgets
+
+
+def keep_chat_choices(widgets: list[InputWidget], chosen: dict) -> list[InputWidget]:
+    """Start each widget at this chat's own choice, so re-sending Settings keeps what the user picked.
+
+    The Kaggle switch is left as built: it shows the account, which is the same in every chat.
+    """
+    for widget in widgets:
+        if widget.id in chosen and widget.id != KAGGLE_SWITCH_ID:
+            widget.initial = chosen[widget.id]
     return widgets
 
 

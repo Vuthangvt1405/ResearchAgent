@@ -1,20 +1,26 @@
-from researchchat.settings import build_widgets, reasoning_body
+from researchchat.settings import build_widgets, keep_chat_choices, reasoning_body
+from researchchat.workspace.kaggle.account import KaggleAccountStatus
+
+NOT_CONNECTED = KaggleAccountStatus(state="disconnected")
 
 
 def ids(widgets):
     return [w.id for w in widgets]
 
 
-def test_no_panel_for_plain_model():
-    assert build_widgets(set()) == []
-
-
 def test_thinking_settings_need_reasoning_support():
-    assert ids(build_widgets({"reasoning"})) == ["thinking_effort", "show_thinking"]
+    assert ids(build_widgets({"reasoning"}, kaggle=NOT_CONNECTED)) == ["thinking_effort", "show_thinking", "kaggle_account"]
 
 
 def test_tool_switches_need_tool_support():
-    assert ids(build_widgets({"tools"})) == ["web_search", "notebook"]
+    assert ids(build_widgets({"tools"}, kaggle=NOT_CONNECTED)) == ["web_search", "notebook", "kaggle_account"]
+
+
+def test_resent_settings_keep_chat_choices():
+    # a refresh after a Kaggle change must not reset what this chat picked, but the switch shows the account
+    widgets = build_widgets({"tools"}, kaggle=KaggleAccountStatus("connected", username="ana"))
+    kept = keep_chat_choices(widgets, {"web_search": False, "notebook": False, "kaggle_account": False})
+    assert [(w.id, w.initial) for w in kept] == [("web_search", False), ("notebook", False), ("kaggle_account", True)]
 
 
 def test_each_switch_adds_its_own_tools():

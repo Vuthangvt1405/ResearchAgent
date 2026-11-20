@@ -6,10 +6,14 @@ Each callback returns NotebookProps, with `error` set when rejected.
 
 import asyncio
 import logging
+import time
+import webbrowser
 from collections.abc import Awaitable, Callable
 
 import chainlit as cl
+import httpx
 from chainlit.context import init_ws_context
+from chainlit.input_widget import InputWidget
 
 from researchchat.config import (
     DATASETS_ASK_ABOVE_MB,
@@ -17,11 +21,27 @@ from researchchat.config import (
     DATASETS_MIN_FREE_DISK_MB,
     DATASETS_PARALLEL_DOWNLOADS,
     DATASETS_STALL_TIMEOUT_SECONDS,
+    KAGGLE_SIGNIN_TIMEOUT_SECONDS,
+    KAGGLE_TOKEN_FILE,
 )
+from researchchat.settings import keep_chat_choices
 from researchchat.tools import dataset_describe
 from researchchat.workspace import ErrorCode, WorkspaceError, store
 from researchchat.workspace.datasets.created import missing_notice
 from researchchat.workspace.datasets.service import DatasetService, DatasetsSettings
+from researchchat.workspace.kaggle.account import (
+    KaggleAccountService,
+    KaggleAccountStatus,
+)
+from researchchat.workspace.kaggle.callback import CallbackListener
+from researchchat.workspace.kaggle.settings_switch import (
+    KAGGLE_SWITCH_ID,
+    ChainlitSignInPopup,
+    ChatSide,
+    account_change,
+    apply_account_change,
+)
+from researchchat.workspace.kaggle.token_file import TokenFile
 from researchchat.workspace.kernels import KernelRegistry
 from researchchat.workspace.panel import PanelRegistry, skip_session
 from researchchat.workspace.service import NotebookProps, NotebookService
@@ -47,6 +67,18 @@ class ChatRegistry:
     def unregister(self, session_id: str) -> None:
         self._sessions.pop(session_id, None)
 
+    async def refresh_settings(self, build: Callable[[], Awaitable[list[InputWidget]]]) -> None:
+        """Re-send Settings to every live chat, keeping each chat's own choices. A closed chat is skipped."""
+
+        async def one(session) -> None:
+            init_ws_context(session)  # only affects this task's context
+            await resend_settings_here(build)
+
+        tasks = [asyncio.create_task(one(s)) for s in list(self._sessions.values())]
+        for result in await asyncio.gather(*tasks, return_exceptions=True):
+            if isinstance(result, Exception):
+                log.warning("Couldn't refresh Settings in a chat", exc_info=result)
+
     async def send(self, session_id: str, text: str) -> bool:
         """Post a message in that chat's context; False when it's closed. Errors are swallowed."""
         session = self._sessions.get(session_id)
@@ -68,6 +100,49 @@ class ChatRegistry:
 
 
 chats = ChatRegistry()
+
+
+SettingsBuilder = Callable[[KaggleAccountStatus], Awaitable[list[InputWidget]]]
+settings_widgets: SettingsBuilder | None = None  # set at the entry point: it knows the model's features
+
+
+async def resend_settings_here(build: Callable[[], Awaitable[list[InputWidget]]]) -> None:
+    """Re-send Settings to the current chat and remember the Kaggle switch's new position."""
+    chosen = cl.user_session.get("settings") or {}
+    sent = await cl.ChatSettings(keep_chat_choices(await build(), chosen)).send()
+    cl.user_session.set("settings", {**chosen, KAGGLE_SWITCH_ID: sent.get(KAGGLE_SWITCH_ID)})
+
+
+async def refresh_kaggle_switch_everywhere(status: KaggleAccountStatus) -> None:
+    """The account is app-wide, so every open chat's Settings must show the new state."""
+    if settings_widgets is None:
+        return
+    await chats.refresh_settings(lambda: settings_widgets(status))
+
+
+kaggle_account = KaggleAccountService(
+    token_file=TokenFile(KAGGLE_TOKEN_FILE),
+    http_factory=lambda: httpx.AsyncClient(timeout=30, headers={"User-Agent": "ResearchChat"}),
+    listener_factory=CallbackListener,
+    signin_timeout_seconds=KAGGLE_SIGNIN_TIMEOUT_SECONDS,
+    now=time.monotonic,
+    on_change=refresh_kaggle_switch_everywhere,
+)
+
+
+async def apply_kaggle_switch(previous_settings: dict, new_settings: dict) -> None:
+    """Settings were confirmed: connect or disconnect Kaggle if its switch changed."""
+    change = account_change(bool(previous_settings.get(KAGGLE_SWITCH_ID)), bool(new_settings.get(KAGGLE_SWITCH_ID)))
+    if change is None or settings_widgets is None:
+        return
+    build = settings_widgets
+    chat = ChatSide(
+        open_browser=webbrowser.open,
+        popup=ChainlitSignInPopup(),
+        send_toast=cl.context.emitter.send_toast,
+        resend_settings=lambda: resend_settings_here(lambda: build(kaggle_account.status())),
+    )
+    await apply_account_change(change, kaggle_account, chat)
 datasets = DatasetService(
     settings=DatasetsSettings(
         min_free_disk_mb=DATASETS_MIN_FREE_DISK_MB,

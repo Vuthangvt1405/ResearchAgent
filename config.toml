@@ -48,6 +48,12 @@ max_files = 500                # files per download request (count, not size)
 parallel_downloads = 2         # downloads running at once, for the whole app
 stall_timeout_seconds = 120    # fail when no data arrives for this long
 
+[kaggle]
+# The Kaggle sign-in (Settings → Kaggle account). It is kept in one owner-only
+# file outside workspaces_dir, so no project or notebook kernel can read it.
+token_file = "~/.config/researchchat/kaggle-account.json"  # $XDG_CONFIG_HOME is used when set and this line is removed
+signin_timeout_seconds = 600   # how long the app waits for you to approve on Kaggle's page
+
 # Notebook workspace: one notebook, Python kernel (in Docker) and files folder
 # per project. Needs Docker Desktop running and the kernel image built:
 #   docker build -f docker/kernel.Dockerfile -t researchchat-kernel:1 docker

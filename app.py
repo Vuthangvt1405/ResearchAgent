@@ -8,6 +8,7 @@ import subprocess
 
 import chainlit as cl
 from chainlit.config import FILES_DIRECTORY
+from chainlit.input_widget import InputWidget
 
 from researchchat.config import (
     GREETING,
@@ -29,6 +30,7 @@ from researchchat.progress import Progress
 from researchchat.settings import build_widgets, reasoning_body
 from researchchat.tools import chosen_tools, run_tool_call
 from researchchat.workspace import actions as notebook
+from researchchat.workspace.kaggle.account import KaggleAccountStatus
 
 # Notebook cells run code, so never serve beyond this PC (Chainlit sets this from --host)
 check_local_host(os.environ.get("CHAINLIT_HOST", "127.0.0.1"))
@@ -42,6 +44,14 @@ LIMIT_NOTE = {
 }
 
 _cleaned = False
+
+
+async def settings_for(kaggle: KaggleAccountStatus) -> list[InputWidget]:
+    """The Settings widgets for this app's model, with the Kaggle account switch in `kaggle`'s state."""
+    return build_widgets(await model_params(), kaggle=kaggle)
+
+
+notebook.settings_widgets = settings_for  # lets an account change re-send Settings to every chat
 
 
 def ensure_files_dir() -> None:
@@ -68,8 +78,8 @@ async def on_chat_start():
     cl.user_session.set(
         "history", [{"role": "system", "content": SYSTEM_PROMPT}]
     )
-    widgets = build_widgets(await model_params())
-    settings = await cl.ChatSettings(widgets).send() if widgets else {}
+    widgets = await settings_for(notebook.kaggle_account.status())
+    settings = await cl.ChatSettings(widgets).send()
     cl.user_session.set("settings", settings)
     await notebook.open_for_session()
     await cl.Message(content=GREETING).send()
@@ -91,7 +101,9 @@ async def on_chat_end():
 
 @cl.on_settings_update
 async def on_settings_update(settings: dict):
+    previous_settings = cl.user_session.get("settings") or {}
     cl.user_session.set("settings", settings)
+    await notebook.apply_kaggle_switch(previous_settings, settings)
 
 
 @cl.on_message
