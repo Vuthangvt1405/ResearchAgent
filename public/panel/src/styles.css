@@ -14,6 +14,9 @@
   --rc-shadow: 0 1px 2px 0 rgb(0 0 0 / .05);
   --rc-shadow-lift: 0 4px 6px -1px rgb(0 0 0 / .1), 0 2px 4px -2px rgb(0 0 0 / .1);
   --rc-info: 199 89% 40%; --rc-warn: 30 95% 42%; --rc-ok: 168 72% 30%; --rc-danger: 0 72% 50%;
+  /* Chainlit's ring colour is its red brand colour; the shadcn kit's ring-ring classes in the
+     panel and its menus get the theme's grey instead */
+  --ring: var(--muted-foreground);
 }
 .dark .rcnb, .dark [data-rc-overlay] { --rc-info: 199 89% 62%; --rc-warn: 38 92% 60%; --rc-ok: 168 62% 48%; --rc-danger: 0 84% 66%; }
 .rcnb { font-family: var(--font-sans); color: hsl(var(--foreground)); font-size: 14px; line-height: 1.6; min-height: 100%; display: flex; flex-direction: column; position: relative; container-type: inline-size; overflow: visible; }
@@ -28,9 +31,9 @@
 .rcnb-titletext { min-width: 0; overflow-wrap: anywhere; }
 .rcnb-titlechev { flex: none; color: hsl(var(--muted-foreground)); }
 
-/* Focus ring: looks like Chainlit's ring-2 ring-ring ring-offset-2, which is
-   purged from its stylesheet, so it is written out here. */
-.rcnb :is(button, a, input, [role="tab"]):focus-visible, .rcds-sort:focus-visible { outline: none; box-shadow: 0 0 0 2px hsl(var(--background)), 0 0 0 4px hsl(var(--ring)); }
+/* Focus ring: shaped like Chainlit's ring-2 ring-offset-2 (purged from its stylesheet, so
+   written out here), in the theme's grey rather than its red ring colour. */
+.rcnb :is(button, a, input, [role="tab"]):focus-visible, .rcds-sort:focus-visible { outline: none; box-shadow: 0 0 0 2px hsl(var(--background)), 0 0 0 4px hsl(var(--muted-foreground) / .6); }
 
 /* Radix menus and selects. Chainlit's classes draw the popover;
    these only size it for the panel. */
@@ -46,7 +49,7 @@
 .rcnb-mnew { display: flex; gap: 6px; padding: 4px; }
 .rcnb-mnew .rcnb-mnew-input { flex: 1; min-width: 0; height: 32px; padding: 0 8px; font-size: 13px; border-radius: var(--rc-radius-sm); }
 .rcnb-mnew .rcnb-mnew-btn { height: 32px; padding: 0 12px; font-size: 13px; border-radius: var(--rc-radius-sm); }
-.rcnb-mnew-input:focus-visible { outline: none; box-shadow: 0 0 0 2px hsl(var(--popover)), 0 0 0 4px hsl(var(--ring)); }
+.rcnb-mnew-input:focus-visible { outline: none; box-shadow: 0 0 0 2px hsl(var(--popover)), 0 0 0 4px hsl(var(--muted-foreground) / .6); }
 /* A push rebuilt this overlay: don't replay its entrance animation */
 [data-rc-overlay][data-rc-reopen][data-state="open"] { animation: none !important; }
 .rcnb-save { flex: none; display: inline-flex; align-items: center; gap: 4px; margin-top: 2px; color: hsl(var(--muted-foreground)); font-size: 11px; white-space: nowrap; }
