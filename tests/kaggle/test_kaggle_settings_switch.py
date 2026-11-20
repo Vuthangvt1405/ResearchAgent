@@ -132,7 +132,7 @@ def test_account_change_resends_settings_to_every_chat(monkeypatch) -> None:
     run(actions.refresh_kaggle_switch_everywhere(KaggleAccountStatus("connected", username=USERNAME)))
     assert sorted(received) == ["chat-a", "chat-b"]
     for widgets in received.values():
-        assert [w.id for w in widgets] == ["thinking_effort", "show_thinking", "kaggle_account"]
+        assert [w.id for w in widgets] == ["show_thinking", "web_search", "notebook", "kaggle_account"]
         assert widgets[-1].initial is True
 
 
@@ -161,9 +161,9 @@ def test_turning_off_while_waiting_cancels(tmp_path) -> None:
 
 
 def test_settings_shown_for_model_without_tools() -> None:
-    # Changed: a model with no reasoning or tools · Then: Settings holds only the Kaggle switch · Demonstrates: connecting works whatever the model
+    # Changed: a model with no reasoning or tools · Then: the Kaggle switch is the only row that can be changed · Demonstrates: connecting works whatever the model
     widgets = build_widgets(set(), kaggle=KaggleAccountStatus("disconnected"))
-    assert [w.id for w in widgets] == ["kaggle_account"]
+    assert [w.id for w in widgets if not w.disabled] == ["kaggle_account"]
 
 
 def test_account_change_is_pure() -> None:

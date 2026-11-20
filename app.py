@@ -11,7 +11,10 @@ from chainlit.config import FILES_DIRECTORY
 from chainlit.input_widget import InputWidget
 
 from researchchat.config import (
+    EFFORT_DEFAULT,
+    EFFORT_LEVELS,
     GREETING,
+    MODEL,
     SYSTEM_PROMPT,
     TOOL_MAX_ROUNDS,
     WORKSPACES_DIR,
@@ -25,9 +28,25 @@ check_setup()
 # Create or upgrade workspaces/researchchat.db now; a damaged or newer file stops here with steps
 database_for(WORKSPACES_DIR)
 
-from researchchat.llm import model_params, stream_round  # imported after check_setup: it needs the key checked first
+from researchchat.llm import (  # imported after check_setup: it needs the key checked first
+    model_catalog,
+    model_params,
+    stream_round,
+)
+from researchchat.modes import (
+    PickerChoices,
+    Picks,
+    build_modes,
+    chosen_picks,
+    picker_models,
+)
 from researchchat.progress import Progress
-from researchchat.settings import build_widgets, reasoning_body
+from researchchat.settings import (
+    build_widgets,
+    keep_chat_choices,
+    reasoning_body,
+    usable_settings,
+)
 from researchchat.tools import chosen_tools, run_tool_call
 from researchchat.workspace import actions as notebook
 from researchchat.workspace.kaggle.account import KaggleAccountStatus
@@ -43,12 +62,39 @@ LIMIT_NOTE = {
     ),
 }
 
+DEFAULT_PICKS = Picks(model=MODEL, effort=EFFORT_DEFAULT)
+
 _cleaned = False
 
 
+def current_picks() -> Picks:
+    """This chat's Model and Effort picks, or the defaults before its first message."""
+    return cl.user_session.get("picks") or DEFAULT_PICKS
+
+
 async def settings_for(kaggle: KaggleAccountStatus) -> list[InputWidget]:
-    """The Settings widgets for this app's model, with the Kaggle account switch in `kaggle`'s state."""
-    return build_widgets(await model_params(), kaggle=kaggle)
+    """The Settings widgets for this chat's model, with the Kaggle account switch in `kaggle`'s state."""
+    return build_widgets(await model_params(current_picks().model), kaggle=kaggle)
+
+
+async def picker_choices() -> PickerChoices:
+    """What the pickers offer: every OpenRouter text model, and the configured effort levels."""
+    names = {model.id: model.name for model in (await model_catalog()).values()}
+    return PickerChoices(models=picker_models(names, MODEL), levels=EFFORT_LEVELS)
+
+
+async def send_pickers(picks: Picks) -> None:
+    """Show the chat box pickers at this chat's picks; Effort only when the model can reason."""
+    can_reason = "reasoning" in await model_params(picks.model)
+    await cl.context.emitter.set_modes(build_modes(await picker_choices(), picks, can_reason))
+
+
+async def follow_model_change(picks: Picks) -> None:
+    """A new model can change what the chat offers: re-send the pickers and Settings for it."""
+    await send_pickers(picks)
+    chosen = cl.user_session.get("settings") or {}
+    widgets = keep_chat_choices(await settings_for(notebook.kaggle_account.status()), chosen)
+    cl.user_session.set("settings", await cl.ChatSettings(widgets).send())
 
 
 notebook.settings_widgets = settings_for  # lets an account change re-send Settings to every chat
@@ -78,6 +124,8 @@ async def on_chat_start():
     cl.user_session.set(
         "history", [{"role": "system", "content": SYSTEM_PROMPT}]
     )
+    cl.user_session.set("picks", DEFAULT_PICKS)
+    await send_pickers(DEFAULT_PICKS)
     widgets = await settings_for(notebook.kaggle_account.status())
     settings = await cl.ChatSettings(widgets).send()
     cl.user_session.set("settings", settings)
@@ -113,8 +161,19 @@ async def on_message(message: cl.Message):
     history.append({"role": "user", "content": message.content})
     start = len(history)
 
-    settings = cl.user_session.get("settings") or {}
+    previous_picks = current_picks()
+    picks = chosen_picks(message.modes, await picker_choices(), previous_picks)
+    cl.user_session.set("picks", picks)
+    if picks.model != previous_picks.model:
+        await follow_model_change(picks)
+    params = await model_params(picks.model)
+    settings = usable_settings(cl.user_session.get("settings") or {}, params)
     tools = chosen_tools(settings)
+    thinking = reasoning_body(
+        effort=picks.effort,
+        show_thinking=settings.get("show_thinking", True),
+        can_reason="reasoning" in params,
+    )
     # Background downloads that finished since the last turn: told to the model
     # once, for this turn only, never kept in history
     note = notebook.datasets.take_notes(cl.context.session.id)
@@ -125,7 +184,7 @@ async def on_message(message: cl.Message):
     try:
         # Each round: the model answers or calls tools; tool results go back in
         for round_no in range(TOOL_MAX_ROUNDS + 1):
-            extra = {"extra_body": reasoning_body(settings)}
+            extra = {"extra_body": thinking}
             messages = history + turn_notes
             if tools:
                 extra["tools"] = tools
@@ -134,7 +193,7 @@ async def on_message(message: cl.Message):
                     # confused) but forbid calling them, and tell it to answer.
                     extra["tool_choice"] = "none"
                     messages = history + turn_notes + [LIMIT_NOTE]
-            text, calls = await stream_round(messages, reply, extra, progress)
+            text, calls = await stream_round(messages, reply, extra, progress, model_id=picks.model)
             if not calls or round_no == TOOL_MAX_ROUNDS:
                 break
             history.append(
