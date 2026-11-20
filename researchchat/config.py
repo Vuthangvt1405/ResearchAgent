@@ -63,6 +63,12 @@ DATASETS_MAX_FILES: int = _datasets.get("max_files", 500)
 DATASETS_PARALLEL_DOWNLOADS: int = _datasets.get("parallel_downloads", 2)
 DATASETS_STALL_TIMEOUT_SECONDS: int = _datasets.get("stall_timeout_seconds", 120)
 
+# Kaggle account: the sign-in file lives outside WORKSPACES_DIR so no project or kernel can read it
+_kaggle = CONFIG.get("kaggle", {})
+_config_home = Path(os.getenv("XDG_CONFIG_HOME") or "~/.config").expanduser()
+KAGGLE_TOKEN_FILE: Path = Path(_kaggle.get("token_file", _config_home / "researchchat" / "kaggle-account.json")).expanduser()
+KAGGLE_SIGNIN_TIMEOUT_SECONDS: int = _kaggle.get("signin_timeout_seconds", 600)
+
 # Files the project's own code writes that count as datasets: each has a load-code reader in the panel
 CREATED_DATA_EXTENSIONS: tuple[str, ...] = (
     ".csv", ".tsv", ".json", ".jsonl", ".parquet", ".xlsx", ".xls", ".csv.gz", ".tsv.gz",
