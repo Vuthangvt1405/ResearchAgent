@@ -29,14 +29,16 @@ export interface PanelState {
   resetForProject: () => void;
 }
 
-const PROJECT_STATE = { drafts: {}, composing: null, focus: null, editing: {}, dsOpen: {}, dsFilter: "" } as const;
+type ProjectState = Pick<PanelState, "drafts" | "composing" | "focus" | "editing" | "dsOpen" | "dsFilter">;
+type DataState = Omit<PanelState, "setProps" | "apply" | "setCallAction" | "resetForProject">;
+
+/** What a project starts with; new objects each time, so no two projects share one */
+const freshProjectState = (): ProjectState => ({ drafts: {}, composing: null, focus: null, editing: {}, dsOpen: {}, dsFilter: "" });
+
+const freshPanelState = (): DataState => ({ nb: null, callAction: null, tab: "notebook", ...freshProjectState(), dsSort: "newest" });
 
 export const usePanel = create<PanelState>()((set, get) => ({
-  nb: null,
-  callAction: null,
-  tab: "notebook",
-  ...PROJECT_STATE,
-  dsSort: "newest",
+  ...freshPanelState(),
 
   setProps: (props) => {
     const prev = get().nb;
@@ -59,10 +61,10 @@ export const usePanel = create<PanelState>()((set, get) => ({
     if (get().callAction !== fn) set({ callAction: fn });
   },
 
-  resetForProject: () => set({ ...PROJECT_STATE, drafts: {}, editing: {}, dsOpen: {} }),
+  resetForProject: () => set(freshProjectState()),
 }));
 
 /** Test helper: back to a fresh store */
 export function resetStore() {
-  usePanel.setState({ nb: null, callAction: null, tab: "notebook", ...PROJECT_STATE, drafts: {}, editing: {}, dsOpen: {}, dsSort: "newest" });
+  usePanel.setState(freshPanelState());
 }

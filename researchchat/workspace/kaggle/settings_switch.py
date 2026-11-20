@@ -1,7 +1,9 @@
-"""The "Kaggle account" switch in Settings, and what turning it on or off does.
+"""The "Kaggle account" setting, and what connecting or disconnecting does.
 
-Settings has no buttons, so connecting is a switch applied on Confirm. Turning it
-on opens Kaggle's page in the browser and pops up a sign-in dialog in the chat.
+Chainlit's Settings has no button widget, so the setting is sent as a switch and
+public/custom.js draws a Connect / Disconnect button in its place; the button flips
+the switch and presses Confirm. Connecting opens Kaggle's page in the browser and
+pops up a sign-in dialog in the chat.
 """
 
 import asyncio
@@ -28,9 +30,11 @@ SIGN_IN_ELEMENT_NAME = "KaggleSignIn"  # public/elements/KaggleSignIn.jsx
 WAITING_TOAST = "Waiting for Kaggle sign-in in your browser…"
 DISCONNECTED_TOAST = "Kaggle disconnected."
 WAITING_POPUP_MESSAGE = "Kaggle's approval page should have opened in your browser. If it didn't, open it here."
-CONNECTED_DESCRIPTION = "Connected as {username}. Turn off and Confirm to disconnect."
+CONNECTED_DESCRIPTION = "Connected as {username}."
 CONNECTING_DESCRIPTION = "Waiting for you to approve on Kaggle's page…"
-NOT_CONNECTED_DESCRIPTION = "Not connected. Turn on and Confirm to sign in with Kaggle in your browser."
+NOT_CONNECTED_DESCRIPTION = "Not connected. Connect to sign in with Kaggle in your browser."
+# Public Kaggle datasets download without an account; only private and the user's own need one
+PRIVATE_DATASETS_NOTE = "Public datasets work without an account. To use your private or own Kaggle datasets, connect first."
 
 AccountChange = Literal["connect", "disconnect"]
 SignInPopupState = Literal["waiting", "connected", "failed"]
@@ -54,8 +58,8 @@ def switch_description(status: KaggleAccountStatus) -> str:
     if status.state == "connecting":
         return CONNECTING_DESCRIPTION
     if status.notice == SIGNED_OUT_NOTICE:
-        return SIGNED_OUT_NOTICE
-    return NOT_CONNECTED_DESCRIPTION
+        return f"{SIGNED_OUT_NOTICE} {PRIVATE_DATASETS_NOTE}"
+    return f"{NOT_CONNECTED_DESCRIPTION} {PRIVATE_DATASETS_NOTE}"
 
 
 def account_change(was_on: bool, now_on: bool) -> AccountChange | None:

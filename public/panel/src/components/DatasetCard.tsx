@@ -8,7 +8,10 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { usePanel } from "@/store";
-import { copyText, fmtBytes, isActive, loadCode, ordinal, percent } from "@/lib/loadCode";
+import { copyText } from "@/lib/clipboard";
+import { isActive, percent } from "@/lib/datasetProgress";
+import { fmtBytes, ordinal } from "@/lib/format";
+import { loadCode } from "@/lib/loadCode";
 import { safeHref } from "@/lib/safeHref";
 import type { DatasetProps } from "@/types";
 
@@ -20,7 +23,6 @@ export function isCreated(d: DatasetProps): boolean {
   return d.origin === "created";
 }
 
-/** The Delete confirmation for a created file: permanent, no other copy, can be made again */
 /** A file downloaded from a link the user pasted */
 export function isLink(d: DatasetProps): boolean {
   return d.source === "link";
@@ -54,6 +56,7 @@ function sizeText(d: DatasetProps, active: boolean): string {
   return `${fmtBytes(d.done_bytes)} of ${total}`;
 }
 
+/** The Delete confirmation for a created file: permanent, no other copy, can be made again */
 export function createdDeleteText(d: DatasetProps): string {
   return `Delete ${d.name}? The file is removed from this project for good, and the app keeps no other copy. You can make it again by re-running the code or asking the assistant.`;
 }

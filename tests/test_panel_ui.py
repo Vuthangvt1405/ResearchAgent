@@ -429,3 +429,91 @@ def test_shim_matches_the_tested_connect_logic():
 
     assert timeout_ms(shim) == timeout_ms(ts) == 10000
     assert fallback_text(shim) == fallback_text(ts)
+
+
+# ---- Chainlit page parts that the page extras find by name --
+# Baseline: Given the ids, attributes and classes of Chainlit's own markup that the page
+# extras (public/panel/src/page) look for · When Chainlit's built JS is searched
+# A Chainlit upgrade that renames one would silently switch a page feature off.
+
+PAGE_SRC = PANEL_SRC / "page"
+
+# the page extras look for -> how Chainlit's built JS writes it
+CHAINLIT_PAGE_PARTS: dict[str, str] = {
+    "theme-toggle": 'id:"theme-toggle"',
+    "side-view-content": 'id:"side-view-content"',
+    "side-view-title": 'id:"side-view-title"',
+    "data-panel": "data-panel",
+    "data-resize-handle": "data-resize-handle",
+    "chat-settings-open-modal": 'id:"chat-settings-open-modal"',
+    "chat-settings": 'id:"chat-settings"',
+    "confirm": 'id:"confirm"',
+    "space-y-2": '("space-y-2"',  # a Settings field: label, control, help text
+    'role="switch"': 'role:"switch"',
+    "mode-picker-popover-": "id:`mode-picker-popover-${",
+    "cmdk-item": "cmdk-item",
+}
+# Names the page extras own: their own elements, and the Kaggle switch id the server sends
+OWN_PAGE_NAMES = re.compile(r"^(rc-|kaggle_account$)")
+
+
+def _chainlit_js() -> str:
+    assets = _chainlit_assets()
+    files = sorted(assets.glob("index-*.js")) if assets else []
+    if not files:
+        pytest.skip("Chainlit's built JS (chainlit/frontend/dist/assets/index-*.js) not found")
+    return "\n".join(f.read_text(encoding="utf-8") for f in files)
+
+
+def _page_sources() -> str:
+    files = sorted(f for f in PAGE_SRC.glob("*") if f.suffix in (".ts", ".css") and ".test." not in f.name)
+    assert files, "public/panel/src/page has no sources"
+    return "\n".join(f.read_text(encoding="utf-8") for f in files)
+
+
+def _ids_looked_up(js: str) -> set[str]:
+    """Element ids the page extras name: *_ID constants, getElementById calls and #id selectors."""
+    constants = re.findall(r'const \w+_ID = "([^"]+)"', js)
+    lookups = re.findall(r'getElementById\("([^"]+)"\)', js)
+    selectors = re.findall(r"#([a-z][\w-]*)\b", js)
+    return {name for name in [*constants, *lookups, *selectors] if not OWN_PAGE_NAMES.match(name)}
+
+
+def _is_listed(page_id: str) -> bool:
+    return any(page_id == part or (part.endswith("-") and page_id.startswith(part)) for part in CHAINLIT_PAGE_PARTS)
+
+
+def test_every_page_part_the_extras_rely_on_is_in_chainlits_build():
+    # Then: each listed part is still written by Chainlit's built JS; a missing one is named.
+    # Demonstrates: a Chainlit upgrade that renames a part fails here, not silently in the browser.
+    js = _chainlit_js()
+    assert [part for part, markup in CHAINLIT_PAGE_PARTS.items() if markup not in js] == []
+    # negative: a part Chainlit never writes is reported
+    assert 'id:"rc-no-such-part"' not in js
+
+
+def test_every_chainlit_id_the_extras_use_is_listed():
+    # Then: every id the page extras look up that they don't own is in CHAINLIT_PAGE_PARTS.
+    # Demonstrates: a new lookup can't skip the check above.
+    unlisted = sorted(page_id for page_id in _ids_looked_up(_page_sources()) if not _is_listed(page_id))
+    assert unlisted == []
+    # negative: a new lookup of an unlisted Chainlit id is caught
+    assert _ids_looked_up('document.getElementById("new-chainlit-id")') == {"new-chainlit-id"}
+    assert not _is_listed("new-chainlit-id")
+
+
+def _kaggle_button_classes() -> list[str]:
+    """The shadcn Button classes the Kaggle button copies (BUTTON_BASE_CLASS and BUTTON_RED_CLASS)."""
+    src = (PAGE_SRC / "kaggleButton.ts").read_text(encoding="utf-8")
+    red = src.index("const BUTTON_RED_CLASS")
+    block = src[src.index("const BUTTON_BASE_CLASS") : src.index(";", red)]
+    return sorted({c for text in re.findall(r'"([^"]*)"', block) for c in text.split()})
+
+
+def test_the_kaggle_button_classes_exist_in_chainlits_css():
+    # Then: every class of the Kaggle button is in Chainlit's built CSS (the button is drawn
+    # outside the panel, so only Chainlit's stylesheet styles it).
+    # Demonstrates: the button can't silently lose its look.
+    classes = _kaggle_button_classes()
+    assert "bg-destructive" in classes and "h-9" in classes
+    assert _missing_classes(classes, _chainlit_css()) == []

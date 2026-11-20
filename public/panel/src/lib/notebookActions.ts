@@ -1,24 +1,32 @@
 // Every panel action, ported from the body of the old Notebook() so payloads stay the
-// same. Saves run in the background; button actions go through useRunner.
+// same. Saves run in the background; button actions go through useRunner. Each area
+// (drafts, cells, kernel, projects, datasets) has its own hook; useNotebookActions joins them.
 import { useEffect, useRef, useState } from "react";
 import { usePanel } from "@/store";
-import { call, useRunner } from "@/lib/actions";
+import { call, useRunner, type Runner } from "@/lib/actions";
 import { loadCode } from "@/lib/loadCode";
-import type { CellProps, CellType, DatasetProps } from "@/types";
+import type { ActionName, CellProps, CellType, DatasetProps } from "@/types";
 
 export const SAVE_DELAY_MS = 600;
 
 const state = () => usePanel.getState();
 const version = () => state().nb?.version ?? 0;
 
-export function useNotebookActions() {
-  const runner = useRunner();
+/** Send an action with the current version and merge the reply */
+const sendVersioned = async (name: ActionName, extra: Record<string, unknown> = {}) =>
+  state().apply(await call(name, { version: version(), ...extra }));
+
+type DraftSaving = ReturnType<typeof useDraftSaving>;
+
+/** Unsaved cell text: kept as a draft on each keystroke, saved after a pause */
+function useDraftSaving() {
   const timers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const [pendingSaves, setPendingSaves] = useState(0);
   const [savedAt, setSavedAt] = useState(0);
-  const [inserting, setInserting] = useState<string | null>(null);
 
   useEffect(() => () => Object.values(timers.current).forEach(clearTimeout), []);
+
+  const cancelPendingSave = (cellId: string) => clearTimeout(timers.current[cellId]);
 
   const dropDraft = (cellId: string, text: string) => {
     const drafts = state().drafts;
@@ -29,7 +37,7 @@ export function useNotebookActions() {
   };
 
   const save = async (cellId: string, text: string) => {
-    clearTimeout(timers.current[cellId]);
+    cancelPendingSave(cellId);
     delete timers.current[cellId];
     setPendingSaves((n) => n + 1);
     const before = (state().nb?.cells || []).find((c) => c.id === cellId);
@@ -58,7 +66,7 @@ export function useNotebookActions() {
   const edit = (cellId: string, text: string) => {
     usePanel.setState({ drafts: { ...state().drafts, [cellId]: text } });
     setSavedAt(0);
-    clearTimeout(timers.current[cellId]);
+    cancelPendingSave(cellId);
     timers.current[cellId] = setTimeout(() => save(cellId, text), SAVE_DELAY_MS);
   };
 
@@ -73,20 +81,24 @@ export function useNotebookActions() {
 
   const sourceOf = (cell: CellProps) => state().drafts[cell.id] ?? cell.source;
 
+  const markSaved = () => setSavedAt(Date.now());
+
+  return { pendingSaves, savedAt, save, edit, flush, flushAll, sourceOf, dropDraft, cancelPendingSave, markSaved };
+}
+
+/** Running, adding, moving and deleting cells */
+function cellActions(runner: Runner, drafts: DraftSaving) {
   const run = async (cell: CellProps) => {
-    clearTimeout(timers.current[cell.id]);
-    const text = sourceOf(cell);
+    drafts.cancelPendingSave(cell.id);
+    const text = drafts.sourceOf(cell);
     const result = await runner.run("nb_run_cell", { version: version(), cell_id: cell.id, source: text });
-    if (result && !result.error) dropDraft(cell.id, text);
+    if (result && !result.error) drafts.dropDraft(cell.id, text);
     return result;
   };
 
   // Run-all should see what is on screen, not the last save; the version is read after
   // the flush, which may have bumped it
-  const runAll = () => runner.run("nb_run_all", () => ({ version: version() }), flushAll);
-
-  const simple = async (name: Parameters<typeof call>[0], extra: Record<string, unknown> = {}) =>
-    state().apply(await call(name, { version: version(), ...extra }));
+  const runAll = () => runner.run("nb_run_all", () => ({ version: version() }), drafts.flushAll);
 
   const add = async (afterId: string | null, type: CellType) => {
     const result = await call("nb_add_cell", { version: version(), after_id: afterId, type });
@@ -102,25 +114,36 @@ export function useNotebookActions() {
   };
 
   const move = async (id: string, direction: "up" | "down") => {
-    await flush(id); // move the text the user sees, not the last saved version
-    return simple("nb_move_cell", { cell_id: id, direction });
+    await drafts.flush(id); // move the text the user sees, not the last saved version
+    return sendVersioned("nb_move_cell", { cell_id: id, direction });
   };
 
   const duplicate = async (id: string) => {
-    await flush(id);
-    return simple("nb_duplicate_cell", { cell_id: id });
+    await drafts.flush(id);
+    return sendVersioned("nb_duplicate_cell", { cell_id: id });
   };
 
-  const remove = (id: string) => simple("nb_delete_cell", { cell_id: id });
-  const clearCellOutputs = (id: string) => simple("nb_clear_cell_outputs", { cell_id: id });
-  const reorder = (cellId: string, beforeId: string | null) => runner.run("nb_reorder_cell", { version: version(), cell_id: cellId, before_id: beforeId });
+  const remove = (id: string) => sendVersioned("nb_delete_cell", { cell_id: id });
+  const clearCellOutputs = (id: string) => sendVersioned("nb_clear_cell_outputs", { cell_id: id });
+  const reorder = (cellId: string, beforeId: string | null) =>
+    runner.run("nb_reorder_cell", { version: version(), cell_id: cellId, before_id: beforeId });
+
+  return { run, runAll, add, move, duplicate, remove, clearCellOutputs, reorder };
+}
+
+/** The project's kernel as a whole */
+function kernelActions(runner: Runner) {
   const interrupt = () => runner.run("nb_interrupt", { version: version() });
   const restart = () => runner.run("nb_restart", { version: version() });
   const clearOutputs = () => runner.run("nb_clear_outputs", { version: version() });
+  return { interrupt, restart, clearOutputs };
+}
 
+/** Switching to another project or making a new one; unsaved edits are saved first */
+function projectActions(drafts: DraftSaving) {
   const switchProject = async (id: string) => {
     if (!id || id === state().nb?.project.id) return null;
-    await flushAll();
+    await drafts.flushAll();
     const result = await call("nb_switch_project", { project_id: id });
     if (result && result.error) state().apply(result);
     return result;
@@ -128,11 +151,18 @@ export function useNotebookActions() {
 
   const createProject = async (name: string) => {
     if (!name || !name.trim()) return null;
-    await flushAll();
+    await drafts.flushAll();
     const result = await call("nb_create_project", { name: name.trim() });
     if (result && result.error) state().apply(result);
     return result;
   };
+
+  return { switchProject, createProject };
+}
+
+/** The Datasets tab: cancel, delete, and insert load code into the notebook */
+function useDatasetActions(drafts: DraftSaving) {
+  const [inserting, setInserting] = useState<string | null>(null);
 
   // Not gated by the runner, like the old act(): cancelling a download must work while a cell runs
   const dsAction = async (name: "ds_cancel" | "ds_delete", id: string) => {
@@ -151,14 +181,14 @@ export function useNotebookActions() {
     if (inserting) return;
     setInserting(d.id);
     try {
-      await flushAll();
+      await drafts.flushAll();
       let result = await call("nb_add_cell", { version: version(), after_id: null, type: "code" });
       if (result && result.cells && !result.error) {
         const cell = result.cells[result.cells.length - 1];
         const updated = await call("nb_update_cell", { version: result.version, cell_id: cell.id, source: loadCode(d) });
         if (updated && updated.cells && !updated.error) {
           usePanel.setState({ tab: "notebook", focus: { id: cell.id, start: 0, end: 0 } });
-          setSavedAt(Date.now());
+          drafts.markSaved();
         }
         result = updated || result;
       }
@@ -168,12 +198,19 @@ export function useNotebookActions() {
     }
   };
 
-  return {
-    runner, pendingSaves, savedAt, inserting,
-    save, edit, flush, flushAll, sourceOf,
-    run, runAll, add, move, duplicate, remove, clearCellOutputs, reorder, interrupt, restart, clearOutputs,
-    switchProject, createProject, dsCancel, dsDelete, insertDatasetCode,
-  };
+  return { inserting, dsCancel, dsDelete, insertDatasetCode };
 }
 
-export type NotebookActions = ReturnType<typeof useNotebookActions>;
+export function useNotebookActions() {
+  const runner = useRunner();
+  const drafts = useDraftSaving();
+  const datasets = useDatasetActions(drafts);
+  const { pendingSaves, savedAt, save, edit, flush, flushAll, sourceOf } = drafts;
+  return {
+    runner, pendingSaves, savedAt, save, edit, flush, flushAll, sourceOf,
+    ...cellActions(runner, drafts),
+    ...kernelActions(runner),
+    ...projectActions(drafts),
+    ...datasets,
+  };
+}

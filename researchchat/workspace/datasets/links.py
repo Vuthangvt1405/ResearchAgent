@@ -266,7 +266,7 @@ async def stream_link_file(
     checks the size only when the website declared one.
     """
     try:
-        response = await asyncio.wait_for(sources.open_checked(client, file.url, headers=LINK_HEADERS), stall_timeout)
+        response = await sources.open_within(client, file.url, stall_timeout, headers=LINK_HEADERS)
     except TimeoutError as e:
         raise _failed(f"stalled on {file.path}") from e
     except httpx.HTTPError as e:
@@ -296,19 +296,22 @@ async def _write_body(
     dest.parent.mkdir(parents=True, exist_ok=True)
     chunks = response.aiter_bytes(CHUNK_SIZE)
     received = 0
-    with open(dest, "wb") as out:  # noqa: ASYNC230 - same local-disk write as sources.stream_file
-        while True:
-            try:
-                chunk = await asyncio.wait_for(anext(chunks), stall_timeout)
-            except StopAsyncIteration:
-                break
-            if received == 0 and looks_like_web_page(response.headers.get("content-type"), chunk):
-                raise _failed("the link now opens a web page")
-            received += len(chunk)
-            if file.size_is_known and received > file.size:
-                raise _failed(f"{file.path} is bigger than the website said")
-            _write_chunk(out, chunk, file.path)
-            await on_bytes(len(chunk))
+    try:
+        with open(dest, "wb") as out:  # noqa: ASYNC230 - same local-disk write as sources.stream_file
+            while True:
+                try:
+                    chunk = await sources.next_chunk_within(chunks, stall_timeout)
+                except StopAsyncIteration:
+                    break
+                if received == 0 and looks_like_web_page(response.headers.get("content-type"), chunk):
+                    raise _failed("the link now opens a web page")
+                received += len(chunk)
+                if file.size_is_known and received > file.size:
+                    raise _failed(f"{file.path} is bigger than the website said")
+                _write_chunk(out, chunk, file.path)
+                await on_bytes(len(chunk))
+    finally:
+        await chunks.aclose()  # in this task, before the response closes (see sources.open_within)
     return received
 
 

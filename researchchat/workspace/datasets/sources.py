@@ -13,7 +13,7 @@ import hashlib
 import html
 import ipaddress
 import re
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
@@ -473,6 +473,22 @@ def _failed(reason: str) -> WorkspaceError:
     return WorkspaceError(ErrorCode.DOWNLOAD_FAILED, reason)
 
 
+async def open_within(client: httpx.AsyncClient, url: str, seconds: float, **options) -> httpx.Response:
+    """open_checked with a time limit, in the calling task.
+
+    asyncio.wait_for would run the request in a task of its own (Python 3.11), and
+    httpcore's connection must be opened, read and closed in one task.
+    """
+    async with asyncio.timeout(seconds):
+        return await open_checked(client, url, **options)
+
+
+async def next_chunk_within(chunks: AsyncIterator[bytes], seconds: float) -> bytes:
+    """The next body chunk, or TimeoutError after `seconds`; read in the calling task (see open_within)."""
+    async with asyncio.timeout(seconds):
+        return await anext(chunks)
+
+
 async def stream_file(
     file: PlannedFile,
     dest: Path,
@@ -490,21 +506,21 @@ async def stream_file(
     algo, _, expected = (file.checksum or "").partition(":")
     hasher = hashlib.new(algo) if algo in ("md5", "sha256") else None
     try:
-        response = await asyncio.wait_for(open_checked(client, file.url, catalog_only=True), stall_timeout)
+        response = await open_within(client, file.url, stall_timeout, catalog_only=True)
     except TimeoutError as e:
         raise _failed(f"stalled on {file.path}") from e
     except httpx.HTTPError as e:
         raise _failed(f"network error on {file.path}") from e
+    chunks = response.aiter_bytes(CHUNK_SIZE)
     try:
         if response.status_code != 200:
             raise _failed(f"HTTP {response.status_code} on {file.path}")
         dest.parent.mkdir(parents=True, exist_ok=True)
         received = 0
-        chunks = response.aiter_bytes(CHUNK_SIZE)
         with open(dest, "wb") as out:
             while True:
                 try:
-                    chunk = await asyncio.wait_for(anext(chunks), stall_timeout)
+                    chunk = await next_chunk_within(chunks, stall_timeout)
                 except StopAsyncIteration:
                     break
                 received += len(chunk)
@@ -524,6 +540,7 @@ async def stream_file(
     except httpx.HTTPError as e:
         raise _failed(f"network error on {file.path}") from e
     finally:
+        await chunks.aclose()
         await response.aclose()
     if received != file.size:
         raise _failed(f"{file.path} is incomplete")

@@ -89,19 +89,22 @@ def test_turning_on_opens_browser_and_shows_popup(tmp_path) -> None:
 
 
 def test_switch_shows_connected_username() -> None:
-    # Changed: switch built for connected as ana · Then: on, with 'Connected as ana. Turn off and Confirm to disconnect.' · Demonstrates: Settings shows who is connected
+    # Changed: switch built for connected as ana · Then: on, with 'Connected as ana.' · Demonstrates: Settings shows who is connected
     widget = kaggle_switch(KaggleAccountStatus("connected", username="ana"))
     assert (widget.id, widget.label, widget.initial) == ("kaggle_account", "Kaggle account", True)
-    assert widget.description == "Connected as ana. Turn off and Confirm to disconnect."
+    assert widget.description == "Connected as ana."
 
 
 def test_switch_shows_not_connected() -> None:
-    # Changed: switch built for disconnected · Then: off, with the turn-on-and-Confirm description · Demonstrates: the user knows how to connect
+    # Changed: switch built for disconnected · Then: off, with the Connect description and the private-datasets note · Demonstrates: the user knows how to connect
     widget = kaggle_switch(KaggleAccountStatus("disconnected"))
     assert widget.initial is False
-    assert widget.description == "Not connected. Turn on and Confirm to sign in with Kaggle in your browser."
-    signed_out = kaggle_switch(KaggleAccountStatus("disconnected", notice="Kaggle signed you out. Turn on to connect again."))
-    assert signed_out.description == "Kaggle signed you out. Turn on to connect again."
+    assert widget.description == "Not connected. Connect to sign in with Kaggle in your browser. Public datasets work without an account. To use your private or own Kaggle datasets, connect first."
+    signed_out = kaggle_switch(KaggleAccountStatus("disconnected", notice="Kaggle signed you out. Connect to sign in again."))
+    assert signed_out.description == (
+        "Kaggle signed you out. Connect to sign in again."
+        " Public datasets work without an account. To use your private or own Kaggle datasets, connect first."
+    )
 
 
 def test_account_change_resends_settings_to_every_chat(monkeypatch) -> None:

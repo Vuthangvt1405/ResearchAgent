@@ -77,35 +77,39 @@ async def stream_round(
         stream = await client.chat.completions.create(
             model=model_id, messages=messages, stream=True, **extra
         )
-        async for chunk in stream:
-            if not chunk.choices:
-                continue
-            delta = chunk.choices[0].delta
-            # Reasoning models stream their thinking in a separate field
-            reasoning = getattr(delta, "reasoning", None)
-            if reasoning:
-                if thinking is None:
-                    await progress.step_started("Thinking")
-                    thinking = cl.Step(name="Thinking", type="llm")
-                    await thinking.__aenter__()
-                await thinking.stream_token(reasoning)
-            if delta.content:
-                if thinking is not None:
-                    await thinking.__aexit__(None, None, None)
-                    thinking = None
-                if not text and progress.group is not None:
-                    await progress.now("Writing answer")
-                text += delta.content
-                await reply.stream_token(delta.content)
-            # Tool calls arrive in pieces; join them by index
-            for tc in delta.tool_calls or []:
-                call = calls.setdefault(
-                    tc.index, {"id": "", "name": "", "arguments": ""}
-                )
-                call["id"] = tc.id or call["id"]
-                if tc.function:
-                    call["name"] += tc.function.name or ""
-                    call["arguments"] += tc.function.arguments or ""
+        # Close the connection here even when the round stops early (Stop pressed, chat closed):
+        # left open, it is closed later by the garbage collector in another task, which
+        # httpcore reports as "async generator ignored GeneratorExit".
+        async with stream:
+            async for chunk in stream:
+                if not chunk.choices:
+                    continue
+                delta = chunk.choices[0].delta
+                # Reasoning models stream their thinking in a separate field
+                reasoning = getattr(delta, "reasoning", None)
+                if reasoning:
+                    if thinking is None:
+                        await progress.step_started("Thinking")
+                        thinking = cl.Step(name="Thinking", type="llm")
+                        await thinking.__aenter__()
+                    await thinking.stream_token(reasoning)
+                if delta.content:
+                    if thinking is not None:
+                        await thinking.__aexit__(None, None, None)
+                        thinking = None
+                    if not text and progress.group is not None:
+                        await progress.now("Writing answer")
+                    text += delta.content
+                    await reply.stream_token(delta.content)
+                # Tool calls arrive in pieces; join them by index
+                for tc in delta.tool_calls or []:
+                    call = calls.setdefault(
+                        tc.index, {"id": "", "name": "", "arguments": ""}
+                    )
+                    call["id"] = tc.id or call["id"]
+                    if tc.function:
+                        call["name"] += tc.function.name or ""
+                        call["arguments"] += tc.function.arguments or ""
     finally:
         if thinking is not None:
             await thinking.__aexit__(None, None, None)
