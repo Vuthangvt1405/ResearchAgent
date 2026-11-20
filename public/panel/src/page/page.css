@@ -62,3 +62,12 @@ html.rc-nb-animating [data-resize-handle] { transition:opacity .2s ease; }
 /* The notebook names itself ("Project notebook"), so Chainlit's "Notebook" heading row above it
    is dropped; other sidebar content keeps its heading */
 #side-view-title:has(+ #side-view-content #rc-panel-root) { display:none !important; }
+/* Phones (below Chainlit's 768px breakpoint): Chainlit shows the sidebar as a slide-in sheet,
+   3/4 wide with wide padding, which squeezes the notebook. The notebook takes the whole screen
+   instead, without the heading; the sheet's own close button stays as the way back to the chat. */
+[role="dialog"]:has(#side-view-content #rc-panel-root) { width:100% !important; max-width:none !important; padding:36px 0 0 !important; border-left:0 !important; }
+[role="dialog"]:has(#side-view-content #rc-panel-root) > div:has(> #side-view-title) { display:none !important; }
+[role="dialog"]:has(#side-view-content #rc-panel-root) #side-view-content { margin-top:0 !important; }
+[role="dialog"]:has(#side-view-content #rc-panel-root) > button { --tw-ring-color: hsl(var(--muted-foreground) / .5); }
+/* The collapse toggle drives the desktop sidebar only; a phone has the sheet's close button */
+@media (max-width: 767px) { #rc-sidebar-toggle { display:none !important; } }
