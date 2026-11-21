@@ -1,8 +1,8 @@
 <div align="center">
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="public/logo_dark.svg" />
-  <img src="public/logo_light.svg" alt="SillyTherin" width="420" />
+  <source media="(prefers-color-scheme: dark)" srcset="assets/logo_dark.png" />
+  <img src="assets/logo_light.png" alt="SillyTherin" width="420" />
 </picture>
 
 ### Build your own dataset from pure curiosity.
