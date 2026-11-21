@@ -9,6 +9,7 @@ from pathlib import Path
 
 from sillytherin.config import KAGGLE_TOKEN_FILE, WORKSPACES_DIR
 from sillytherin.workspace.kaggle.callback import CallbackListener, CallbackResult
+from sillytherin.workspace.kaggle.my_datasets import LIST_DATASETS_URL
 from sillytherin.workspace.kaggle.settings_switch import (
     apply_account_change,
     kaggle_switch,
@@ -30,6 +31,7 @@ ALLOWED_KAGGLE_URLS = {
     "https://www.kaggle.com/api/v1/oauth2/token",
     "https://www.kaggle.com/api/v1/oauth2/register",
     "https://api.kaggle.com/v1/users.AccountService/ExpireApiToken",
+    LIST_DATASETS_URL,
 }
 
 
