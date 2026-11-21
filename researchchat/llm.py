@@ -1,15 +1,11 @@
-"""Talking to OpenRouter: the client, model capabilities and streaming."""
+"""What OpenRouter offers: its model catalog and each model's capabilities."""
 
 from dataclasses import dataclass
 
 import httpx
-from openai import AsyncOpenAI
 
-from researchchat.chat.ports import AnswerView, ThinkingStep
-from researchchat.config import MODEL, OPENROUTER_API_KEY, OPENROUTER_URL
-from researchchat.progress import Progress
+from researchchat.config import MODEL, OPENROUTER_URL
 
-client = AsyncOpenAI(base_url=OPENROUTER_URL, api_key=OPENROUTER_API_KEY)
 
 @dataclass(frozen=True)
 class ModelInfo:
@@ -60,55 +56,3 @@ async def model_params(model_id: str = MODEL) -> set[str]:
     """Which request parameters `model_id` supports; none when it is unknown or OpenRouter can't be reached."""
     model = (await model_catalog()).get(model_id)
     return set(model.params) if model else set()
-
-
-async def stream_round(
-    messages: list, answer: AnswerView, extra: dict, progress: Progress, model_id: str = MODEL
-) -> tuple[str, list[dict]]:
-    """Stream one model response into the chat.
-
-    Thinking goes into a step inside `progress`; the answer goes into `answer`.
-    Returns the text written this round and any tool calls the model made.
-    """
-    text = ""
-    calls: dict[int, dict] = {}
-    thinking: ThinkingStep | None = None
-    try:
-        stream = await client.chat.completions.create(
-            model=model_id, messages=messages, stream=True, **extra
-        )
-        # Close the connection here even when the round stops early (Stop pressed, chat closed):
-        # left open, it is closed later by the garbage collector in another task, which
-        # httpcore reports as "async generator ignored GeneratorExit".
-        async with stream:
-            async for chunk in stream:
-                if not chunk.choices:
-                    continue
-                delta = chunk.choices[0].delta
-                # Reasoning models stream their thinking in a separate field
-                reasoning = getattr(delta, "reasoning", None)
-                if reasoning:
-                    if thinking is None:
-                        thinking = await progress.start_thinking()
-                    await thinking.stream(reasoning)
-                if delta.content:
-                    if thinking is not None:
-                        await thinking.close()
-                        thinking = None
-                    if not text and progress.is_open:
-                        await progress.now("Writing answer")
-                    text += delta.content
-                    await answer.stream(delta.content)
-                # Tool calls arrive in pieces; join them by index
-                for tc in delta.tool_calls or []:
-                    call = calls.setdefault(
-                        tc.index, {"id": "", "name": "", "arguments": ""}
-                    )
-                    call["id"] = tc.id or call["id"]
-                    if tc.function:
-                        call["name"] += tc.function.name or ""
-                        call["arguments"] += tc.function.arguments or ""
-    finally:
-        if thinking is not None:
-            await thinking.close()
-    return text, [calls[i] for i in sorted(calls)]

@@ -1,17 +1,13 @@
 """A real app server over fake services: a scripted model stream, fake kernels, a temporary workspace."""
 
-import asyncio
-import json
 import time
-from dataclasses import dataclass, field
 from types import SimpleNamespace
-from typing import Self
 
 import httpx
 import pytest
 from starlette.testclient import TestClient
 
-from researchchat import config, llm
+from researchchat import config, llm, turn
 from researchchat.server import app as server_app
 from researchchat.server.app import ServerSettings, create_app
 from researchchat.server.socket import ChatSessions
@@ -22,61 +18,20 @@ from researchchat.workspace.kaggle.token_file import TokenFile
 from researchchat.workspace.panel import PanelRegistry
 from researchchat.workspace.service import NotebookService
 from tests.kaggle.fakes import FakeListener
+from tests.scripted_chat_model import (  # noqa: F401 - shared with the socket tests
+    HANG,
+    ScriptedChatModel,
+    text_chunk,
+    tool_call_chunk,
+)
 
 PORT = 8000
 OWN_HOST = f"127.0.0.1:{PORT}"
 OWN_PAGE = f"http://{OWN_HOST}"
-HANG = object()  # in a script: the stream waits here until the turn is stopped
-
-
-def text_chunk(text: str) -> SimpleNamespace:
-    return SimpleNamespace(choices=[SimpleNamespace(delta=SimpleNamespace(content=text, reasoning=None, tool_calls=None))])
-
-
-def tool_call_chunk(name: str, arguments: dict, call_id: str = "call-1") -> SimpleNamespace:
-    call = SimpleNamespace(index=0, id=call_id, function=SimpleNamespace(name=name, arguments=json.dumps(arguments)))
-    return SimpleNamespace(choices=[SimpleNamespace(delta=SimpleNamespace(content=None, reasoning=None, tool_calls=[call]))])
-
-
-class ScriptedStream:
-    def __init__(self, chunks: list) -> None:
-        self.chunks = chunks
-
-    async def __aenter__(self) -> Self:
-        return self
-
-    async def __aexit__(self, *_exc: object) -> None:
-        pass
-
-    def __aiter__(self):
-        return self._chunks()
-
-    async def _chunks(self):
-        for chunk in self.chunks:
-            if chunk is HANG:
-                await asyncio.Event().wait()
-            yield chunk
-
-
-@dataclass
-class ScriptedModel:
-    """Answers each model call with the next script; "ok" once the scripts run out. Remembers every request."""
-
-    scripts: list[list] = field(default_factory=list)
-    requests: list[dict] = field(default_factory=list)
-
-    async def create(self, **request: object) -> ScriptedStream:
-        self.requests.append(request)
-        return ScriptedStream(self.scripts.pop(0) if self.scripts else [text_chunk("ok")])
-
-    def tool_names(self, request_index: int) -> list[str]:
-        return [tool["function"]["name"] for tool in self.requests[request_index].get("tools", [])]
-
-
 @pytest.fixture
-def model(monkeypatch) -> ScriptedModel:
-    scripted = ScriptedModel()
-    monkeypatch.setattr(llm, "client", SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=scripted.create))))
+def model(monkeypatch) -> ScriptedChatModel:
+    scripted = ScriptedChatModel()
+    monkeypatch.setattr(turn, "build_chat_model", lambda _request: scripted)
     catalog = {config.MODEL: llm.ModelInfo(id=config.MODEL, name="Test model", params=frozenset({"tools", "reasoning"}))}
     monkeypatch.setattr(llm, "_catalog", catalog)
     return scripted

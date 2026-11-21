@@ -3,6 +3,15 @@
 import asyncio
 from dataclasses import dataclass
 
+from langchain.agents import create_agent
+from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
+from langgraph.graph.state import CompiledStateGraph
+
+from researchchat.agent.history import from_langchain, to_langchain
+from researchchat.agent.model import ModelRequest, build_chat_model
+from researchchat.agent.round_limit import RoundLimit
+from researchchat.agent.stream import stream_agent
+from researchchat.agent.tool_adapter import AppToolCalls, langchain_tools
 from researchchat.chat.ports import (
     AnswerView,
     Asker,
@@ -19,20 +28,13 @@ from researchchat.chat_start import (
     picker_choices,
 )
 from researchchat.config import TOOL_MAX_ROUNDS
-from researchchat.llm import model_params, stream_round
+from researchchat.llm import model_params
 from researchchat.modes import EFFORT_MODE_ID, MODEL_MODE_ID, Picks, chosen_picks
 from researchchat.progress import Progress
 from researchchat.settings import reasoning_body, usable_settings
-from researchchat.tools import chosen_tools, run_tool_call
+from researchchat.tools import chosen_tools
 from researchchat.workspace import actions
 
-LIMIT_NOTE = {
-    "role": "system",
-    "content": (
-        "Tool limit reached. Do not search or read more pages. Answer the "
-        "user now using the results above, and cite the URLs you used."
-    ),
-}
 EMPTY_ANSWER = "(The model returned an empty response.)"
 
 
@@ -55,15 +57,6 @@ class TurnViews:
     settings: SettingsView  # re-sent when the message switches to another model
 
 
-@dataclass(frozen=True)
-class ModelRequest:
-    """How every round of this turn calls the model."""
-
-    model: str
-    tools: list[dict]
-    thinking: dict
-
-
 class CollectedAnswer:
     """Streams to the chat and keeps the text, so a stopped turn still knows what it wrote."""
 
@@ -80,7 +73,7 @@ class CollectedAnswer:
 
 
 async def run_turn(chat: ChatState, message: UserMessage, views: TurnViews) -> None:
-    """Answer one message, calling tools round by round up to the round limit.
+    """Answer one message with the agent, which calls tools round by round up to the round limit.
 
     The chat's history gains the message and the answer; a turn that fails or is
     stopped keeps none of its half-finished tool messages.
@@ -95,7 +88,8 @@ async def run_turn(chat: ChatState, message: UserMessage, views: TurnViews) -> N
     answer = CollectedAnswer(views.answer)
     progress = Progress(views.progress)
     try:
-        await run_rounds(history, turn_notes, request, answer, progress)
+        added = await stream_agent(build_agent(request, progress), to_langchain(history + turn_notes), answer, progress)
+        history.extend(from_langchain(tool_round_messages(added)))
         final_text = answer.text
     except asyncio.CancelledError:
         # Stop: keep what was written, drop the half-finished tool turns
@@ -133,35 +127,11 @@ async def model_request(chat: ChatState, picks: Picks) -> ModelRequest:
     return ModelRequest(model=picks.model, tools=chosen_tools(settings), thinking=thinking)
 
 
-async def run_rounds(history: list, turn_notes: list, request: ModelRequest, answer: AnswerView, progress: Progress) -> None:
-    """Each round: the model answers or calls tools; tool results go back in."""
-    for round_no in range(TOOL_MAX_ROUNDS + 1):
-        is_last_round = round_no == TOOL_MAX_ROUNDS
-        messages = history + turn_notes + ([LIMIT_NOTE] if request.tools and is_last_round else [])
-        text, calls = await stream_round(messages, answer, round_options(request, is_last_round), progress, model_id=request.model)
-        if not calls or is_last_round:
-            return
-        history.append(tool_call_message(text, calls))
-        for call in calls:
-            history.append({"role": "tool", "tool_call_id": call["id"], "content": await run_tool_call(call, progress)})
+def build_agent(request: ModelRequest, progress: Progress) -> CompiledStateGraph:
+    middleware = [AppToolCalls(progress), RoundLimit(TOOL_MAX_ROUNDS)]
+    return create_agent(build_chat_model(request), tools=langchain_tools(request.tools), middleware=middleware)
 
 
-def round_options(request: ModelRequest, is_last_round: bool) -> dict:
-    """At the limit the tools stay listed (so the model isn't confused) but can't be called."""
-    options: dict = {"extra_body": request.thinking}
-    if request.tools:
-        options["tools"] = request.tools
-        if is_last_round:
-            options["tool_choice"] = "none"
-    return options
-
-
-def tool_call_message(text: str, calls: list[dict]) -> dict:
-    return {
-        "role": "assistant",
-        "content": text or None,
-        "tool_calls": [
-            {"id": call["id"], "type": "function", "function": {"name": call["name"], "arguments": call["arguments"]}}
-            for call in calls
-        ],
-    }
+def tool_round_messages(added: list[BaseMessage]) -> list[BaseMessage]:
+    """The tool calls and their results; the answer itself is stored as the full streamed text."""
+    return [m for m in added if isinstance(m, ToolMessage) or (isinstance(m, AIMessage) and m.tool_calls)]

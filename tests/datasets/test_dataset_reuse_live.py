@@ -53,35 +53,24 @@ class Chat:
                             "note": "Downloading in the background. Don't read the files until then.", "from_pool": False}
 
     async def ask(self, user_text: str) -> str:
-        from openai import AsyncOpenAI
+        from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 
-        from researchchat.config import (
-            MODEL,
-            OPENROUTER_API_KEY,
-            OPENROUTER_URL,
-            SYSTEM_PROMPT,
-        )
+        from researchchat.agent.model import ModelRequest, build_chat_model
+        from researchchat.config import MODEL, SYSTEM_PROMPT
         from researchchat.tools import NOTEBOOK_TOOLS, TOOLS
 
-        # A client per chat: the app's shared one is tied to the event loop of the first test
-        client = AsyncOpenAI(base_url=OPENROUTER_URL, api_key=OPENROUTER_API_KEY)
-
-        messages: list[dict] = [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": user_text}]
+        # A model per chat: a shared one is tied to the event loop of the first test
+        tools = TOOLS + NOTEBOOK_TOOLS
+        model = build_chat_model(ModelRequest(model=MODEL, tools=tools, thinking={})).bind_tools(tools)
+        messages = [SystemMessage(content=SYSTEM_PROMPT), HumanMessage(content=user_text)]
         for _ in range(MAX_ROUNDS):
-            response = await client.chat.completions.create(
-                model=MODEL, messages=messages, tools=TOOLS + NOTEBOOK_TOOLS, temperature=0,
-            )
-            message = response.choices[0].message
+            message = await model.ainvoke(messages, temperature=0)
             if not message.tool_calls:
-                return message.content or ""
-            messages.append({
-                "role": "assistant", "content": message.content,
-                "tool_calls": [call.model_dump() for call in message.tool_calls],
-            })
+                return message.text
+            messages.append(message)
             for call in message.tool_calls:
-                args = json.loads(call.function.arguments or "{}")
-                self.calls.append((call.function.name, args))
-                messages.append({"role": "tool", "tool_call_id": call.id, "content": await self.tool(call.function.name, args)})
+                self.calls.append((call["name"], call["args"]))
+                messages.append(ToolMessage(content=await self.tool(call["name"], call["args"]), tool_call_id=call["id"]))
         return ""
 
     async def tool(self, name: str, args: dict) -> str:
