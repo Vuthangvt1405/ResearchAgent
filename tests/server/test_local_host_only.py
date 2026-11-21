@@ -2,7 +2,7 @@
 
 import pytest
 
-from researchchat.config import check_local_host
+from sillytherin.config import check_local_host
 
 # ---- Local host only · unit
 # Baseline: Given start-up · When the server host is checked

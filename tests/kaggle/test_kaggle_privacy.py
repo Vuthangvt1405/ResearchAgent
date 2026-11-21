@@ -7,9 +7,9 @@ import urllib.parse
 from dataclasses import asdict
 from pathlib import Path
 
-from researchchat.config import KAGGLE_TOKEN_FILE, WORKSPACES_DIR
-from researchchat.workspace.kaggle.callback import CallbackListener, CallbackResult
-from researchchat.workspace.kaggle.settings_switch import (
+from sillytherin.config import KAGGLE_TOKEN_FILE, WORKSPACES_DIR
+from sillytherin.workspace.kaggle.callback import CallbackListener, CallbackResult
+from sillytherin.workspace.kaggle.settings_switch import (
     apply_account_change,
     kaggle_switch,
 )
@@ -24,7 +24,7 @@ from tests.kaggle.test_kaggle_account import Harness
 from tests.kaggle.test_kaggle_settings_switch import FakeChat, settle
 
 TOKENS = (ACCESS_TOKEN, REFRESHED_ACCESS_TOKEN, REFRESH_TOKEN)
-KAGGLE_SOURCES = Path(__file__).resolve().parents[2] / "researchchat" / "workspace" / "kaggle"
+KAGGLE_SOURCES = Path(__file__).resolve().parents[2] / "sillytherin" / "workspace" / "kaggle"
 ALLOWED_KAGGLE_URLS = {
     "https://www.kaggle.com/api/v1/oauth2/authorize",
     "https://www.kaggle.com/api/v1/oauth2/token",

@@ -1,6 +1,6 @@
 import pytest
 
-from researchchat.config import EFFORT_DEFAULT, EFFORT_LEVELS, check_levels
+from sillytherin.config import EFFORT_DEFAULT, EFFORT_LEVELS, check_levels
 
 
 def test_config_toml_loads_with_valid_levels():
@@ -23,14 +23,14 @@ def test_empty_levels_are_rejected():
 
 
 def test_setup_ok_on_supported_python_with_key():
-    from researchchat.config import setup_problems
+    from sillytherin.config import setup_problems
 
     assert setup_problems((3, 11), "sk-or-123") == []
     assert setup_problems((3, 13), "sk-or-123") == []
 
 
 def test_setup_rejects_unsupported_python():
-    from researchchat.config import setup_problems
+    from sillytherin.config import setup_problems
 
     for version in ((3, 10), (3, 15)):
         [problem] = setup_problems(version, "sk-or-123")
@@ -38,7 +38,7 @@ def test_setup_rejects_unsupported_python():
 
 
 def test_setup_needs_a_real_api_key():
-    from researchchat.config import setup_problems
+    from sillytherin.config import setup_problems
 
     for key in (None, "", "  ", "your-key-here"):
         [problem] = setup_problems((3, 11), key)

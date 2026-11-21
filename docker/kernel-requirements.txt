@@ -1,6 +1,6 @@
 # Packages inside the notebook kernel container (not the app).
 # Add a package here, then rebuild the image:
-#   docker build -f docker/kernel.Dockerfile -t researchchat-kernel:1 docker
+#   docker build -f docker/kernel.Dockerfile -t sillytherin-kernel:1 docker
 ipykernel==6.29.5
 numpy==2.1.3
 pandas==2.2.3

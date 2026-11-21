@@ -2,10 +2,10 @@
 
 from types import SimpleNamespace
 
-from researchchat.agent.history import from_langchain, to_langchain
-from researchchat.server.socket import ChatSessions
-from researchchat.workspace import actions
-from researchchat.workspace.datasets.links import find_pasted_links
+from sillytherin.agent.history import from_langchain, to_langchain
+from sillytherin.server.socket import ChatSessions
+from sillytherin.workspace import actions
+from sillytherin.workspace.datasets.links import find_pasted_links
 from tests.agent.conftest import history_of, ready_chat, run_one_turn
 from tests.scripted_chat_model import text_chunk, tool_call_chunk
 

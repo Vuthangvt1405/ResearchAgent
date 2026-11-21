@@ -3,8 +3,8 @@
 import nbformat
 import pytest
 
-from researchchat.workspace.kernels import RunResult
-from researchchat.workspace.service import NotebookService
+from sillytherin.workspace.kernels import RunResult
+from sillytherin.workspace.service import NotebookService
 
 
 class FakeKernels:
@@ -44,7 +44,7 @@ def _docker_ready() -> str | None:
     """None when Docker and the kernel image are ready, else why not."""
     import subprocess
 
-    from researchchat.config import DOCKER_IMAGE
+    from sillytherin.config import DOCKER_IMAGE
 
     try:
         if subprocess.run(["docker", "info"], capture_output=True, timeout=15).returncode != 0:
@@ -69,7 +69,7 @@ def pytest_collection_modifyitems(config, items):
 @pytest.fixture(autouse=True)
 def close_workspace_databases():
     """Each test's tmp_path workspace gets its own SQLite engine; close them all after the test."""
-    from researchchat.db.engine import close_all_databases
+    from sillytherin.db.engine import close_all_databases
 
     yield
     close_all_databases()

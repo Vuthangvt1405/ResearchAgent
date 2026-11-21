@@ -1,6 +1,6 @@
 """Only the chat that opened a prompt can answer it, once, with an offered choice."""
 
-from researchchat.tools import notebook_run
+from sillytherin.tools import notebook_run
 from tests.server.conftest import (
     events_until,
     open_tab,

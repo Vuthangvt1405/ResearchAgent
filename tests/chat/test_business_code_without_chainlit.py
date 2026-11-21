@@ -6,12 +6,12 @@ import json
 import re
 from pathlib import Path
 
-from researchchat.chat.widgets import Picker, SettingSwitch
-from researchchat.modes import PickerChoices, Picks, build_modes
-from researchchat.progress import Progress
-from researchchat.settings import NO_REASONING_REASON, NO_TOOLS_REASON, build_widgets
-from researchchat.tools import run_tool_call, web_search
-from researchchat.workspace.kaggle.account import KaggleAccountStatus
+from sillytherin.chat.widgets import Picker, SettingSwitch
+from sillytherin.modes import PickerChoices, Picks, build_modes
+from sillytherin.progress import Progress
+from sillytherin.settings import NO_REASONING_REASON, NO_TOOLS_REASON, build_widgets
+from sillytherin.tools import run_tool_call, web_search
+from sillytherin.workspace.kaggle.account import KaggleAccountStatus
 from tests.chat.fakes import FakeProgressView
 
 # ---- Business code runs without Chainlit · unit
@@ -81,7 +81,7 @@ def test_build_modes_returns_our_own_pickers():
 
 
 def test_nothing_imports_chainlit():
-    # Given every module under researchchat/ and tests/, and the requirements files
+    # Given every module under sillytherin/ and tests/, and the requirements files
     # When their imports and requirements are read
     # Then none imports or requires chainlit
     # Demonstrates: Chainlit is fully gone
@@ -96,7 +96,7 @@ REPO = Path(__file__).resolve().parents[2]
 
 
 def python_sources() -> list[Path]:
-    return sorted([*(REPO / "researchchat").rglob("*.py"), *(REPO / "tests").rglob("*.py"), *REPO.glob("*.py")])
+    return sorted([*(REPO / "sillytherin").rglob("*.py"), *(REPO / "tests").rglob("*.py"), *REPO.glob("*.py")])
 
 
 def imports_chainlit(path: Path) -> bool:

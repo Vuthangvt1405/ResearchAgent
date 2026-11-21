@@ -1,1 +1,1 @@
-"""SillyTherin: the start command (`python -m sillytherin`). The app's code lives in `researchchat` for now."""
+"""SillyTherin: a research assistant on OpenRouter, with its own web server and a project notebook."""

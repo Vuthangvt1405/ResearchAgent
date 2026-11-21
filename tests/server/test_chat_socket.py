@@ -2,8 +2,8 @@
 
 import time
 
-from researchchat.tools import notebook_run, web_search
-from researchchat.workspace import actions
+from sillytherin.tools import notebook_run, web_search
+from sillytherin.workspace import actions
 from tests.server.conftest import (
     HANG,
     events_until,

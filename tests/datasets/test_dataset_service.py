@@ -18,14 +18,14 @@ from types import SimpleNamespace
 import httpx
 import pytest
 
-from researchchat.workspace import ErrorCode, WorkspaceError, actions, store
-from researchchat.workspace.datasets import sources as src
-from researchchat.workspace.datasets import store as ds
-from researchchat.workspace.datasets.pool import DatasetPool, PoolEntry, PoolFile
-from researchchat.workspace.datasets.service import DatasetService, DatasetsSettings
-from researchchat.workspace.datasets.sources import DatasetPlan, PlannedFile
-from researchchat.workspace.datasets.views import VIEW_FAILED_MESSAGE, VIEWS_DIR
-from researchchat.workspace.service import NotebookService
+from sillytherin.workspace import ErrorCode, WorkspaceError, actions, store
+from sillytherin.workspace.datasets import sources as src
+from sillytherin.workspace.datasets import store as ds
+from sillytherin.workspace.datasets.pool import DatasetPool, PoolEntry, PoolFile
+from sillytherin.workspace.datasets.service import DatasetService, DatasetsSettings
+from sillytherin.workspace.datasets.sources import DatasetPlan, PlannedFile
+from sillytherin.workspace.datasets.views import VIEW_FAILED_MESSAGE, VIEWS_DIR
+from sillytherin.workspace.service import NotebookService
 from tests.conftest import FakeChats, FakeFreeDisk, FakeKernels, fake_lookup
 
 GB = 1_000_000_000
@@ -778,7 +778,7 @@ def test_delete_while_downloading_is_busy(root):
 
 def test_model_delete_declined_keeps_dataset(root):
     # Changed: tool, approve → False · Then: DECLINED; everything kept · Demonstrates: the model can't delete without you
-    from researchchat.tools import dataset_delete
+    from sillytherin.tools import dataset_delete
 
     async def scenario():
         env = Env(root)
@@ -1068,7 +1068,7 @@ def test_no_tokens_or_host_paths_in_requests_or_results(root):
         assert env.catalog.requested
         for request in env.catalog.requested:
             assert "authorization" not in {k.lower() for k in request.headers}
-            assert request.headers["user-agent"] == "ResearchChat"
+            assert request.headers["user-agent"] == "SillyTherin"
 
     run(scenario())
 
@@ -1295,7 +1295,7 @@ def test_no_code_references_removed_formats():
     # Changed: grep the package for datasets.json, .dataset-pool.json, load_records, migrate_project (vulture runs separately)
     # Then: no hits
     # Demonstrates: the removal is complete
-    package = Path(__file__).resolve().parents[2] / "researchchat"
+    package = Path(__file__).resolve().parents[2] / "sillytherin"
     hits = [
         f"{path.relative_to(package)}: {name}"
         for path in package.rglob("*.py")

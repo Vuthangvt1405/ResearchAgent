@@ -12,7 +12,7 @@ from langchain_core.utils.function_calling import convert_to_openai_tool
 from langsmith.utils import tracing_is_enabled
 from pydantic import Field
 
-from researchchat.agent.history import from_langchain
+from sillytherin.agent.history import from_langchain
 
 HANG = object()  # in a script: the stream waits here until the turn is stopped
 

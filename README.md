@@ -76,7 +76,7 @@ OPENROUTER_API_KEY=sk-or-...
 To run notebook code, build the kernel image with Docker running:
 
 ```bash
-docker build -f docker/kernel.Dockerfile -t researchchat-kernel:1 docker
+docker build -f docker/kernel.Dockerfile -t sillytherin-kernel:1 docker
 ```
 
 ### Running

@@ -1,4 +1,4 @@
-// Mirrors NotebookProps / DatasetProps in researchchat/workspace/service.py.
+// Mirrors NotebookProps / DatasetProps in sillytherin/workspace/service.py.
 // No fields are added or removed: the Python contract is unchanged.
 
 export type CellType = "code" | "markdown";

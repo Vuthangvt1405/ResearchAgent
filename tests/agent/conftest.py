@@ -6,12 +6,12 @@ from types import SimpleNamespace
 
 import pytest
 
-from researchchat import llm, turn
-from researchchat.chat_start import HISTORY_KEY, PICKS_KEY, SETTINGS_KEY
-from researchchat.modes import Picks
-from researchchat.tools import web_search
-from researchchat.turn import TurnViews, UserMessage, run_turn
-from researchchat.workspace import actions
+from sillytherin import llm, turn
+from sillytherin.chat_start import HISTORY_KEY, PICKS_KEY, SETTINGS_KEY
+from sillytherin.modes import Picks
+from sillytherin.tools import web_search
+from sillytherin.turn import TurnViews, UserMessage, run_turn
+from sillytherin.workspace import actions
 from tests.chat.fakes import (
     FakeAnswerView,
     FakeAsker,

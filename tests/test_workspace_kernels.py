@@ -11,18 +11,18 @@ from pathlib import Path
 
 import pytest
 
-from researchchat.workspace import ErrorCode, WorkspaceError, kernels, store
-from researchchat.workspace.datasets import store as ds
-from researchchat.workspace.datasets.pool import POOL_DIR, DatasetPool
-from researchchat.workspace.datasets.views import VIEWS_DIR, ProjectViews, ViewFile
-from researchchat.workspace.kernels import (
+from sillytherin.workspace import ErrorCode, WorkspaceError, kernels, store
+from sillytherin.workspace.datasets import store as ds
+from sillytherin.workspace.datasets.pool import POOL_DIR, DatasetPool
+from sillytherin.workspace.datasets.views import VIEWS_DIR, ProjectViews, ViewFile
+from sillytherin.workspace.kernels import (
     SCOPE_LABEL,
     ContainerMounts,
     DockerSettings,
     KernelRegistry,
     _docker,
 )
-from researchchat.workspace.service import NotebookService, output_props
+from sillytherin.workspace.service import NotebookService, output_props
 
 pytestmark = pytest.mark.docker
 
@@ -513,7 +513,7 @@ def test_memory_hog_kills_kernel_not_app(root):
 
 def test_docker_down_reports_unavailable(root, monkeypatch):
     # Demonstrates: no host fallback
-    from researchchat.workspace import kernels
+    from sillytherin.workspace import kernels
 
     async def no_docker(*args, **kwargs):
         raise OSError("docker: not reachable")

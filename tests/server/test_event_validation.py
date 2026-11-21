@@ -5,8 +5,8 @@ import json
 import pytest
 from starlette.websockets import WebSocketDisconnect
 
-from researchchat import config
-from researchchat.server.events import MAX_FRAME_BYTES, MAX_MESSAGE_CHARS
+from sillytherin import config
+from sillytherin.server.events import MAX_FRAME_BYTES, MAX_MESSAGE_CHARS
 from tests.server.conftest import events_until, open_tab, send_message
 
 # ---- Event validation · API

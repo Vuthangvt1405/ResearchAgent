@@ -1,4 +1,4 @@
-from researchchat.settings import (
+from sillytherin.settings import (
     NO_REASONING_REASON,
     NO_TOOLS_REASON,
     build_widgets,
@@ -6,7 +6,7 @@ from researchchat.settings import (
     reasoning_body,
     usable_settings,
 )
-from researchchat.workspace.kaggle.account import KaggleAccountStatus
+from sillytherin.workspace.kaggle.account import KaggleAccountStatus
 
 NOT_CONNECTED = KaggleAccountStatus(state="disconnected")
 FULL_MODEL = {"reasoning", "tools"}
@@ -59,7 +59,7 @@ def test_no_tools_reach_a_model_without_tools():
 
 
 def test_each_switch_adds_its_own_tools():
-    from researchchat.tools import chosen_tools
+    from sillytherin.tools import chosen_tools
 
     names = lambda s: [t["function"]["name"] for t in chosen_tools(s)]
     assert names({}) == []

@@ -8,8 +8,8 @@ from typing import ClassVar
 
 import httpx
 
-from researchchat.workspace.kaggle import oauth
-from researchchat.workspace.kaggle.callback import CallbackResult
+from sillytherin.workspace.kaggle import oauth
+from sillytherin.workspace.kaggle.callback import CallbackResult
 
 ACCESS_TOKEN = "AT-SECRET-0001"
 REFRESHED_ACCESS_TOKEN = "AT-SECRET-0002"

@@ -7,12 +7,12 @@ import json
 import httpx
 import pytest
 
-from researchchat.tools import chosen_tools, dataset_download, dataset_list
-from researchchat.tools import dataset_search as search
-from researchchat.workspace import ErrorCode, WorkspaceError, store
-from researchchat.workspace.datasets import sources as src
-from researchchat.workspace.datasets.service import DatasetService, DatasetsSettings
-from researchchat.workspace.datasets.sources import DatasetPlan, PlannedFile
+from sillytherin.tools import chosen_tools, dataset_download, dataset_list
+from sillytherin.tools import dataset_search as search
+from sillytherin.workspace import ErrorCode, WorkspaceError, store
+from sillytherin.workspace.datasets import sources as src
+from sillytherin.workspace.datasets.service import DatasetService, DatasetsSettings
+from sillytherin.workspace.datasets.sources import DatasetPlan, PlannedFile
 from tests.chat.fakes import FakeChatState, in_chat
 from tests.conftest import FakeDatasetService, FakeFreeDisk, fake_lookup
 
@@ -191,7 +191,7 @@ def test_dataset_list_line_says_created_in_this_project(tmp_path):
 
 PASTED_LINK = "https://example.org/data/iris.csv"
 USER_HISTORY = [
-    {"role": "system", "content": "You are ResearchChat."},
+    {"role": "system", "content": "You are SillyTherin."},
     {"role": "user", "content": f"download {PASTED_LINK} please"},
 ]
 

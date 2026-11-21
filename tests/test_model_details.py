@@ -2,9 +2,9 @@
 
 import asyncio
 
-from researchchat import llm
-from researchchat.chat_start import pickers_for
-from researchchat.modes import Picks
+from sillytherin import llm
+from sillytherin.chat_start import pickers_for
+from sillytherin.modes import Picks
 
 THINKS_AND_TOOLS = llm.ModelInfo(id="vendor/smart", name="Smart", params=frozenset({"reasoning", "tools"}))
 TOOLS_ONLY = llm.ModelInfo(id="vendor/tools", name="Tools", params=frozenset({"tools"}))

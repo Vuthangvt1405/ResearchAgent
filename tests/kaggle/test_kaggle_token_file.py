@@ -3,14 +3,14 @@
 import os
 import stat
 
-from researchchat.workspace.kaggle.token_file import SavedSignIn, TokenFile
+from sillytherin.workspace.kaggle.token_file import SavedSignIn, TokenFile
 from tests.kaggle.fakes import CLIENT_ID, REFRESH_TOKEN, USERNAME
 
 SIGN_IN = SavedSignIn(client_id=CLIENT_ID, refresh_token=REFRESH_TOKEN, username=USERNAME, connected_at="2026-11-19T10:00:00Z")
 
 
 def token_file(tmp_path) -> TokenFile:
-    return TokenFile(tmp_path / "config" / "researchchat" / "kaggle-account.json")
+    return TokenFile(tmp_path / "config" / "sillytherin" / "kaggle-account.json")
 
 
 # Baseline: Given a tmp path · When a sign-in is saved and loaded

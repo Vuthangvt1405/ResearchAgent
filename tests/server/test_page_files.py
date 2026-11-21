@@ -3,7 +3,7 @@
 import pytest
 from starlette.testclient import TestClient
 
-from researchchat.server.app import (
+from sillytherin.server.app import (
     CONTENT_SECURITY_POLICY,
     NO_PAGE_YET,
     ServerSettings,

@@ -7,16 +7,16 @@ import httpx
 import pytest
 from starlette.testclient import TestClient
 
-from researchchat import config, llm, turn
-from researchchat.server import app as server_app
-from researchchat.server.app import ServerSettings, create_app
-from researchchat.server.socket import ChatSessions
-from researchchat.workspace import actions
-from researchchat.workspace.datasets.service import DatasetService, DatasetsSettings
-from researchchat.workspace.kaggle.account import KaggleAccountService
-from researchchat.workspace.kaggle.token_file import TokenFile
-from researchchat.workspace.panel import PanelRegistry
-from researchchat.workspace.service import NotebookService
+from sillytherin import config, llm, turn
+from sillytherin.server import app as server_app
+from sillytherin.server.app import ServerSettings, create_app
+from sillytherin.server.socket import ChatSessions
+from sillytherin.workspace import actions
+from sillytherin.workspace.datasets.service import DatasetService, DatasetsSettings
+from sillytherin.workspace.kaggle.account import KaggleAccountService
+from sillytherin.workspace.kaggle.token_file import TokenFile
+from sillytherin.workspace.panel import PanelRegistry
+from sillytherin.workspace.service import NotebookService
 from tests.kaggle.fakes import FakeListener
 from tests.scripted_chat_model import (  # noqa: F401 - shared with the socket tests
     HANG,

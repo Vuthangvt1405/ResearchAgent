@@ -9,11 +9,11 @@ from itertools import pairwise
 import httpx
 import pytest
 
-from researchchat.workspace import ErrorCode, WorkspaceError, store
-from researchchat.workspace.datasets import links
-from researchchat.workspace.datasets import sources as src
-from researchchat.workspace.datasets import store as ds
-from researchchat.workspace.datasets.service import DatasetService, DatasetsSettings
+from sillytherin.workspace import ErrorCode, WorkspaceError, store
+from sillytherin.workspace.datasets import links
+from sillytherin.workspace.datasets import sources as src
+from sillytherin.workspace.datasets import store as ds
+from sillytherin.workspace.datasets.service import DatasetService, DatasetsSettings
 from tests.conftest import FakeFreeDisk, catalog_client, fake_lookup
 
 LINK = "https://example.org/data/iris.csv"
@@ -93,7 +93,7 @@ def probe(site: Website, link: str = LINK):
 
 
 def history_with(*messages):
-    return [{"role": "system", "content": "You are ResearchChat."}, *messages]
+    return [{"role": "system", "content": "You are SillyTherin."}, *messages]
 
 
 def test_link_in_user_message_is_found():
@@ -399,7 +399,7 @@ def test_no_cookies_or_auth_sent():
     site = Website()
     run(probe(site))
     headers = site.requests[0].headers
-    assert headers["user-agent"] == "ResearchChat" and headers["accept-encoding"] == "identity"
+    assert headers["user-agent"] == "SillyTherin" and headers["accept-encoding"] == "identity"
     assert "cookie" not in headers and "authorization" not in headers
 
 

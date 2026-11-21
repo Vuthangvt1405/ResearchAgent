@@ -5,9 +5,9 @@ from starlette.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
 import sillytherin.__main__ as command
-from researchchat.__main__ import read_arguments, server_settings
-from researchchat.server.app import ServerSettings, create_app
-from researchchat.server.guard import DEV_PAGE_ORIGINS
+from sillytherin.__main__ import read_arguments, server_settings
+from sillytherin.server.app import ServerSettings, create_app
+from sillytherin.server.guard import DEV_PAGE_ORIGINS
 from tests.server.conftest import OWN_HOST, OWN_PAGE, PORT
 
 VITE_PAGE = "http://localhost:5173"
@@ -47,7 +47,7 @@ def test_dev_mode_is_off_by_default(tmp_path):
     # Changed: python -m sillytherin arguments without --dev, then with it
     # Then: off, then on
     # Demonstrates: nobody turns it on by accident; the new command reads the flag
-    assert command.main.__module__ == "researchchat.__main__"
+    assert command.main.__module__ == "sillytherin.__main__"
     assert server_settings(read_arguments([]), page_dir=tmp_path).extra_origins == frozenset()
     assert server_settings(read_arguments(["--dev"]), page_dir=tmp_path).extra_origins == DEV_PAGE_ORIGINS
 

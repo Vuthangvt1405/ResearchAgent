@@ -1,5 +1,5 @@
-from researchchat.tools import read_page, web_search
-from researchchat.tools.titles import TITLE_MAX, short_url, shorten
+from sillytherin.tools import read_page, web_search
+from sillytherin.tools.titles import TITLE_MAX, short_url, shorten
 
 
 def test_short_text_is_unchanged():
@@ -46,7 +46,7 @@ def test_every_registered_tool_has_a_step_title():
     # Negative · Changed: a tool module without step_title
     # Then: each tool the model can call gives a non-empty chat step title, even with no arguments
     # Demonstrates: run_tool_call never fails on the title before the tool runs
-    from researchchat.tools import _BY_NAME
+    from sillytherin.tools import _BY_NAME
 
     for name, module in _BY_NAME.items():
         assert callable(getattr(module, "step_title", None)), name

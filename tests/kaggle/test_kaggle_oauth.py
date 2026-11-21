@@ -9,7 +9,7 @@ import urllib.parse
 import httpx
 import pytest
 
-from researchchat.workspace.kaggle import oauth
+from sillytherin.workspace.kaggle import oauth
 from tests.kaggle.fakes import (
     ACCESS_TOKEN,
     CLIENT_ID,

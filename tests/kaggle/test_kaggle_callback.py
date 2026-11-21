@@ -5,7 +5,7 @@ import urllib.parse
 
 import httpx
 
-from researchchat.workspace.kaggle.callback import (
+from sillytherin.workspace.kaggle.callback import (
     CANCELLED_PAGE,
     CONNECTED_PAGE,
     CallbackListener,

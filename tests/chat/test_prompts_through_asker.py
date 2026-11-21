@@ -5,10 +5,10 @@ import json
 
 import pytest
 
-from researchchat.tools import dataset_delete, dataset_download, notebook_run
-from researchchat.workspace import ErrorCode, store
-from researchchat.workspace.datasets.sources import DatasetPlan, PlannedFile
-from researchchat.workspace.service import NotebookService
+from sillytherin.tools import dataset_delete, dataset_download, notebook_run
+from sillytherin.workspace import ErrorCode, store
+from sillytherin.workspace.datasets.sources import DatasetPlan, PlannedFile
+from sillytherin.workspace.service import NotebookService
 from tests.chat.fakes import FakeAsker, in_chat
 from tests.conftest import FakeDatasetService
 from tests.datasets.test_dataset_tools import STARTED

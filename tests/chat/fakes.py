@@ -4,8 +4,8 @@ from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 
-from researchchat.chat.current import ChatContext, current_chat
-from researchchat.chat.ports import Choice, ToastKind
+from sillytherin.chat.current import ChatContext, current_chat
+from sillytherin.chat.ports import Choice, ToastKind
 
 
 @dataclass

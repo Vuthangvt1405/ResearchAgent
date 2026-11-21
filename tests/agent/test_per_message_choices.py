@@ -2,9 +2,9 @@
 
 import asyncio
 
-from researchchat.agent.model import APP_TITLE, build_chat_model
-from researchchat.modes import Picks
-from researchchat.turn import model_request
+from sillytherin.agent.model import APP_TITLE, build_chat_model
+from sillytherin.modes import Picks
+from sillytherin.turn import model_request
 from tests.agent.conftest import (
     EVERY_SWITCH_ON,
     PLAIN,

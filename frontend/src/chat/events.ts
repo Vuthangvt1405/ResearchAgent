@@ -1,5 +1,5 @@
 // Every message between the page and the server over the chat socket, one-to-one with
-// researchchat/server/events.py. The server checks page events strictly, so field names matter.
+// sillytherin/server/events.py. The server checks page events strictly, so field names matter.
 import type { NotebookProps } from "@/panel/types";
 
 export type ToastKind = "info" | "success" | "warning" | "error";

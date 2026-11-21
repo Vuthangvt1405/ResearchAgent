@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One-time setup for ResearchChat on Linux / macOS:
+# One-time setup for SillyTherin on Linux / macOS:
 #   a .venv on Python 3.11-3.14, the packages, and a .env to fill in.
 # Safe to run again: it reuses what's already there.
 set -euo pipefail
@@ -24,7 +24,7 @@ find_python() {
 # 1. Python environment
 if [ -x .venv/bin/python ]; then
   if ! .venv/bin/python -c "$supported"; then
-    echo "The existing .venv uses $(.venv/bin/python --version), which ResearchChat doesn't support."
+    echo "The existing .venv uses $(.venv/bin/python --version), which SillyTherin doesn't support."
     echo "Remove it (rm -rf .venv) and run this script again."
     exit 1
   fi
@@ -61,10 +61,10 @@ fi
 if ! command -v docker >/dev/null 2>&1; then
   echo
   echo "Optional: install Docker to run notebook code (chat and search work without it)."
-elif ! docker image inspect researchchat-kernel:1 >/dev/null 2>&1; then
+elif ! docker image inspect sillytherin-kernel:1 >/dev/null 2>&1; then
   echo
   echo "Optional: to run notebook code, build the kernel image once:"
-  echo "  docker build -f docker/kernel.Dockerfile -t researchchat-kernel:1 docker"
+  echo "  docker build -f docker/kernel.Dockerfile -t sillytherin-kernel:1 docker"
 fi
 
 echo

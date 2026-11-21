@@ -8,9 +8,9 @@ import struct
 import nbformat
 import pytest
 
-from researchchat.tools import notebook_read, notebook_run
-from researchchat.workspace import ErrorCode, WorkspaceError, store
-from researchchat.workspace.service import NotebookService
+from sillytherin.tools import notebook_read, notebook_run
+from sillytherin.workspace import ErrorCode, WorkspaceError, store
+from sillytherin.workspace.service import NotebookService
 from tests.chat.fakes import FakeAsker, in_chat
 
 
