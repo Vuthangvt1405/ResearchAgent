@@ -3,7 +3,7 @@
 from researchchat.chat.ports import ChatState, SettingsView
 from researchchat.chat.widgets import Picker, SettingSwitch
 from researchchat.config import EFFORT_DEFAULT, EFFORT_LEVELS, MODEL, SYSTEM_PROMPT
-from researchchat.llm import model_catalog, model_params
+from researchchat.llm import ModelInfo, model_catalog, model_params
 from researchchat.modes import PickerChoices, Picks, build_modes, picker_models
 from researchchat.settings import build_widgets, keep_chat_choices
 from researchchat.workspace.kaggle.account import KaggleAccountStatus
@@ -13,6 +13,7 @@ PICKS_KEY = "picks"
 SETTINGS_KEY = "settings"
 
 DEFAULT_PICKS = Picks(model=MODEL, effort=EFFORT_DEFAULT)
+ABILITY_LABELS = (("reasoning", "thinks"), ("tools", "tools"))  # OpenRouter parameter -> picker wording
 
 
 def start_chat_values(chat: ChatState) -> None:
@@ -29,8 +30,19 @@ def current_picks(chat: ChatState) -> Picks:
 
 async def picker_choices() -> PickerChoices:
     """What the pickers offer: every OpenRouter text model, and the configured effort levels."""
-    names = {model.id: model.name for model in (await model_catalog()).values()}
-    return PickerChoices(models=picker_models(names, MODEL), levels=EFFORT_LEVELS)
+    catalog = await model_catalog()
+    names = {model.id: model.name for model in catalog.values()}
+    return PickerChoices(models=picker_models(names, MODEL), levels=EFFORT_LEVELS, model_details=model_details(catalog))
+
+
+def model_details(models: dict[str, ModelInfo]) -> dict[str, str]:
+    """Model id -> what it can do ("thinks · tools", "thinks", "tools" or ""), shown in the Model picker."""
+    return {model_id: model_abilities(model.params) for model_id, model in models.items()}
+
+
+def model_abilities(params: frozenset[str]) -> str:
+    abilities = [label for param, label in ABILITY_LABELS if param in params]
+    return " · ".join(abilities)
 
 
 async def pickers_for(picks: Picks) -> list[Picker]:

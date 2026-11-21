@@ -69,5 +69,5 @@ fi
 
 echo
 echo "Done. Start the app with:"
-echo "  .venv/bin/python -m researchchat"
+echo "  .venv/bin/python -m sillytherin"
 echo "then open http://127.0.0.1:8000"

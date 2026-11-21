@@ -163,9 +163,12 @@ class ChatSessions:
         return chat_id in self._chats
 
 
-async def serve_chat(websocket: WebSocket, sessions: ChatSessions, requested_chat_id: str | None, port: int) -> None:
+async def serve_chat(
+    websocket: WebSocket, sessions: ChatSessions, requested_chat_id: str | None, port: int, extra_origins: frozenset[str] = frozenset()
+) -> None:
     """Accept the socket from the app's own page, open or resume the chat, and handle its events."""
-    is_own_page = is_allowed_origin(websocket.headers.get("origin"), port) and is_allowed_host(websocket.headers.get("host"), port)
+    origin, host = websocket.headers.get("origin"), websocket.headers.get("host")
+    is_own_page = is_allowed_origin(origin, port, extra_origins) and is_allowed_host(host, port)
     if not is_own_page:
         await websocket.close(code=POLICY_VIOLATION)
         return

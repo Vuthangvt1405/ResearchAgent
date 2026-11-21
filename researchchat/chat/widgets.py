@@ -24,6 +24,7 @@ class PickerOption:
     id: str  # the value sent back with the message
     name: str  # the label shown to the user
     selected: bool
+    detail: str = ""  # what a model can do, e.g. "thinks · tools"; empty for effort levels
 
 
 @dataclass(frozen=True)

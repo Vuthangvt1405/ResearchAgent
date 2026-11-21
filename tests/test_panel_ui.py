@@ -1,7 +1,7 @@
 """Static checks on the Notebook panel's front end.
 
-The panel is a bundled React app in public/panel/src (built to public/build). Behaviour
-is tested with Vitest in public/panel; these tests read the sources as text and check
+The panel is part of the React page in frontend/src/panel (built to frontend/dist). Behaviour
+is tested with Vitest in frontend; these tests read the sources as text and check
 rules that must hold: theme colours only, the shared font variables, pinned
 dependencies, and the security rules.
 """
@@ -10,10 +10,10 @@ import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-PANEL_DIR = ROOT / "public" / "panel"
-PANEL_SRC = PANEL_DIR / "src"
+PANEL_DIR = ROOT / "frontend"
+PANEL_SRC = PANEL_DIR / "src" / "panel"
 PANEL_CSS = PANEL_SRC / "styles.css"
-BUILD = ROOT / "public" / "build"
+BUILD = PANEL_DIR / "dist"
 
 
 # Tokens live on the panel and on its Radix overlays, which render outside it (portal)
@@ -30,7 +30,7 @@ def _panel_files() -> list[Path]:
         for f in sorted(PANEL_SRC.rglob("*.ts*"))
         if ".test." not in f.name and "test" not in f.relative_to(PANEL_SRC).parts[:-1]
     ]
-    assert files, "public/panel/src has no sources"
+    assert files, "frontend/src/panel has no sources"
     return files
 
 
@@ -98,7 +98,7 @@ def _rule_body(css: str, selector: str) -> str:
 
 
 # ---- theme tokens and colours ------------------
-# Baseline: Given the panel CSS (public/panel/src/styles.css) · When the colour rules are inspected
+# Baseline: Given the panel CSS (frontend/src/panel/styles.css) · When the colour rules are inspected
 
 
 def test_panel_css_has_no_hardcoded_hex_colours():
@@ -160,7 +160,7 @@ def test_panel_uses_the_shared_font_variables():
 
 def test_no_new_dependencies_are_added():
     # negative: a package.json appears at the repo root or in public/ -> fails.
-    # npm packages are allowed only inside public/panel, pinned.
+    # npm packages are allowed only inside frontend, pinned.
     # Demonstrates: dependencies stay in one reviewed place.
     assert not (ROOT / "package.json").exists()
     assert not (ROOT / "public" / "package.json").exists()
@@ -232,24 +232,24 @@ def _remote_imports(js: str) -> list[str]:
 
 
 def test_no_external_script_or_stylesheet():
-    # custom.js or the build references a non-/public URL -> fails.
-    # Then: only same-origin /public/build/... is loaded.
+    # the built page imports a remote module -> fails.
+    # Then: the build loads only its own files.
     # Demonstrates: no third-party script surface.
-    built = (BUILD / "notebook-panel.js").read_text(encoding="utf-8")
+    built = "\n".join(path.read_text(encoding="utf-8") for path in sorted((BUILD / "assets").glob("*.js")))
     assert _remote_imports(built) == []
     # a remote import would be caught
     assert _remote_imports('import("https://cdn.example.com/x.js")')
 
 
 def test_lockfile_present_and_versions_pinned():
-    # a ^ or ~ range in public/panel/package.json -> fails.
+    # a ^ or ~ range in frontend/package.json -> fails.
     # Then: package-lock.json exists and every version is exact.
     # Demonstrates: reproducible builds.
     import json
 
     pkg = json.loads(PANEL_PKG.read_text(encoding="utf-8"))
     deps = {**pkg.get("dependencies", {}), **pkg.get("devDependencies", {})}
-    assert deps, "public/panel/package.json lists no dependencies"
+    assert deps, "frontend/package.json lists no dependencies"
     assert {k: v for k, v in deps.items() if not EXACT.match(v)} == {}
     lock = json.loads((PANEL_DIR / "package-lock.json").read_text(encoding="utf-8"))
     locked = lock["packages"][""]
@@ -258,12 +258,12 @@ def test_lockfile_present_and_versions_pinned():
 
 
 def test_colours_and_fonts_rules_on_new_css():
-    # a hex colour in public/panel/src/styles.css -> fails.
+    # a hex colour in frontend/src/panel/styles.css -> fails.
     # Then: the colour and font rules hold for the new CSS, and the built CSS is the same rules.
     # Demonstrates: the look is kept.
     css = PANEL_CSS.read_text(encoding="utf-8")
     assert HEX.findall(_without_allowed(css)) == []
     assert [f for f in _font_families(css) if not FONT_OK.match(f)] == []
-    built = (BUILD / "notebook-panel.css").read_text(encoding="utf-8")
+    built = "\n".join(path.read_text(encoding="utf-8") for path in sorted((BUILD / "assets").glob("*.css")))
     assert ".rcnb" in built and "#rc-panel-root" in built
     assert HEX.findall(".x{color:#fff}")

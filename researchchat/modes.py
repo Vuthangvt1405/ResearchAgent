@@ -1,6 +1,6 @@
 """The Model and Effort pickers in the chat box, and reading what a message chose."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from researchchat.chat.widgets import Picker, PickerOption
 
@@ -24,6 +24,7 @@ class PickerChoices:
 
     models: dict[str, str]
     levels: dict[str, str]
+    model_details: dict[str, str] = field(default_factory=dict)  # model id -> "thinks · tools" etc.
 
 
 def picker_models(names: dict[str, str], default_model: str) -> dict[str, str]:
@@ -38,15 +39,18 @@ def picker_models(names: dict[str, str], default_model: str) -> dict[str, str]:
 
 def build_modes(choices: PickerChoices, picks: Picks, can_reason: bool) -> list[Picker]:
     """The pickers to show, each starting at this chat's pick: Model always, Effort only when the model reasons."""
-    model_mode = build_picker(MODEL_MODE_ID, MODEL_MODE_NAME, choices.models, picks.model)
+    model_mode = build_picker(MODEL_MODE_ID, MODEL_MODE_NAME, choices.models, picks.model, choices.model_details)
     if not can_reason:
         return [model_mode]
     return [model_mode, build_picker(EFFORT_MODE_ID, EFFORT_MODE_NAME, choices.levels, picks.effort)]
 
 
-def build_picker(mode_id: str, name: str, labels: dict[str, str], picked: str) -> Picker:
+def build_picker(mode_id: str, name: str, labels: dict[str, str], picked: str, details: dict[str, str] | None = None) -> Picker:
     """One picker with an option per entry in config order, the picked one selected."""
-    options = tuple(PickerOption(id=value, name=label, selected=value == picked) for value, label in labels.items())
+    known = details or {}
+    options = tuple(
+        PickerOption(id=value, name=label, selected=value == picked, detail=known.get(value, "")) for value, label in labels.items()
+    )
     return Picker(id=mode_id, name=name, options=options)
 
 

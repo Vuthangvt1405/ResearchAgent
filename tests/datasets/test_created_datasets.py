@@ -311,7 +311,7 @@ def test_created_csv_load_code_runs_in_kernel(root, created):
             assert (await kernels.execute("p", save, noop, files_dir(root))).status == "done"
             created.sync("p")
             [row] = rows(created)
-            # The same code createdLoadCode builds for this card (public/panel/src/lib/loadCode.ts)
+            # The same code createdLoadCode builds for this card (frontend/src/panel/lib/loadCode.ts)
             load = f"import pandas as pd\ndf = pd.read_csv({json.dumps(row['path'])})\ndf.shape"
             return await kernels.execute("p", load, noop, files_dir(root))
         finally:

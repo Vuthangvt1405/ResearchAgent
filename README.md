@@ -82,7 +82,7 @@ docker build -f docker/kernel.Dockerfile -t researchchat-kernel:1 docker
 ### Running
 
 ```bash
-.venv/bin/python -m researchchat
+.venv/bin/python -m sillytherin
 ```
 
 Open <http://127.0.0.1:8000>. The app is being moved to its own web page: until that page is built, the server runs but shows no chat page (use the `main` branch for the current app).
@@ -110,14 +110,16 @@ Install the development dependencies, then run the tests and the linter:
 .venv/bin/python -m ruff check .
 ```
 
-The notebook panel is a separate front-end in `public/panel`:
+The page (chat and notebook panel) is a React + TypeScript app in `frontend`:
 
 ```bash
-cd public/panel
+cd frontend
 npm ci
 npm test
-npm run build    # writes the bundle to public/build
+npm run build    # writes the page to frontend/dist, which is committed
 ```
+
+For live reload, start the app with `python -m sillytherin --dev`, run `npm run dev` in `frontend`, and open <http://localhost:5173>.
 
 Contributions are welcome. Please open an issue to discuss larger changes before submitting a pull request.
 

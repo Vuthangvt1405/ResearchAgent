@@ -5,6 +5,8 @@ app's own page on this PC: any other website open in the browser is refused.
 """
 
 LOOPBACK_NAMES = ("127.0.0.1", "localhost", "[::1]")
+# The Vite dev page (`npm run dev`); accepted only when the app is started with --dev
+DEV_PAGE_ORIGINS = frozenset({"http://localhost:5173", "http://127.0.0.1:5173"})
 
 
 def allowed_origins(port: int) -> frozenset[str]:
@@ -17,9 +19,9 @@ def allowed_hosts(port: int) -> frozenset[str]:
     return frozenset(f"{name}:{port}" for name in LOOPBACK_NAMES)
 
 
-def is_allowed_origin(origin: str | None, port: int) -> bool:
-    """Exactly one of the app's own page addresses; a missing or "null" origin is refused."""
-    return origin is not None and origin in allowed_origins(port)
+def is_allowed_origin(origin: str | None, port: int, extra_origins: frozenset[str] = frozenset()) -> bool:
+    """Exactly one of the app's own page addresses (or an extra one, in dev mode); a missing or "null" origin is refused."""
+    return origin is not None and origin in allowed_origins(port) | extra_origins
 
 
 def is_allowed_host(host: str | None, port: int) -> bool:

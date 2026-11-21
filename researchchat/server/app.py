@@ -17,8 +17,8 @@ from researchchat.workspace import actions
 
 # The page may only run its own scripts and talk to this server
 CONTENT_SECURITY_POLICY = (
-    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
-    "font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; "
+    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+    "font-src 'self'; img-src 'self' data:; connect-src 'self'; "
     "frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
 )
 
@@ -27,6 +27,7 @@ CONTENT_SECURITY_POLICY = (
 class ServerSettings:
     port: int
     page_dir: Path  # the built page; empty until the page exists
+    extra_origins: frozenset[str] = frozenset()  # the Vite dev page, only with --dev
 
 
 NO_PAGE_YET = "The SillyTherin page isn't built yet."
@@ -98,6 +99,6 @@ def create_app(settings: ServerSettings, sessions: ChatSessions) -> FastAPI:
 
     @app.websocket("/ws/chat")
     async def chat(websocket: WebSocket, chat_id: str | None = None) -> None:
-        await serve_chat(websocket, sessions, chat_id, settings.port)
+        await serve_chat(websocket, sessions, chat_id, settings.port, settings.extra_origins)
 
     return app

@@ -7,7 +7,7 @@ from pathlib import Path
 
 from researchchat.workspace.datasets.load_code import READERS, load_code
 
-LOAD_CODE_TS = Path(__file__).resolve().parents[2] / "public/panel/src/lib/loadCode.ts"
+LOAD_CODE_TS = Path(__file__).resolve().parents[2] / "frontend/src/panel/lib/loadCode.ts"
 IRIS = "/work/datasets/hf-scikit-learn--iris"
 
 
