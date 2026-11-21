@@ -8,9 +8,9 @@ import json
 
 import pytest
 
-from researchchat.tools import dataset_describe
-from researchchat.workspace import ErrorCode, store
-from researchchat.workspace.datasets import sources as src
+from sillytherin.tools import dataset_describe
+from sillytherin.workspace import ErrorCode, store
+from sillytherin.workspace.datasets import sources as src
 from tests.conftest import fake_lookup
 from tests.datasets.test_dataset_service import R2, Env, yes
 

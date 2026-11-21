@@ -5,9 +5,9 @@ import json
 
 import pytest
 
-from researchchat.workspace import ErrorCode, WorkspaceError
-from researchchat.workspace.kaggle import oauth
-from researchchat.workspace.kaggle.account import (
+from sillytherin.workspace import ErrorCode, WorkspaceError
+from sillytherin.workspace.kaggle import oauth
+from sillytherin.workspace.kaggle.account import (
     CANCELLED_NOTICE,
     REFUSED_NOTICE,
     REVOKE_UNREACHABLE_NOTICE,
@@ -16,8 +16,8 @@ from researchchat.workspace.kaggle.account import (
     KaggleAccountService,
     KaggleAccountStatus,
 )
-from researchchat.workspace.kaggle.callback import CallbackResult
-from researchchat.workspace.kaggle.token_file import SavedSignIn, TokenFile
+from sillytherin.workspace.kaggle.callback import CallbackResult
+from sillytherin.workspace.kaggle.token_file import SavedSignIn, TokenFile
 from tests.kaggle.fakes import (
     CLIENT_ID,
     REFRESH_TOKEN,
@@ -211,7 +211,7 @@ def test_disconnect_keeps_downloaded_datasets(tmp_path) -> None:
     workspaces = tmp_path / "workspaces"
     (workspaces / "pool" / "kaggle-x--y@1").mkdir(parents=True)
     (workspaces / "pool" / "kaggle-x--y@1" / "Iris.csv").write_text("a,b\n1,2\n")
-    (workspaces / "researchchat.db").write_bytes(b"sqlite rows")
+    (workspaces / "sillytherin.db").write_bytes(b"sqlite rows")
     before = {p: p.read_bytes() for p in workspaces.rglob("*") if p.is_file()}
     h = connected_harness(tmp_path)
     run(h.service.disconnect())

@@ -10,15 +10,15 @@ import os
 
 import pytest
 
-from researchchat.workspace import ErrorCode, WorkspaceError
-from researchchat.workspace.datasets.pool import (
+from sillytherin.workspace import ErrorCode, WorkspaceError
+from sillytherin.workspace.datasets.pool import (
     POOL_DIR,
     DatasetPool,
     PoolEntry,
     PoolFile,
 )
-from researchchat.workspace.datasets.store import ProjectDataset
-from researchchat.workspace.datasets.views import (
+from sillytherin.workspace.datasets.store import ProjectDataset
+from sillytherin.workspace.datasets.views import (
     VIEW_FAILED_MESSAGE,
     VIEWS_DIR,
     ProjectViews,

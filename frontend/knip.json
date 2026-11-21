@@ -1,0 +1,17 @@
+{
+  "$schema": "https://unpkg.com/knip@5.41.1/schema.json",
+  "entry": [
+    "src/main.tsx"
+  ],
+  "project": [
+    "src/**/*.{ts,tsx}"
+  ],
+  "ignoreExportsUsedInFile": true,
+  "ignore": [
+    "src/components/ui/**"
+  ],
+  "ignoreDependencies": [
+    "tailwindcss",
+    "@fontsource-variable/inter"
+  ]
+}

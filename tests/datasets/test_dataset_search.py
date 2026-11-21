@@ -5,7 +5,7 @@ import json
 
 import pytest
 
-from researchchat.tools import dataset_search as ds
+from sillytherin.tools import dataset_search as ds
 
 
 @pytest.fixture(autouse=True)

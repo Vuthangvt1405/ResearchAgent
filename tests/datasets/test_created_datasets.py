@@ -18,20 +18,20 @@ import pyarrow.parquet as pq
 import pytest
 from openpyxl.worksheet._read_only import ReadOnlyWorksheet
 
-from researchchat.config import CREATED_DATA_EXTENSIONS
-from researchchat.workspace import ErrorCode, WorkspaceError, store
-from researchchat.workspace.datasets import created as created_module
-from researchchat.workspace.datasets import created_store as cds
-from researchchat.workspace.datasets import store as ds
-from researchchat.workspace.datasets.created import (
+from sillytherin.config import CREATED_DATA_EXTENSIONS
+from sillytherin.workspace import ErrorCode, WorkspaceError, store
+from sillytherin.workspace.datasets import created as created_module
+from sillytherin.workspace.datasets import created_store as cds
+from sillytherin.workspace.datasets import store as ds
+from sillytherin.workspace.datasets.created import (
     CreatedDatasets,
     compare_with_stored,
     missing_notice,
     read_columns,
 )
-from researchchat.workspace.datasets.created_store import CreatedDataset, FileSnapshot
-from researchchat.workspace.datasets.pool import DatasetPool, PoolEntry, PoolFile
-from researchchat.workspace.datasets.service import DatasetService
+from sillytherin.workspace.datasets.created_store import CreatedDataset, FileSnapshot
+from sillytherin.workspace.datasets.pool import DatasetPool, PoolEntry, PoolFile
+from sillytherin.workspace.datasets.service import DatasetService
 
 IRIS_CSV = "sepal_length,species\n5.1,setosa\n4.9,setosa\n"  # 41 bytes
 
@@ -299,7 +299,7 @@ def test_created_csv_load_code_runs_in_kernel(root, created):
     # Changed: real kernel (`@pytest.mark.docker`)
     # Then: runs without error, `df.shape` > 0
     # Demonstrates: the code truly works
-    from researchchat.workspace.kernels import KernelRegistry
+    from sillytherin.workspace.kernels import KernelRegistry
 
     async def noop(_output):
         pass
@@ -311,7 +311,7 @@ def test_created_csv_load_code_runs_in_kernel(root, created):
             assert (await kernels.execute("p", save, noop, files_dir(root))).status == "done"
             created.sync("p")
             [row] = rows(created)
-            # The same code createdLoadCode builds for this card (public/panel/src/lib/loadCode.ts)
+            # The same code createdLoadCode builds for this card (frontend/src/panel/lib/loadCode.ts)
             load = f"import pandas as pd\ndf = pd.read_csv({json.dumps(row['path'])})\ndf.shape"
             return await kernels.execute("p", load, noop, files_dir(root))
         finally:

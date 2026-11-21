@@ -3,18 +3,17 @@ search ref. Tools get a fake dataset service."""
 
 import asyncio
 import json
-from types import SimpleNamespace
 
 import httpx
 import pytest
 
-from researchchat.tools import chosen_tools, dataset_download, dataset_list
-from researchchat.tools import dataset_search as search
-from researchchat.workspace import ErrorCode, WorkspaceError
-from researchchat.workspace import store
-from researchchat.workspace.datasets import sources as src
-from researchchat.workspace.datasets.service import DatasetService, DatasetsSettings
-from researchchat.workspace.datasets.sources import DatasetPlan, PlannedFile
+from sillytherin.tools import chosen_tools, dataset_download, dataset_list
+from sillytherin.tools import dataset_search as search
+from sillytherin.workspace import ErrorCode, WorkspaceError, store
+from sillytherin.workspace.datasets import sources as src
+from sillytherin.workspace.datasets.service import DatasetService, DatasetsSettings
+from sillytherin.workspace.datasets.sources import DatasetPlan, PlannedFile
+from tests.chat.fakes import FakeChatState, in_chat
 from tests.conftest import FakeDatasetService, FakeFreeDisk, fake_lookup
 
 STARTED = {
@@ -192,19 +191,9 @@ def test_dataset_list_line_says_created_in_this_project(tmp_path):
 
 PASTED_LINK = "https://example.org/data/iris.csv"
 USER_HISTORY = [
-    {"role": "system", "content": "You are ResearchChat."},
+    {"role": "system", "content": "You are SillyTherin."},
     {"role": "user", "content": f"download {PASTED_LINK} please"},
 ]
-
-
-class ChatSession:
-    """Stands in for cl.user_session: only the model history."""
-
-    def __init__(self, history):
-        self.history = history
-
-    def get(self, key, default=None):
-        return self.history if key == "history" else default
 
 
 class LinkWebsite:
@@ -228,16 +217,18 @@ def link_service(tmp_path, site):
 
 def download_with_history(monkeypatch, tmp_path, ref, history=USER_HISTORY, extra_args=None):
     """Run the tool as the app does (links read from the chat), against a real service and a fake website."""
-    monkeypatch.setattr(dataset_download.cl, "user_session", ChatSession(history))
     monkeypatch.setattr(src, "lookup_host", fake_lookup)
     site = LinkWebsite()
     svc = link_service(tmp_path, site)
 
-    async def go():
+    async def download():
         await svc.startup_cleanup()
         return await dataset_download.run({"ref": ref, **(extra_args or {})}, svc=svc, project_id="p1", approve=never)
 
-    monkeypatch.setattr(dataset_download.cl, "context", SimpleNamespace(session=SimpleNamespace(id="s1")))
+    async def go():
+        with in_chat(FakeChatState(chat_id="s1", values={"history": history})):
+            return await download()
+
     return go, svc, site
 
 

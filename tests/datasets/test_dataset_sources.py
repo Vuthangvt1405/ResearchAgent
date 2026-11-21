@@ -9,9 +9,9 @@ import asyncio
 import httpx
 import pytest
 
-from researchchat.workspace import ErrorCode, WorkspaceError
-from researchchat.workspace.datasets import links
-from researchchat.workspace.datasets import sources as src
+from sillytherin.workspace import ErrorCode, WorkspaceError
+from sillytherin.workspace.datasets import links
+from sillytherin.workspace.datasets import sources as src
 from tests.conftest import catalog_client, fake_lookup
 
 SHA = "a" * 40

@@ -2,7 +2,7 @@
 
 import asyncio
 
-from researchchat import llm
+from sillytherin import llm
 
 
 def test_catalog_keeps_only_models_that_answer_in_text():

@@ -11,12 +11,12 @@ from alembic.runtime.migration import MigrationContext
 from sqlalchemy import inspect, text
 from sqlalchemy.exc import IntegrityError
 
-from researchchat.db import engine as db
-from researchchat.db.schema import metadata
-from researchchat.workspace import store
-from researchchat.workspace.datasets import store as ds
-from researchchat.workspace.datasets.pool import DatasetPool, PoolEntry, PoolFile
-from researchchat.workspace.kernels import ContainerMounts, KernelRegistry
+from sillytherin.db import engine as db
+from sillytherin.db.schema import metadata
+from sillytherin.workspace import store
+from sillytherin.workspace.datasets import store as ds
+from sillytherin.workspace.datasets.pool import DatasetPool, PoolEntry, PoolFile
+from sillytherin.workspace.kernels import ContainerMounts, KernelRegistry
 
 APP_TABLES = {"projects", "pool_entries", "pool_files", "project_datasets", "project_dataset_files"}
 UNKNOWN_REVISION = "9999"
@@ -52,7 +52,7 @@ def stored_revision(database_file) -> str:
 def test_first_open_creates_database_at_head(root):
     # baseline
     # Changed: —
-    # Then: researchchat.db exists; alembic_version = head; all five tables exist
+    # Then: sillytherin.db exists; alembic_version = head; all five tables exist
     # Demonstrates: a fresh workspace gets the full schema with no manual step
     engine = db.database_for(root)
 
@@ -138,7 +138,7 @@ def test_database_from_newer_version_stops_startup(root):
         connection.execute(text(f"UPDATE alembic_version SET version_num = '{UNKNOWN_REVISION}'"))
     db.close_database(root)
 
-    with pytest.raises(SystemExit, match="newer ResearchChat") as stopped:
+    with pytest.raises(SystemExit, match="newer SillyTherin") as stopped:
         db.database_for(root)
 
     assert isinstance(stopped.value, db.DatabaseUnusable)
@@ -147,7 +147,7 @@ def test_database_from_newer_version_stops_startup(root):
 
 def test_unreadable_database_file_stops_startup(root):
     # negative
-    # Changed: researchchat.db contains random bytes
+    # Changed: sillytherin.db contains random bytes
     # Then: SystemExit with the "damaged" text; file bytes unchanged
     # Demonstrates: a broken file gives steps, not a stack trace
     root.mkdir(parents=True)
@@ -167,7 +167,7 @@ def test_unreadable_database_file_stops_startup(root):
 def test_database_file_is_outside_kernel_mounts(root):
     # negative
     # Changed: KernelRegistry.run_arguments(...) for a project
-    # Then: no mount source is, or contains, researchchat.db or the workspaces/ root
+    # Then: no mount source is, or contains, sillytherin.db or the workspaces/ root
     # Demonstrates: kernel code can't edit app data
     mounts = ContainerMounts(root / "p1" / "files", root / ".kernels" / "p1", root / ".dataset-pool")
     arguments = KernelRegistry().run_arguments("rc-kernel-x", "p1", mounts, (1, 2, 3, 4, 5))

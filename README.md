@@ -10,8 +10,8 @@
 A playground for your own data pool, where every question you ask<br />
 grows it a little deeper and every answer is yours to explore.
 
-[![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-3776AB?logo=python&logoColor=white)](https://www.python.org/)
-[![Chainlit](https://img.shields.io/badge/built%20with-Chainlit-F80061)](https://chainlit.io)
+[![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13%20%7C%203.14-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![FastAPI](https://img.shields.io/badge/server-FastAPI-009688)](https://fastapi.tiangolo.com)
 [![OpenRouter](https://img.shields.io/badge/models-OpenRouter-6566F1)](https://openrouter.ai)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 
@@ -76,16 +76,16 @@ OPENROUTER_API_KEY=sk-or-...
 To run notebook code, build the kernel image with Docker running:
 
 ```bash
-docker build -f docker/kernel.Dockerfile -t researchchat-kernel:1 docker
+docker build -f docker/kernel.Dockerfile -t sillytherin-kernel:1 docker
 ```
 
 ### Running
 
 ```bash
-.venv/bin/chainlit run app.py
+.venv/bin/python -m sillytherin
 ```
 
-Open <http://localhost:8000>. In the settings menu next to the message box, enable **Web search** and **Notebook** as needed.
+Open <http://127.0.0.1:8000>. The app is being moved to its own web page: until that page is built, the server runs but shows no chat page (use the `main` branch for the current app).
 
 ## Configuration
 
@@ -93,14 +93,12 @@ Open <http://localhost:8000>. In the settings menu next to the message box, enab
 |---|---|
 | `.env` | Secrets: `OPENROUTER_API_KEY`, and optionally `OPENROUTER_MODEL` to override the default model |
 | `config.toml` | Default model, system prompt, search and download limits, thinking levels |
-| `.chainlit/config.toml` | Chainlit interface settings |
-| `public/theme.json` | Interface colours |
 
 Restart the app after changing any of these files. Projects, notebooks and datasets are stored in `workspaces/`, which is excluded from version control.
 
 ## Security
 
-SillyTherin executes code, so it only serves `localhost` and refuses to start on any other host. Do not expose it on a network (for example with `--host 0.0.0.0`) unless you first add authentication.
+SillyTherin executes code, so it only serves `localhost` and refuses to start on any other host. It also refuses requests from any other website open in your browser. Do not expose it on a network (for example with `--host 0.0.0.0`) unless you first add authentication.
 
 ## Development
 
@@ -112,14 +110,16 @@ Install the development dependencies, then run the tests and the linter:
 .venv/bin/python -m ruff check .
 ```
 
-The notebook panel is a separate front-end in `public/panel`:
+The page (chat and notebook panel) is a React + TypeScript app in `frontend`:
 
 ```bash
-cd public/panel
+cd frontend
 npm ci
 npm test
-npm run build    # writes the bundle to public/build
+npm run build    # writes the page to frontend/dist, which is committed
 ```
+
+For live reload, start the app with `python -m sillytherin --dev`, run `npm run dev` in `frontend`, and open <http://localhost:5173>.
 
 Contributions are welcome. Please open an issue to discuss larger changes before submitting a pull request.
 
@@ -127,4 +127,4 @@ Contributions are welcome. Please open an issue to discuss larger changes before
 
 Released under the [Apache License 2.0](LICENSE).
 
-Built with [Chainlit](https://chainlit.io), [OpenRouter](https://openrouter.ai) and [CodeMirror](https://codemirror.net).
+Built with [FastAPI](https://fastapi.tiangolo.com), [OpenRouter](https://openrouter.ai) and [CodeMirror](https://codemirror.net).

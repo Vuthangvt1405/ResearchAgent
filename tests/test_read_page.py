@@ -1,7 +1,7 @@
 import pytest
 
-from researchchat.tools import TOOLS
-from researchchat.tools.read_page import check_public_url
+from sillytherin.tools import TOOLS
+from sillytherin.tools.read_page import check_public_url
 
 
 @pytest.mark.parametrize(

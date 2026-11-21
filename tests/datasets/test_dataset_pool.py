@@ -10,13 +10,13 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
-from researchchat.db.engine import database_for
-from researchchat.workspace import WorkspaceError, store
-from researchchat.workspace.datasets import pool as dataset_pool
-from researchchat.workspace.datasets import sources as src
-from researchchat.workspace.datasets import store as ds
-from researchchat.workspace.datasets.pool import DatasetPool, PoolEntry, PoolFile
-from researchchat.workspace.kernels import KernelRegistry
+from sillytherin.db.engine import database_for
+from sillytherin.workspace import WorkspaceError, store
+from sillytherin.workspace.datasets import pool as dataset_pool
+from sillytherin.workspace.datasets import sources as src
+from sillytherin.workspace.datasets import store as ds
+from sillytherin.workspace.datasets.pool import DatasetPool, PoolEntry, PoolFile
+from sillytherin.workspace.kernels import KernelRegistry
 from tests.conftest import fake_lookup
 from tests.datasets.test_dataset_service import (
     R1,

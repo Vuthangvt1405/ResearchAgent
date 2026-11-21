@@ -1,5 +1,5 @@
 # Kernel image for project notebooks (plan §4.1, AC19).
-# Build: docker build -f docker/kernel.Dockerfile -t researchchat-kernel:1 docker
+# Build: docker build -f docker/kernel.Dockerfile -t sillytherin-kernel:1 docker
 FROM python:3.12-slim
 
 # Kernel packages live in kernel-requirements.txt (next to this file)
