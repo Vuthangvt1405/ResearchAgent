@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1134" height="240" viewBox="0 0 1134 240">
+<defs><clipPath id="cut0"><rect x="464" y="70" width="130" height="158"/></clipPath></defs>
+<g transform="translate(0 0) scale(1.0)"><g transform="translate(10 8)">
+<defs>
+  <linearGradient id="body" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0" stop-color="#42A5F5"/>
+    <stop offset="1" stop-color="#1565C0"/>
+  </linearGradient>
+</defs>
+<path d="M152 68 L156 86 M156 86 L149 97 M156 86 L165 95" stroke="#EF5350" stroke-width="5" stroke-linecap="round" fill="none"/>
+<path d="M150 52 C150 30 124 22 100 22 C70 22 48 40 48 64 C48 92 76 98 100 104 C128 111 154 120 154 146 C154 172 128 182 100 182 C76 182 54 172 46 150"
+      fill="none" stroke="url(#body)" stroke-width="34" stroke-linecap="round"/>
+<ellipse cx="146" cy="50" rx="23" ry="21" fill="url(#body)"/>
+<circle cx="141" cy="44" r="8" fill="#fff"/>
+<circle cx="143" cy="45" r="4" fill="#0D1B2A"/>
+</g></g>
+<g fill="none" stroke="#FFFFFF" stroke-width="24" stroke-linecap="butt" stroke-linejoin="round">
+<path d="M332 64 C326 50 314 42 298 42 C278 42 264 52 264 70 C264 90 282 95 298 100 C316 105 332 111 332 130 C332 148 316 158 298 158 C280 158 266 150 262 136"/>
+<path d="M371 70 V170"/>
+<path d="M410 25 V170"/>
+<path d="M449 25 V170"/>
+<path d="M593 42 H691"/>
+<path d="M642 42 V170"/>
+<path d="M718 25 V170"/>
+<path d="M718 120 C718 96 732 82 752 82 C772 82 784 96 784 120 V170"/>
+<path d="M823 120 H893 A35 38 0 1 0 882 147"/>
+<path d="M932 70 V170"/>
+<path d="M932 122 C932 96 948 82 976 82"/>
+<path d="M1007 70 V170"/>
+<path d="M1046 70 V170"/>
+<path d="M1046 120 C1046 96 1060 82 1080 82 C1100 82 1112 96 1112 120 V170"/>
+<g clip-path="url(#cut0)"><path d="M482 56 L534 172"/><path d="M576 56 L506 234"/></g>
+</g>
+<g fill="#FFFFFF">
+<circle cx="371" cy="38" r="14"/>
+<circle cx="1007" cy="38" r="14"/>
+</g>
+</svg>
