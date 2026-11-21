@@ -1,12 +1,28 @@
 // The message box: Enter sends, Shift+Enter adds a line, Stop while an answer streams.
-import { useState, type KeyboardEvent } from "react";
+import { useId, useRef, useState, type KeyboardEvent } from "react";
 import { ArrowUp, Square } from "lucide-react";
+import { CommandMenu, commandRowId } from "@/chat/components/CommandMenu";
 import { EffortPicker } from "@/chat/components/EffortPicker";
 import { ModelPicker } from "@/chat/components/ModelPicker";
+import type { SlashCommand } from "@/chat/lib/slashCommands";
+import { useCommandMenu } from "@/chat/components/useCommandMenu";
 import { useChat } from "@/chat/store";
 
-export function Composer({ isStreaming, onSend, onStop }: { isStreaming: boolean; onSend: (text: string) => boolean; onStop: () => void }): JSX.Element {
+const NO_COMMANDS: SlashCommand[] = [];
+
+export interface ComposerProps {
+  isStreaming: boolean;
+  onSend: (text: string) => boolean;
+  onStop: () => void;
+  /** Commands the "/" menu offers; without them the box never shows a menu */
+  commands?: SlashCommand[];
+}
+
+export function Composer({ isStreaming, onSend, onStop, commands = NO_COMMANDS }: ComposerProps): JSX.Element {
   const [text, setText] = useState("");
+  const box = useRef<HTMLTextAreaElement>(null);
+  const menuId = useId();
+  const menu = useCommandMenu(text, commands, () => setText(""), box);
   const pickers = useChat((s) => s.pickers);
   const picked = useChat((s) => s.picked);
   const pick = useChat((s) => s.pick);
@@ -19,6 +35,7 @@ export function Composer({ isStreaming, onSend, onStop }: { isStreaming: boolean
     if (onSend(text.trim())) setText("");
   };
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (menu.handleKey(event)) return;
     if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
       event.preventDefault();
       submit();
@@ -27,9 +44,24 @@ export function Composer({ isStreaming, onSend, onStop }: { isStreaming: boolean
 
   return (
     <div className="px-4 pb-4 pt-2">
-      <div className="mx-auto max-w-3xl rounded-2xl border bg-background shadow-sm">
+      <div className="relative mx-auto max-w-3xl rounded-2xl border bg-background shadow-sm">
+        {menu.isOpen && (
+          <CommandMenu
+            listId={menuId}
+            rowIdPrefix={`${menuId}-row`}
+            commands={menu.matches}
+            highlightedIndex={menu.highlightedIndex}
+            onChoose={menu.choose}
+            onHighlight={menu.highlight}
+            menuRef={menu.menuRef}
+          />
+        )}
         <textarea
+          ref={box}
           aria-label="Message SillyTherin"
+          aria-expanded={menu.isOpen}
+          aria-controls={menu.isOpen ? menuId : undefined}
+          aria-activedescendant={menu.isOpen ? commandRowId(`${menuId}-row`, menu.highlightedIndex) : undefined}
           rows={2}
           value={text}
           onChange={(e) => setText(e.target.value)}

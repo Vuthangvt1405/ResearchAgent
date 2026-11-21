@@ -1,18 +1,20 @@
 // The layout: header, then the chat and the notebook panel side by side. With the notebook open
 // the panel takes the room and the chat is a side column; closed, the page is a full-width chat.
-import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { AppHeader } from "@/chat/components/AppHeader";
 import { Composer } from "@/chat/components/Composer";
 import { ConnectionBar } from "@/chat/components/ConnectionBar";
+import { KaggleDatasetsWindow } from "@/chat/components/KaggleDatasetsWindow";
 import { KaggleSignInDialog } from "@/chat/components/KaggleSignInDialog";
 import { MessageList } from "@/chat/components/MessageList";
 import { PanelDivider } from "@/chat/components/PanelDivider";
-import { SettingsDialog } from "@/chat/components/SettingsDialog";
+import { KAGGLE_SWITCH_ID, SettingsDialog } from "@/chat/components/SettingsDialog";
 import { StartScreen } from "@/chat/components/StartScreen";
 import { Toasts } from "@/chat/components/Toasts";
 import { useConnection } from "@/chat/connectionContext";
 import { clampChatWidth, isNotebookOpen, isToggleShortcut, readChatWidth, rememberChatWidth, rememberNotebookOpen } from "@/chat/lib/layout";
 import { applyTheme, readTheme, rememberTheme, type Theme } from "@/chat/lib/theme";
+import { slashCommandsFor } from "@/chat/lib/slashCommands";
 import { useChat } from "@/chat/store";
 import { NotebookPanel } from "@/panel/NotebookPanel";
 
@@ -30,6 +32,10 @@ export function AppShell(): JSX.Element {
   const [isOpen, setIsOpen] = useState(() => isNotebookOpen(window.localStorage));
   const [theme, setTheme] = useState<Theme>(() => readTheme(window.localStorage, prefersDark()));
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isKaggleWindowOpen, setIsKaggleWindowOpen] = useState(false);
+  // the pop-up, not the switch: the switch flips on the click, before Kaggle has said yes
+  const hasKaggleSignInFinished = kaggle?.state === "connected";
+  const commands = useMemo(() => slashCommandsFor({ showKaggleDatasets: () => setIsKaggleWindowOpen(true) }), []);
   const row = useRef<HTMLDivElement>(null);
   const aside = useRef<HTMLElement>(null);
   const rowWidth = () => row.current?.clientWidth || window.innerWidth;
@@ -107,6 +113,14 @@ export function AppShell(): JSX.Element {
         onToggleNotebook={toggleNotebook}
       />
       {kaggle && <KaggleSignInDialog popup={kaggle} onClose={() => useChat.getState().closeKaggle()} />}
+      {isKaggleWindowOpen && (
+        <KaggleDatasetsWindow
+          callAction={callAction}
+          hasSignInFinished={hasKaggleSignInFinished}
+          onConnect={() => changeSetting(KAGGLE_SWITCH_ID, true)}
+          onClose={() => setIsKaggleWindowOpen(false)}
+        />
+      )}
       <div ref={row} className="flex min-h-0 flex-1 overflow-hidden max-md:flex-col">
         <main
           aria-label="Chat"
@@ -119,7 +133,7 @@ export function AppShell(): JSX.Element {
           ].join(" ")}
         >
           {hasStarted ? <MessageList /> : <StartScreen theme={theme} />}
-          <Composer isStreaming={isStreaming} onSend={sendMessage} onStop={() => send({ type: "chat.stop" })} />
+          <Composer isStreaming={isStreaming} onSend={sendMessage} onStop={() => send({ type: "chat.stop" })} commands={commands} />
         </main>
         {isOpen && (
           <PanelDivider

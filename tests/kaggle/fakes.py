@@ -10,6 +10,7 @@ import httpx
 
 from sillytherin.workspace.kaggle import oauth
 from sillytherin.workspace.kaggle.callback import CallbackResult
+from sillytherin.workspace.kaggle.my_datasets import LIST_DATASETS_URL
 
 ACCESS_TOKEN = "AT-SECRET-0001"
 REFRESHED_ACCESS_TOKEN = "AT-SECRET-0002"
@@ -36,10 +37,13 @@ class FakeKaggle:
     register: Answer | None = None
     token: Answer | None = None
     revoke: Answer | None = None
+    list_datasets: Answer | None = None  # "my datasets"; Kaggle answers {} for an account with none
 
     def handle(self, request: httpx.Request) -> httpx.Response:
         self.requests.append(request)
         url = str(request.url).split("?")[0]
+        if url == LIST_DATASETS_URL:
+            return (self.list_datasets or (lambda _r: httpx.Response(200, json={})))(request)
         if url == oauth.REGISTER_URL:
             return (self.register or self._registered)(request)
         if url == oauth.TOKEN_URL:

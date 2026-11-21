@@ -40,6 +40,7 @@ from sillytherin.workspace.kaggle.account import (
     KaggleAccountStatus,
 )
 from sillytherin.workspace.kaggle.callback import CallbackListener
+from sillytherin.workspace.kaggle.my_datasets import MyKaggleDatasets
 from sillytherin.workspace.kaggle.settings_switch import (
     KAGGLE_SWITCH_ID,
     ChatSide,
@@ -127,14 +128,22 @@ async def refresh_kaggle_switch_everywhere(status: KaggleAccountStatus) -> None:
     await chats.refresh_settings(status, settings_widgets)
 
 
+KAGGLE_HTTP_TIMEOUT_SECONDS = 30
+
+
+def kaggle_http_client() -> httpx.AsyncClient:
+    return httpx.AsyncClient(timeout=KAGGLE_HTTP_TIMEOUT_SECONDS, headers={"User-Agent": "SillyTherin"})
+
+
 kaggle_account = KaggleAccountService(
     token_file=TokenFile(KAGGLE_TOKEN_FILE),
-    http_factory=lambda: httpx.AsyncClient(timeout=30, headers={"User-Agent": "SillyTherin"}),
+    http_factory=kaggle_http_client,
     listener_factory=CallbackListener,
     signin_timeout_seconds=KAGGLE_SIGNIN_TIMEOUT_SECONDS,
     now=time.monotonic,
     on_change=refresh_kaggle_switch_everywhere,
 )
+my_kaggle_datasets = MyKaggleDatasets(kaggle_account, kaggle_http_client)
 
 
 async def apply_kaggle_switch(previous_settings: dict, new_settings: dict, link: ChatLink) -> None:
@@ -189,6 +198,7 @@ FIELDS: dict[str, dict[str, type | tuple[type, ...]]] = {
     "nb_create_project": {"name": str},
     "ds_delete": {"dataset_id": str},  # confirmed in the panel first
     "ds_cancel": {"dataset_id": str},  # stop a running or queued download
+    "kg_list_my_datasets": {},  # no fields: whose datasets is never the page's choice
 }
 OPTIONAL = {("nb_add_cell", "after_id"), ("nb_add_cell", "type"), ("nb_reorder_cell", "before_id")}
 
@@ -239,6 +249,11 @@ async def list_projects_with_current(svc: NotebookService, session, _payload: di
     return {"projects": await svc.list_projects(), "current": session_project(session)}
 
 
+async def list_my_kaggle_datasets(lister: MyKaggleDatasets) -> dict:
+    """The window's list, answered to the asking tab only; it never enters the chat history."""
+    return (await lister.list_owned()).to_page()
+
+
 async def delete_dataset(svc: NotebookService, project_id: str, payload: dict) -> NotebookProps:
     await datasets.delete(project_id, payload["dataset_id"])
     return await svc.props(project_id)
@@ -254,6 +269,7 @@ SESSION_ACTIONS: dict[str, Callable[[NotebookService, object, dict], Awaitable]]
     "nb_switch_project": lambda svc, session, p: switch_project(svc, session, p["project_id"]),
     "nb_create_project": lambda svc, session, p: create_and_switch(svc, session, p["name"]),
     "nb_list_projects": list_projects_with_current,
+    "kg_list_my_datasets": lambda _svc, _session, _p: list_my_kaggle_datasets(my_kaggle_datasets),
 }
 
 # Actions on the chat's current project: (service, project_id, payload) -> props.
